@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>SyncLite Consolidator</title>
+</head>
+<body>
+	<div class="sidemenu">
+		<a href="dashboard.jsp">Dashboard</a> 
+		<button class="expand-btn">
+			Devices<i class="expander"></i>
+		</button>
+		<div class="expand-list">
+			<a href="devices.jsp">List Devices</a>
+			<a href="manageDevices.jsp">Manage Devices</a>
+		</div>
+		<button class="expand-btn">
+			Configure Job <i class="expander"></i>
+		</button>
+		<div class="expand-list">
+			<a href="syncLiteTerms.jsp">Configure and Start</a> 
+			<a href="${pageContext.request.contextPath}/stopJob">Stop Job</a>
+			<a href="${pageContext.request.contextPath}/startJob">Start Job</a>
+			<a href="loadJob.jsp">Load Job</a>
+			<a href="editConfigurations.jsp">Edit Configurations</a>
+			<a href="resetJob.jsp">Reset Job</a>
+		</div>
+		<a href="selectDestinationDB.jsp">Analyze Data</a>
+		<a class="bottomlink" href="https://www.synclite.io">
+			<jsp:include page="version.jsp"/>
+			<br><br>2023 &copy; SyncLite.<br>All Rights Reserved.
+		</a>
+	</div>
+
+	<div class="logobar">
+		<a href="https://www.synclite.io" target="_blank"><img src="image/SyncLiteLogo_TM.jpg" style="height:25px;width:125px;"></a>
+	</div>
+
+	<script type="text/javascript">
+		var expand = document.getElementsByClassName("expand-btn");
+		var cnt;
+		for (cnt = 0; cnt < expand.length; cnt++) {
+		  expand[cnt].addEventListener("click", function() {
+		    this.classList.toggle("expander-active");
+		    var expandList= this.nextElementSibling;
+		    if (expandList.style.display === "block") {
+		    	expandList.style.display = "none";
+		    } else {
+		    	expandList.style.display = "block";
+		    }
+		  });
+		}
+	</script>
+
+</body>
+</html>
