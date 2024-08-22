@@ -1026,7 +1026,7 @@ public class ConfLoader {
 				throw new SyncLitePropsException("No read permission on specified license-file path");
 			}
 		} else {
-			throw new SyncLitePropsException("license-file not specified in configuration file");
+			//throw new SyncLitePropsException("license-file not specified in configuration file");
 		}
 		LicenseVerifier.validateLicense(licenseFilePath);
 		properties.putAll(LicenseVerifier.getLicenseProperties());
