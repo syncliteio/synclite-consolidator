@@ -433,7 +433,11 @@ public class SyncDriver implements Runnable{
 	}
 
 
-	private final void scheduleAllDevices() {		
+	private final void locateNewAndscheduleAllDevices() {
+		//
+		//Locate new devices if any
+		locateNewDevices();
+		//
 		//Add all devices for work
 		try {
 			for (Device device : devices) {
@@ -449,7 +453,7 @@ public class SyncDriver implements Runnable{
 				}
 			}
 		}catch (Exception e) {
-			globalTracer.error("All device scheduler failed with exception : " + e.getMessage(), e);
+			globalTracer.error("Device locator and scheduler failed with exception : " + e.getMessage(), e);
 		}
 	}
 
@@ -800,7 +804,7 @@ public class SyncDriver implements Runnable{
 			deviceLocator = Executors.newScheduledThreadPool(1);
 			long devicePollingIntervalMs = ConfLoader.getInstance().getDevicePollingIntervalMs();
 			if (devicePollingIntervalMs > 0) {
-				deviceLocator.scheduleWithFixedDelay(this::scheduleAllDevices, ConfLoader.getInstance().getDevicePollingIntervalMs() , ConfLoader.getInstance().getDevicePollingIntervalMs(), TimeUnit.MILLISECONDS);
+				deviceLocator.scheduleWithFixedDelay(this::locateNewAndscheduleAllDevices, ConfLoader.getInstance().getDevicePollingIntervalMs() , ConfLoader.getInstance().getDevicePollingIntervalMs(), TimeUnit.MILLISECONDS);
 			}
 		}
 		return null;
