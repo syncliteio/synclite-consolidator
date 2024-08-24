@@ -52,9 +52,18 @@ public class DeviceReplicator extends DeviceProcessor {
 
 	static {
 		try {
-			System.loadLibrary("synclite3");
+	        String arch = System.getProperty("os.arch");
+	        if (arch.equals("x86")) {
+				System.loadLibrary("synclite3_x86");
+	        } else if (arch.equals("amd64") || arch.equals("x86_64")) {
+	        	System.loadLibrary("synclite3_x86_64");
+	        } else {	        
+	        	//throw new SyncLiteException("SyncLite native library not supported for current architecture : " + arch);
+	        	//try to load the x86_64 one 
+	        	System.loadLibrary("synclite3_x86_64");
+	        }
 		} catch (Exception e) {    		
-			throw e;
+			throw new RuntimeException("Failed to load SyncLite native library : " + e.getMessage(), e);
 		}
 	}
 
