@@ -95,7 +95,7 @@
 							<outputDirectory>${basedir}\target\lib\</outputDirectory>
 							<resources>
 								<resource>
-									<directory>${basedir}\hadoop_home\bin</directory>
+									<directory>${basedir}/hadoop_home/bin</directory>
 									<include>winutils.exe</include>
 								</resource>
 							</resources>
