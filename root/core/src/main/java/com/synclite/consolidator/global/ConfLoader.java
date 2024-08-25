@@ -1019,7 +1019,7 @@ public class ConfLoader {
 
 	public void loadSyncConfigProperties(Path propsPath) throws SyncLiteException {
 		this.properties = loadPropertiesFromFile(propsPath);
-		validateAndLoadLicense();
+		setAdditionalProperties();
 		validateAndProcessSyncProperties();    	
 	}
 
@@ -1028,24 +1028,9 @@ public class ConfLoader {
 		validateAndProcessManageDevicesProperties();		
 	}
 
-	private void validateAndLoadLicense() throws SyncLiteException {
-		String propValue = properties.get("license-file");
-		if (propValue != null) {
-			this.licenseFilePath= Path.of(propValue);
-			if (this.licenseFilePath == null) {
-				throw new SyncLitePropsException("Invalid value specified for license-file in configuration file");
-			}
-			if (!Files.exists(this.licenseFilePath)) {
-				throw new SyncLitePropsException("Specified license-file does not exist : " + licenseFilePath);
-			}
-			if (!this.licenseFilePath.toFile().canRead()) {
-				throw new SyncLitePropsException("No read permission on specified license-file path");
-			}
-		} else {
-			//throw new SyncLitePropsException("license-file not specified in configuration file");
-		}
-		LicenseVerifier.validateLicense(licenseFilePath);
-		properties.putAll(LicenseVerifier.getLicenseProperties());
+	private void setAdditionalProperties() throws SyncLiteException {
+		properties.put("max-num-devices", "UNLIMITED");
+		properties.put("allowed-destinations", "ALL");
 	}
 
 	public static HashMap<String, String> loadPropertiesFromFile(Path propsPath) throws SyncLitePropsException {
