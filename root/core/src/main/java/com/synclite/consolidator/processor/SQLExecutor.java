@@ -58,16 +58,20 @@ public abstract class SQLExecutor implements AutoCloseable{
         switch (ConfLoader.getInstance().getDstType(dstIndex)) {
         case APACHE_ICEBERG:
         	return new ApacheIcebergExecutor(device, dstIndex, tracer);
-    	case SQLITE:
-    		return new SQLiteExecutor(device, dstIndex, tracer);
-        case POSTGRESQL:
-        	return new PGExecutor(device, dstIndex, tracer);
-        case MONGODB:
-            return new MongoDBExecutor(device, dstIndex, tracer);
+        case CLICKHOUSE:
+        	return new ClickHouseExecutor(device, dstIndex, tracer);
         case DUCKDB:
         	return new DuckDBExecutor(device, dstIndex, tracer);
+        case FERRETDB:
+            return new MongoDBExecutor(device, dstIndex, tracer);
+        case MONGODB:
+            return new MongoDBExecutor(device, dstIndex, tracer);
         case MYSQL:
         	return new MySQLExecutor(device, dstIndex, tracer);
+        case POSTGRESQL:
+        	return new PGExecutor(device, dstIndex, tracer);
+        case SQLITE:
+    		return new SQLiteExecutor(device, dstIndex, tracer);
         default:
             throw new SyncLiteException("Unsupported dst type : " + ConfLoader.getInstance().getDstType(dstIndex));
         }

@@ -47,6 +47,7 @@ import com.synclite.consolidator.log.CommandLogRecord.DDLInfo;
 import com.synclite.consolidator.log.EventLogRecord;
 import com.synclite.consolidator.log.EventLogSegment;
 import com.synclite.consolidator.log.EventLogSegment.EventLogSegmentReader;
+import com.synclite.consolidator.oper.DML;
 import com.synclite.consolidator.oper.Delete;
 import com.synclite.consolidator.oper.DeleteIfPredicate;
 import com.synclite.consolidator.oper.FinishBatch;
@@ -392,7 +393,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 				List<Object> afterValues = new ArrayList<Object>();
 				List<Object> beforeValues = new ArrayList<Object>();
 				HashMap<TableID, Insert> tblMappedInsertOpers = new HashMap<TableID, Insert>();
-				HashMap<TableID, Update> tblMappedUpdateOpers = new HashMap<TableID, Update>();
+				HashMap<TableID, DML> tblMappedUpdateOpers = new HashMap<TableID, DML>();
 				HashMap<TableID, Delete> tblMappedDeleteOpers = new HashMap<TableID, Delete>();
 
 				ConsolidatorSrcTable srcTable = null;
@@ -710,13 +711,17 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								//Optimization to avoid new UPDATE operation, new mapped operation 
 								//and multiple copies of args being created here
 								//
-								Update mappedUpdate = tblMappedUpdateOpers.get(srcTable.id);
+								DML mappedUpdate = tblMappedUpdateOpers.get(srcTable.id);
 								if (mappedUpdate== null) {
 									Update srcUpdate = new Update(srcTable, beforeValues, afterValues);
-									mappedUpdate= (Update) tableMapper.mapOper(srcUpdate).get(0);
+									mappedUpdate= (DML) tableMapper.mapOper(srcUpdate).get(0);
 									tblMappedUpdateOpers.put(srcTable.id, mappedUpdate);
 								} else {
-									tableMapper.bindMappedUpdate(mappedUpdate, beforeValues, afterValues);
+									if (mappedUpdate.operType == OperType.DELETEINSERT) {
+										tableMapper.bindMappedInsert(mappedUpdate, afterValues);
+									} else {
+										tableMapper.bindMappedUpdate(mappedUpdate, beforeValues, afterValues);
+									}
 								}
 								dstExecutor.execute(mappedUpdate);
 								currentTxnDstTables.add(mappedUpdate.tbl.id);

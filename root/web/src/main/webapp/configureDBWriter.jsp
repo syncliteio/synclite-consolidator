@@ -127,7 +127,6 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
 		break;
 
-	case "COSMOSDB_MONGODB":
 	case "FERRETDB":	
 	case "MONGODB":
 		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
@@ -137,23 +136,6 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
 		break;
 		
-	case "AUZRE_EVENTHUB":
-		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
-		properties.put("dst-update-batch-size-" + dstIndex, "100000");
-		properties.put("dst-delete-batch-size-" + dstIndex, "100000");
-		properties.put("dst-txn-retry-count-" + dstIndex, "10");
-		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
-		break;
-		
-	case "MSSQL":
-	case "MSFABRICDW":
-		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
-		properties.put("dst-update-batch-size-" + dstIndex, "100000");
-		properties.put("dst-delete-batch-size-" + dstIndex, "100000");
-		properties.put("dst-txn-retry-count-" + dstIndex, "100");
-		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
-		break;
-
 	case "MYSQL":
 		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
 		properties.put("dst-update-batch-size-" + dstIndex, "100000");
@@ -163,7 +145,6 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		break;
 
 	case "POSTGRESQL":
-	case "PARADEDB":
 		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
 		properties.put("dst-update-batch-size-" + dstIndex, "100000");
 		properties.put("dst-delete-batch-size-" + dstIndex, "100000");
@@ -171,38 +152,6 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
 		break;
 
-	case "REDSHIFT":
-		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
-		properties.put("dst-update-batch-size-" + dstIndex, "100000");
-		properties.put("dst-delete-batch-size-" + dstIndex, "100000");
-		properties.put("dst-txn-retry-count-" + dstIndex, "10");
-		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
-		break;
-
-	case "SNOWFLAKE":
-		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
-		properties.put("dst-update-batch-size-" + dstIndex, "100000");
-		properties.put("dst-delete-batch-size-" + dstIndex, "100000");
-		properties.put("dst-txn-retry-count-" + dstIndex, "100");
-		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
-		break;
-
-	case "ORACLE":
-		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
-		properties.put("dst-update-batch-size-" + dstIndex, "100000");
-		properties.put("dst-delete-batch-size-" + dstIndex, "100000");
-		properties.put("dst-txn-retry-count-" + dstIndex, "100");
-		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
-		break;
-
-	case "DB2":
-		properties.put("dst-insert-batch-size-" + dstIndex, "5000");
-		properties.put("dst-update-batch-size-" + dstIndex, "5000");
-		properties.put("dst-delete-batch-size-" + dstIndex, "5000");
-		properties.put("dst-txn-retry-count-" + dstIndex, "100");
-		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
-		break;
-	
 	case "CLICKHOUSE":
 		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
 		properties.put("dst-update-batch-size-" + dstIndex, "100000");
@@ -211,22 +160,6 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
 		break;
 	
-	case "DATALAKE":
-		if (session.getAttribute("dst-data-lake-data-format-" + dstIndex).toString().equals("SQLITE")) {
-			properties.put("dst-insert-batch-size-" + dstIndex, "100000");
-			properties.put("dst-update-batch-size-" + dstIndex, "100000");
-			properties.put("dst-delete-batch-size-" + dstIndex, "100000");
-			properties.put("dst-txn-retry-count-" + dstIndex, "100");
-			properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
-		} else {
-			properties.put("dst-insert-batch-size-" + dstIndex, "100000");
-			properties.put("dst-update-batch-size-" + dstIndex, "100000");
-			properties.put("dst-delete-batch-size-" + dstIndex, "100000");
-			properties.put("dst-txn-retry-count-" + dstIndex, "100");
-			properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
-		}
-		break;
-
 	default:
 		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
 		properties.put("dst-update-batch-size-" + dstIndex, "100000");
@@ -349,25 +282,10 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 						<td>DB Type</td>
 						<td><select id="dst-type-<%=dstIndex%>" name="dst-type-<%=dstIndex%>" disabled>
 								<%
-								if (properties.get("dst-type-" + dstIndex).equals("AMAZON_REDSHIFT")) {									
-									out.println("<option value=\"AMAZON_REDSHIFT\" selected>Amazon Redshift</option>");
-								} else {
-									out.println("<option value=\"AMAZON_REDSHIFT\">Amazon Redshift</option>");
-								}
 								if (properties.get("dst-type-" + dstIndex).equals("APACHE_ICEBERG")) {									
 									out.println("<option value=\"APACHE_ICEBERG\" selected>Apache Iceberg</option>");
 								} else {
 									out.println("<option value=\"APACHE_ICEBERG\">Apache Iceberg</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("COSMOSDB_MONGODB")) {
-									out.println("<option value=\"COSMOSDB_MONGODB\" selected>Azure CosmosDB for MongoDB</option>");
-								} else {
-									out.println("<option value=\"COSMOSDB_MONGODB\">Azure CosmosDB for MongoDB</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("AZURE_EVENTHUB")) {									
-									out.println("<option value=\"AZURE_EVENTHUB\" selected>Azure Event Hub</option>");
-								} else {
-									out.println("<option value=\"AZURE_EVENTHUB\">Azure Event Hub</option>");
 								}
 								if (properties.get("dst-type-" + dstIndex).equals("CLICKHOUSE")) {
 									out.println("<option value=\"CLICKHOUSE\" selected>ClickHouse</option>");
@@ -379,16 +297,6 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 								} else {
 									out.println("<option value=\"CSV\">CSV Files</option>");
 								}
-								if (properties.get("dst-type-" + dstIndex).equals("DATABRICKS_SQL")) {									
-									out.println("<option value=\"DATABRICKS_SQL\" selected>Databricks SQL</option>");
-								} else {
-									out.println("<option value=\"DATABRICKS_SQL\">Databricks SQL</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("DATALAKE")) {
-									out.println("<option value=\"DATALAKE\" selected>Data Lake</option>");
-								} else {
-									out.println("<option value=\"DATALAKE\">Data Lake</option>");
-								}						
 								if (properties.get("dst-type-" + dstIndex).equals("DUCKDB")) {
 									out.println("<option value=\"DUCKDB\" selected>DuckDB</option>");
 								} else {
@@ -398,21 +306,6 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 									out.println("<option value=\"FERRETDB\" selected>FerretDB</option>");
 								} else {
 									out.println("<option value=\"FERRETDB\">FerretDB</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("DB2")) {
-									out.println("<option value=\"DB2\" selected>IBM Db2</option>");
-								} else {
-									out.println("<option value=\"DB2\">IBM Db2</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("MSFABRICDW")) {
-									out.println("<option value=\"MSFABRICDW\" selected>Microsoft Fabric DW</option>");
-								} else {
-									out.println("<option value=\"MSFABRICDW\">Microsoft Fabric DW</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("MSSQL")) {
-									out.println("<option value=\"MSSQL\" selected>Microsoft SQL Server</option>");
-								} else {
-									out.println("<option value=\"MSSQL\">Microsoft SQL Server</option>");
 								}
 								if (properties.get("dst-type-" + dstIndex).equals("MONGODB")) {
 									out.println("<option value=\"MONGODB\" selected>MongoDB</option>");
@@ -424,25 +317,10 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 								} else {
 									out.println("<option value=\"MYSQL\">MySQL</option>");
 								}							
-								if (properties.get("dst-type-" + dstIndex).equals("ORACLE")) {
-									out.println("<option value=\"ORACLE\" selected>Oracle</option>");
-								} else {
-									out.println("<option value=\"ORACLE\">Oracle</option>");
-								}			
-								if (properties.get("dst-type-" + dstIndex).equals("PARADEDB")) {
-									out.println("<option value=\"PARADEDB\" selected>ParadeDB</option>");
-								} else {
-									out.println("<option value=\"PARADEDB\">ParadeDB</option>");
-								}
 								if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL")) {
 									out.println("<option value=\"POSTGRESQL\" selected>PostgreSQL</option>");
 								} else {
 									out.println("<option value=\"POSTGRESQL\">PostgreSQL</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("SNOWFLAKE")) {
-									out.println("<option value=\"SNOWFLAKE\" selected>Snowflake</option>");
-								} else {
-									out.println("<option value=\"SNOWFLAKE\">Snowflake</option>");
 								}
 								if (properties.get("dst-type-" + dstIndex).equals("SQLITE")) {
 									out.println("<option value=\"SQLITE\" selected>SQLite</option>");

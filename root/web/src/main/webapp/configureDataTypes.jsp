@@ -177,55 +177,11 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 			}
 		} else if (dstType.toString() === "MONGODB") {
 			document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = '';
-	  	} else if (dstType.toString() === "COSMOSDB_MONGODB") {
-			document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = '';
 	  	} else if (dstType.toString() === "FERRETDB") {
 			document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = '';
 	  	} else if (dstType.toString() === "CSV") {
 			document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = '';	  	
-	  	} else if (dstType.toString() === "AZURE_EVENTHUB") {
-			document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = '';		  	
-	  	} else if (dstType.toString() === "MSSQL") {
-			if (dstDataTypeMapping === "ALL_TEXT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> NVARCHAR(MAX)\n' +
-				'TEXT -> NVARCHAR(MAX)\n' +
-				'CLOB -> NVARCHAR(MAX)\n' +
-				'BLOB -> VARBINARY(MAX)\n' +
-				'REAL -> NVARCHAR(MAX)\n' +
-				'BOOLEAN -> NVARCHAR(MAX)\n' +
-				'DATE -> NVARCHAR(MAX)\n' +
-				'DATETIME -> NVARCHAR(MAX)\n';
-			} else if (dstDataTypeMapping === "BEST_EFFORT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> BIGINT\n' +
-				'TEXT -> NVARCHAR(MAX)\n' +
-				'CLOB -> NVARCHAR(MAX)\n' +
-				'BLOB -> VARBINARY(MAX)\n' +
-				'REAL -> FLOAT\n' +
-				'BOOLEAN -> BIT\n' +
-				'DATE -> DATETIME\n' +
-				'DATETIME -> DATETIME\n';
-			}
-		} else if (dstType.toString() === "MSFABRICDW") {
-			if (dstDataTypeMapping === "ALL_TEXT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> NVARCHAR(MAX)\n' +
-				'TEXT -> STRING(MAX)\n' +
-				'CLOB -> STRING(MAX)\n' +
-				'BLOB -> STRING(MAX)\n' +
-				'REAL -> STRING(MAX)\n' +
-				'BOOLEAN -> STRING(MAX)\n' +
-				'DATE -> STRING(MAX)\n' +
-				'DATETIME -> STRING(MAX)\n';
-			} else if (dstDataTypeMapping === "BEST_EFFORT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> BIGINT\n' +
-				'TEXT -> STRING(MAX)\n' +
-				'CLOB -> STRING(MAX)\n' +
-				'BLOB -> STRING(MAX)\n' +
-				'REAL -> FLOAT\n' +
-				'BOOLEAN -> BIT\n' +
-				'DATE -> DATETIME2(6)\n' +
-				'DATETIME -> DATETIME2(6)\n';
-			}
-		} else if (dstType.toString() === "MYSQL") {
+	  	} else if (dstType.toString() === "MYSQL") {
 			if (dstDataTypeMapping === "ALL_TEXT") {
 				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> TEXT\n' +
 				'TEXT -> TEXT\n' +
@@ -245,7 +201,7 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 				'DATE -> TIMESTAMP\n' +
 				'DATETIME -> TIMESTAMP\n';
 			}
-		}  else if ((dstType.toString() === "POSTGRESQL") || (dstType.toString() === "PARADEDB")) {
+		}  else if ((dstType.toString() === "POSTGRESQL")) {
 			if (dstDataTypeMapping === "ALL_TEXT") {
 				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> TEXT\n' +
 				'TEXT -> TEXT\n' +
@@ -261,66 +217,6 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 				'CLOB -> TEXT\n' +
 				'BLOB -> BYTEA\n' +
 				'REAL -> DOUBLE PRECISION\n' +
-				'BOOLEAN -> BOOLEAN\n' +
-				'DATE -> TIMESTAMP\n' +
-				'DATETIME -> TIMESTAMP\n';
-			}
-		} else if (dstType.toString() === "SNOWFLAKE") {
-			if (dstDataTypeMapping === "ALL_TEXT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> TEXT\n' +
-				'TEXT -> TEXT\n' +
-				'CLOB -> TEXT\n' +
-				'BLOB -> BINARY\n' +
-				'REAL -> TEXT\n' +
-				'BOOLEAN -> TEXT\n' +
-				'DATE -> TEXT\n' +
-				'DATETIME -> TEXT\n';
-			} else if (dstDataTypeMapping === "BEST_EFFORT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> BIGINT\n' +
-				'TEXT -> TEXT\n' +
-				'CLOB -> TEXT\n' +
-				'BLOB -> BINARY\n' +
-				'REAL -> DOUBLE\n' +
-				'BOOLEAN -> BOOLEAN\n' +
-				'DATE -> TIMESTAMP\n' +
-				'DATETIME -> TIMESTAMP\n';
-			}
-		} else if (dstType.toString() === "ORACLE") {
-			if (dstDataTypeMapping === "ALL_TEXT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> VARCHAR2(4000)\n' +
-				'TEXT -> VARCHAR2(4000)\n' +
-				'CLOB -> CLOB\n' +
-				'BLOB -> BLOB\n' +
-				'REAL -> VARCHAR2(4000)\n' +
-				'BOOLEAN -> VARCHAR2(4000)\n' +
-				'DATE -> VARCHAR2(4000)\n' +
-				'DATETIME -> VARCHAR2(4000)\n';
-			} else if (dstDataTypeMapping === "BEST_EFFORT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> NUMBER\n' +
-				'TEXT -> VARCHAR2(4000)\n' +
-				'CLOB -> CLOB\n' +
-				'BLOB -> BLOB\n' +
-				'REAL -> NUMBER\n' +
-				'BOOLEAN -> BOOLEAN\n' +
-				'DATE -> TIMESTAMP\n' +
-				'DATETIME -> TIMESTAMP\n';
-			}
-		} else if (dstType.toString() === "DB2") {
-			if (dstDataTypeMapping === "ALL_TEXT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> VARCHAR(32672)\n' +
-				'TEXT -> VARCHAR(32672)\n' +
-				'CLOB -> CLOB\n' +
-				'BLOB -> BLOB\n' +
-				'REAL -> VARCHAR(32672)\n' +
-				'BOOLEAN -> VARCHAR(32672)\n' +
-				'DATE -> VARCHAR(32672)\n' +
-				'DATETIME -> VARCHAR(32672)\n';
-			} else if (dstDataTypeMapping === "BEST_EFFORT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> BIGINT\n' +
-				'TEXT -> VARCHAR(32672)\n' +
-				'CLOB -> CLOB\n' +
-				'BLOB -> BLOB\n' +
-				'REAL -> DOUBLE\n' +
 				'BOOLEAN -> BOOLEAN\n' +
 				'DATE -> TIMESTAMP\n' +
 				'DATETIME -> TIMESTAMP\n';
@@ -345,46 +241,6 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 				'DATE -> DateTime\n' +
 				'DATETIME -> DateTime\n';
 			}
-		} else if (dstType.toString() === "REDSHIFT") {
-			if (dstDataTypeMapping === "ALL_TEXT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> VARCHAR(MAX)\n' +
-				'TEXT -> VARCHAR(MAX)\n' +
-				'CLOB -> VARCHAR(MAX)\n' +
-				'BLOB -> BYTEA\n' +
-				'REAL -> VARCHAR(MAX)\n' +
-				'BOOLEAN -> VARCHAR(MAX)\n' +
-				'DATE -> VARCHAR(MAX)\n' +
-				'DATETIME -> VARCHAR(MAX)\n';
-			} else if (dstDataTypeMapping === "BEST_EFFORT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> BIGINT\n' +
-				'TEXT -> VARCHAR(MAX)\n' +
-				'CLOB -> VARCHAR(MAX)\n' +
-				'BLOB -> BYTEA\n' +
-				'REAL -> DOUBLE PRECISION\n' +
-				'BOOLEAN -> BOOLEAN\n' +
-				'DATE -> TIMESTAMP\n' +
-				'DATETIME -> TIMESTAMP\n';
-			}
-		} else if (dstType.toString() === "DATABRICKS_SQL") {
-			if (dstDataTypeMapping === "ALL_TEXT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> STIRNG\n' +
-				'TEXT -> STRING\n' +
-				'CLOB -> STRING\n' +
-				'BLOB -> BINARY\n' +
-				'REAL -> STRING\n' +
-				'BOOLEAN -> STRING\n' +
-				'DATE -> STRING\n' +
-				'DATETIME -> STRING\n';
-			} else if (dstDataTypeMapping === "BEST_EFFORT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> BIGINT\n' +
-				'TEXT -> STRING\n' +
-				'CLOB -> STRING\n' +
-				'BLOB -> BINARY\n' +
-				'REAL -> DOUBLE\n' +
-				'BOOLEAN -> BOOLEAN\n' +
-				'DATE -> TIMESTAMP\n' +
-				'DATETIME -> TIMESTAMP\n';
-			}
 		} else if (dstType.toString() === "APACHE_ICEBERG") {
 			if (dstDataTypeMapping === "ALL_TEXT") {
 				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> STRING\n' +
@@ -405,27 +261,7 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 				'DATE -> TIMESTAMP\n' +
 				'DATETIME -> TIMESTAMP\n';
 			}
-		} else if (dstType.toString() === "APACHE_HIVE") {
-			if (dstDataTypeMapping === "ALL_TEXT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> STRING\n' +
-				'TEXT -> STRING\n' +
-				'CLOB -> STRING\n' +
-				'BLOB -> STRING\n' +
-				'REAL -> STRING\n' +
-				'BOOLEAN -> STRING\n' +
-				'DATE -> STRING\n' +
-				'DATETIME -> STRING\n';
-			} else if (dstDataTypeMapping === "BEST_EFFORT") {
-				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> BIGINT\n' +
-				'TEXT -> STRING\n' +
-				'CLOB -> STRING\n' +
-				'BLOB -> STRING\n' +
-				'REAL -> DOUBLE\n' +
-				'BOOLEAN -> BOOLEAN\n' +
-				'DATE -> DATE\n' +
-				'DATETIME -> TIMESTAMP\n';
-			}
-		}
+		} 
 		//document.getElementById("dst-data-type-all-mappings").value = document.getElementById("dst-data-type-all-mappings").innerHTML;
 		//document.getElementById("dst-data-type-all-mappings").innerText = document.getElementById("dst-data-type-all-mappings").innerHTML;
 		if (dstDataTypeMapping === "CUSTOMIZED") {
@@ -464,25 +300,10 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 						<td>Destination Database Type</td>
 						<td><select id="dst-type-<%=dstIndex%>" name="dst-type-<%=dstIndex%>" disabled>
 								<%
-								if (properties.get("dst-type-" + dstIndex).equals("AMAZON_REDSHIFT")) {									
-									out.println("<option value=\"AMAZON_REDSHIFT\" selected>Amazon Redshift</option>");
-								} else {
-									out.println("<option value=\"AMAZON_REDSHIFT\">Amazon Redshift</option>");
-								}
 								if (properties.get("dst-type-" + dstIndex).equals("APACHE_ICEBERG")) {									
 									out.println("<option value=\"APACHE_ICEBERG\" selected>Apache Iceberg</option>");
 								} else {
 									out.println("<option value=\"APACHE_ICEBERG\">Apache Iceberg</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("COSMOSDB_MONGODB")) {
-									out.println("<option value=\"COSMOSDB_MONGODB\" selected>Azure CosmosDB for MongoDB</option>");
-								} else {
-									out.println("<option value=\"COSMOSDB_MONGODB\">Azure CosmosDB for MongoDB</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("AZURE_EVENTHUB")) {									
-									out.println("<option value=\"AZURE_EVENTHUB\" selected>Azure Event Hub</option>");
-								} else {
-									out.println("<option value=\"AZURE_EVENTHUB\">Azure Event Hub</option>");
 								}
 								if (properties.get("dst-type-" + dstIndex).equals("CLICKHOUSE")) {
 									out.println("<option value=\"CLICKHOUSE\" selected>ClickHouse</option>");
@@ -494,16 +315,6 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 								} else {
 									out.println("<option value=\"CSV\">CSV Files</option>");
 								}
-								if (properties.get("dst-type-" + dstIndex).equals("DATABRICKS_SQL")) {									
-									out.println("<option value=\"DATABRICKS_SQL\" selected>Databricks SQL</option>");
-								} else {
-									out.println("<option value=\"DATABRICKS_SQL\">Databricks SQL</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("DATALAKE")) {
-									out.println("<option value=\"DATALAKE\" selected>Data Lake</option>");
-								} else {
-									out.println("<option value=\"DATALAKE\">Data Lake</option>");
-								}
 								if (properties.get("dst-type-" + dstIndex).equals("DUCKDB")) {
 									out.println("<option value=\"DUCKDB\" selected>DuckDB</option>");
 								} else {
@@ -513,21 +324,6 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 									out.println("<option value=\"FERRETDB\" selected>FerretDB</option>");
 								} else {
 									out.println("<option value=\"FERRETDB\">FerretDB</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("DB2")) {
-									out.println("<option value=\"DB2\" selected>IBM Db2</option>");
-								} else {
-									out.println("<option value=\"DB2\">IBM Db2</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("MSFABRICDW")) {
-									out.println("<option value=\"MSFABRICDW\" selected>Microsoft Fabric DW</option>");
-								} else {
-									out.println("<option value=\"MSFABRICDW\">Microsoft Fabric DW</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("MSSQL")) {
-									out.println("<option value=\"MSSQL\" selected>Microsoft SQL Server</option>");
-								} else {
-									out.println("<option value=\"MSSQL\">Microsoft SQL Server</option>");
 								}
 								if (properties.get("dst-type-" + dstIndex).equals("MONGODB")) {
 									out.println("<option value=\"MONGODB\" selected>MongoDB</option>");
@@ -539,24 +335,10 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 								} else {
 									out.println("<option value=\"MYSQL\">MySQL</option>");
 								}							
-								if (properties.get("dst-type-" + dstIndex).equals("ORACLE")) {
-									out.println("<option value=\"ORACLE\" selected>Oracle</option>");
-								} else {
-									out.println("<option value=\"ORACLE\">Oracle</option>");
-								} if (properties.get("dst-type-" + dstIndex).equals("PARADEDB")) {
-									out.println("<option value=\"PARADEDB\" selected>ParadeDB</option>");
-								} else {
-									out.println("<option value=\"PARADEDB\">ParadeDB</option>");
-								}
 								if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL")) {
 									out.println("<option value=\"POSTGRESQL\" selected>PostgreSQL</option>");
 								} else {
 									out.println("<option value=\"POSTGRESQL\">PostgreSQL</option>");
-								}
-								if (properties.get("dst-type-" + dstIndex).equals("SNOWFLAKE")) {
-									out.println("<option value=\"SNOWFLAKE\" selected>Snowflake</option>");
-								} else {
-									out.println("<option value=\"SNOWFLAKE\">Snowflake</option>");
 								}
 								if (properties.get("dst-type-" + dstIndex).equals("SQLITE")) {
 									out.println("<option value=\"SQLITE\" selected>SQLite</option>");

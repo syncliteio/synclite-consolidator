@@ -71,7 +71,10 @@ public class JDBCConnector {
         	switch (ConfLoader.getInstance().getDstType(dstIndex)) {
         	case APACHE_ICEBERG:
         		INSTANCES[dstIndex] = new SparkConnector(dstIndex);
-        		break;        		
+        		break;
+        	case FERRETDB:
+        		INSTANCES[dstIndex] = new FerretDBConnector(dstIndex);
+        		break;
         	case DUCKDB:        		
         		INSTANCES[dstIndex] = new DuckDBJDBCConnector(dstIndex);
         		break;

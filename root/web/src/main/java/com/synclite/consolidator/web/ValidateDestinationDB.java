@@ -200,6 +200,12 @@ public class ValidateDestinationDB extends HttpServlet {
 			case APACHE_ICEBERG:
 				dstTypeName = "Apache Iceberg";				
 				break;
+
+			case CLICKHOUSE:
+				dstTypeName = "ClickHouse";				
+	            Class.forName("com.clickhouse.jdbc.ClickHouseDriver");
+				validateConnection(dstConnectionString, dstConnectionTimeoutMs, dstUser, dstPassword);
+				break;
 				
 			case DUCKDB:
 				dstTypeName = "DuckDB";
@@ -221,6 +227,11 @@ public class ValidateDestinationDB extends HttpServlet {
 
 			case MONGODB:
 				dstTypeName = "MongoDB";
+				validateMongoDBConnection(dstConnectionString, dstConnectionTimeoutMs, dstDatabase, dstUser, dstPassword);
+				break;
+
+			case FERRETDB:
+				dstTypeName = "FerretDB";
 				validateMongoDBConnection(dstConnectionString, dstConnectionTimeoutMs, dstDatabase, dstUser, dstPassword);
 				break;
 				

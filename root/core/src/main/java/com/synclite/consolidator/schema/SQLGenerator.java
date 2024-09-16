@@ -61,25 +61,34 @@ public abstract class SQLGenerator {
 	        case APACHE_ICEBERG:
 	        	INSTANCES[dstIndex] = new ApacheIcebergSQLGenerator(dstIndex);
 	        	break;	        	
-	        case SQLITE:
-	            INSTANCES[dstIndex] = new SQLiteSQLGenerator(dstIndex);
-	            break;
-	            
-	        case POSTGRESQL:
-	        	INSTANCES[dstIndex] = new PGSQLGenerator(dstIndex);
-	        	break;
-	        	
-	        case MONGODB:
-	        	INSTANCES[dstIndex] = new MongoDBSQLGenerator(dstIndex);
-	        	break;
-	        	
+
+	        case CLICKHOUSE:
+	        	INSTANCES[dstIndex] = new ClickHouseSQLGenerator(dstIndex);
+	        	break;	        	
+
 	        case DUCKDB:
 	        	INSTANCES[dstIndex] = new DuckDBSQLGenerator(dstIndex);
+	        	break;
+
+	        case FERRETDB:
+	        	INSTANCES[dstIndex] = new MongoDBSQLGenerator(dstIndex);
+	        	break;
+
+	        case MONGODB:
+	        	INSTANCES[dstIndex] = new MongoDBSQLGenerator(dstIndex);
 	        	break;
 	        	
 	        case MYSQL:
 	        	INSTANCES[dstIndex] = new MySQLSQLGenerator(dstIndex);
 	        	break;
+
+	        case POSTGRESQL:
+	        	INSTANCES[dstIndex] = new PGSQLGenerator(dstIndex);
+	        	break;
+
+	        case SQLITE:
+	            INSTANCES[dstIndex] = new SQLiteSQLGenerator(dstIndex);
+	            break;
 	        	
 	        default:
 	            throw new RuntimeException("Unsupported dst type : " +  ConfLoader.getInstance().getDstType(dstIndex));

@@ -18,7 +18,9 @@ package com.synclite.consolidator.global;
 
 public enum DstType {
 	APACHE_ICEBERG,
+	CLICKHOUSE,
 	DUCKDB,
+	FERRETDB,
 	MONGODB,
     MYSQL,
 	POSTGRESQL,

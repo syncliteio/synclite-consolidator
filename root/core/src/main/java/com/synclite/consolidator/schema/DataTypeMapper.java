@@ -32,16 +32,20 @@ public abstract class DataTypeMapper {
         switch(ConfLoader.getInstance().getDstType(dstIndex)) {
         case APACHE_ICEBERG:
         	return new ApacheIcebergDataTypeMapper(dstIndex);
-        case SQLITE:
-    		return new SQLiteDataTypeMapper(dstIndex);
-        case POSTGRESQL:
-            return new PGDataTypeMapper(dstIndex);
-        case MONGODB:
-        	return new SQLiteDataTypeMapper(dstIndex);
+        case CLICKHOUSE:
+        	return new ClickHouseDataTypeMapper(dstIndex);
         case DUCKDB:    		
         	return new DuckDBDataTypeMapper(dstIndex);
+        case FERRETDB:
+        	return new SQLiteDataTypeMapper(dstIndex);
+        case MONGODB:
+        	return new SQLiteDataTypeMapper(dstIndex);
         case MYSQL:        	
         	return new MySQLDataTypeMapper(dstIndex);
+        case POSTGRESQL:
+            return new PGDataTypeMapper(dstIndex);
+        case SQLITE:
+    		return new SQLiteDataTypeMapper(dstIndex);
         }
 		return null;
     }
