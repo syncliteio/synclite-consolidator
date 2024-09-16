@@ -116,17 +116,6 @@ public class Main {
 
 			ConfLoader.getInstance().loadSyncConfigProperties(confPath);
 
-					/*
-		        PropsLoader.deviceRoot = Path.of("/home/ubuntu/sqlite");
-		        PropsLoader.dstBatchSize = 5000L;
-		        PropsLoader.dstConnStr = "jdbc:postgresql://localhost:5435/io?user=dbwrap&password=dbwrap&ssl=false";
-		        PropsLoader.dstDatabase = "io";
-		        PropsLoader.dstSchema = "public";
-		        PropsLoader.dstType = DstType.POSTGRESQL;
-		        PropsLoader.syncerType = SyncerRole.ALL;
-		        PropsLoader.syncMode = SyncMode.CONSOLIDATION;
-					 */
-
 			tryLockWorkDir();
 			switch (COMMAND) {
 			case SYNC:

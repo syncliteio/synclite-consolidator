@@ -86,7 +86,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	MongoDatabase db;
 	MongoCollection<Document> currentCollection;
 	String currentCollectionName;
-	ClientSession session;
+	//ClientSession session;
 	Document currentSetDocument = new Document();
 	Document currentWhereDocument = new Document();
 	boolean currentCollectionHasFilterMapper = false;
@@ -97,6 +97,7 @@ public class MongoDBExecutor extends JDBCExecutor {
     List<WriteModel<Document>> replaceModels = new ArrayList<>();
     List<DeleteOneModel<Document>> deleteModels = new ArrayList<>();
     //List<ReplaceOneModel<Document>> replaceModels = new ArrayList<>();
+	private ClientSession session;
     
 	public MongoDBExecutor(Device device, int dstIndex, Logger tracer) throws DstExecutionException {
 		super(device, dstIndex, tracer);
@@ -268,7 +269,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	@Override
 	protected void executeInsertBatch() throws DstExecutionException {
 		try {
-			BulkWriteResult result = currentCollection.bulkWrite(this.session, insertModels);
+			BulkWriteResult result = currentCollection.bulkWrite(getSession(), insertModels);
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to bulk write insert batch : " + e.getMessage(), e);
 		}
@@ -278,12 +279,12 @@ public class MongoDBExecutor extends JDBCExecutor {
 	protected void executeDeleteInsertBatch() throws DstExecutionException {
 		try {
 			try {
-				BulkWriteResult result = currentCollection.bulkWrite(this.session, deleteModels);			
+				BulkWriteResult result = currentCollection.bulkWrite(getSession(), deleteModels);			
 			} catch (Exception e) {
 				throw new DstExecutionException("Failed to bulk write delete subbatch of deleteinsert batch : " + e.getMessage(), e);
 			}
 			try {
-				BulkWriteResult result = currentCollection.bulkWrite(this.session, insertModels);
+				BulkWriteResult result = currentCollection.bulkWrite(getSession(), insertModels);
 			} catch (Exception e) {
 				throw new DstExecutionException("Failed to bulk write insert subbatch of deleteinsert batch : " + e.getMessage(), e);
 			}
@@ -295,7 +296,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	@Override
 	protected void executeUpsertBatch() throws DstExecutionException {
 		try {
-			BulkWriteResult result = currentCollection.bulkWrite(this.session, updateModels);
+			BulkWriteResult result = currentCollection.bulkWrite(getSession(), updateModels);
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to bulk write upsert batch : " + e.getMessage(), e);
 		}
@@ -304,7 +305,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	@Override
 	protected void executeReplaceBatch() throws DstExecutionException {
 		try {
-			BulkWriteResult result = currentCollection.bulkWrite(this.session, replaceModels);
+			BulkWriteResult result = currentCollection.bulkWrite(getSession(), replaceModels);
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to bulk write replace batch : " + e.getMessage(), e);
 		}
@@ -313,7 +314,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	@Override
 	protected void executeUpdateBatch() throws DstExecutionException {
 		try {
-			BulkWriteResult result = currentCollection.bulkWrite(this.session, updateModels);
+			BulkWriteResult result = currentCollection.bulkWrite(getSession(), updateModels);
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to bulk write update batch : " + e.getMessage(), e);
 		}
@@ -322,7 +323,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	@Override
 	protected void executeDeleteBatch() throws DstExecutionException {
 		try {
-			BulkWriteResult result = currentCollection.bulkWrite(this.session, deleteModels);
+			BulkWriteResult result = currentCollection.bulkWrite(getSession(), deleteModels);
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to bulk write delete batch : " + e.getMessage(), e);
 		}
@@ -396,10 +397,18 @@ public class MongoDBExecutor extends JDBCExecutor {
 	public void truncate(TruncateTable oper) throws DstExecutionException {
 		try {
 			MongoCollection<Document> collection = db.getCollection(oper.tbl.id.table);
-	        collection.deleteMany(this.session, new Document());
+	        collection.deleteMany(getSession(), new Document());
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to truncate collection : " + e.getMessage(), e);
 		}
+	}
+
+	private ClientSession getSession() {
+		if (this.session == null) {
+			ClientSessionOptions options = ClientSessionOptions.builder().causallyConsistent(true).build();
+			this.session = this.client.startSession(options);
+		}
+		return this.session;
 	}
 
 	@Override
@@ -414,7 +423,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	        try {
 	            while (cursor.hasNext()) {
 	                Document document = cursor.next();
-	                destinationCollection.insertOne(this.session, document);
+	                destinationCollection.insertOne(getSession(), document);
 	            }
 	        } finally {
 	            cursor.close();
@@ -442,7 +451,7 @@ public class MongoDBExecutor extends JDBCExecutor {
                 Document update = new Document("$set", new Document(oper.dstCol.column, attributeValue));
 
                 // Perform an upsert operation
-                destinationCollection.updateOne(this.session, filter, update, new UpdateOptions().upsert(true));
+                destinationCollection.updateOne(getSession(), filter, update, new UpdateOptions().upsert(true));
             }
 	    } catch (Exception e) {
 			throw new DstExecutionException("Failed to execute partial update : " + e.getMessage(), e);
@@ -597,7 +606,7 @@ public class MongoDBExecutor extends JDBCExecutor {
             Document filter = new Document(colName, colVal);
 
             // Perform the delete operation
-            collection.deleteMany(this.session, filter);
+            collection.deleteMany(getSession(), filter);
 			
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to execute deleteIfPredicate dst oper : " + e.getMessage(), e);
@@ -686,7 +695,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 			}
 
 			// Delete the unmatched documents (be cautious!)
-			DeleteResult deleteResult = collection1.deleteMany(this.session, ninCriteria);
+			DeleteResult deleteResult = collection1.deleteMany(getSession(), ninCriteria);
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to execute deleteIfPredicate dst oper : " + e.getMessage(), e);
 		}
@@ -698,7 +707,7 @@ public class MongoDBExecutor extends JDBCExecutor {
             if (!db.listCollectionNames().into(new ArrayList<>()).contains(oper.tbl.id.table)) {
                 //db.createCollection(oper.tbl.id.table);
                 
-                db.createCollection(this.session, oper.tbl.id.table);
+                db.createCollection(getSession(), oper.tbl.id.table);
                 MongoCollection<Document> collection = db.getCollection(oper.tbl.id.table);
                 //If PK exists then create a unique index 
                 
@@ -715,7 +724,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	                    IndexOptions indexOptions = new IndexOptions();
 	                    indexOptions.unique(true); // Example: Make the index unique
 	                    // Create the compound index
-	                    collection.createIndex(this.session, indexKeys, indexOptions);
+	                    collection.createIndex(getSession(), indexKeys, indexOptions);
                 	} catch (Exception e) {
                 		//Ignore                		
                 	}
@@ -741,7 +750,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 		try {
             if (db.listCollectionNames().into(new ArrayList<>()).contains(oper.tbl.id.table)) {
             	MongoCollection<Document> collection =  db.getCollection(oper.tbl.id.table);
-            	collection.drop(this.session);
+            	collection.drop(getSession());
             }
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to execute dropTable dst oper : " + e.getMessage(), e);
@@ -753,7 +762,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 		try {
             if (db.listCollectionNames().into(new ArrayList<>()).contains(oper.tbl.id.table)) {
                 // Rename the collection
-                db.runCommand(this.session, new Document("renameCollection", oper.oldTable.id.table)
+                db.runCommand(getSession(), new Document("renameCollection", oper.oldTable.id.table)
                                          .append("to", oper.newTable.id.table));
                 }
 		} catch (Exception e) {
@@ -788,7 +797,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 		
 			// Remove attribute from all documents
 			Document update = new Document("$unset", new Document(oper.columns.get(0).column, ""));
-			collection.updateMany(this.session, new Document(), update);
+			collection.updateMany(getSession(), new Document(), update);
 		} catch(Exception e) {
 			throw new DstExecutionException("Failed to execute dropColumn dst oper : " + e.getMessage(), e);		
 		}
@@ -804,7 +813,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	        Document update = new Document("$rename", new Document(oper.oldName, oper.newName));
 
 	        // Perform the update operation
-	        collection.updateMany(this.session, query, update);
+	        collection.updateMany(getSession(), query, update);
 	    } catch (Exception e) {
 			throw new DstExecutionException("Failed to execute renameColumn dst oper : " + e.getMessage(), e);
 		}

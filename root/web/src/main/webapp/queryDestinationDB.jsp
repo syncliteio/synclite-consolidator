@@ -82,6 +82,9 @@ function highlightSyntax() {
 	
 	try {
 		switch(dstType) {
+		case "CLICKHOUSE":
+			Class.forName("com.clickhouse.jdbc.ClickHouseDriver");
+			break;			
 		case "DUCKDB":
 			Class.forName("org.duckdb.DuckDBDriver");
 			break;		

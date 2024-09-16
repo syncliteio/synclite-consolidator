@@ -1142,14 +1142,6 @@ public class ConfLoader {
 					if (this.dstType[dstIndex] == null) {
 						throw new SyncLitePropsException("Unsupported dst-type-" + dstIndex + " specified : " + propValue);
 					}
-					
-					if (this.edition == ConsolidatorEdition.DEVELOPER) {
-						if ((this.dstType[dstIndex] == DstType.POSTGRESQL) || (this.dstType[dstIndex] == DstType.MYSQL) || (this.dstType[dstIndex] == DstType.SQLITE) || (this.dstType[dstIndex] == DstType.DUCKDB) || (this.dstType[dstIndex] == DstType.MONGODB) || (this.dstType[dstIndex] == DstType.APACHE_ICEBERG)) {
-							//Allowed in Developer Edition
-						} else {
-							throw new SyncLitePropsException("Feature Not Supported : Destination " + this.dstType[dstIndex] + " is not supported in developer edition.");
-						}
-					}
 				} catch (IllegalArgumentException e) {
 					throw new SyncLitePropsException("Invalid dst-type-" + dstIndex + " specified : " + propValue);
 				}
@@ -1710,6 +1702,16 @@ public class ConfLoader {
 
 			//Dst Specific config validation
 			switch (dstType[dstIndex]) {
+				case CLICKHOUSE:
+					propValue = properties.get("dst-clickhouse-engine-" + dstIndex);
+					if (propValue != null) {
+						this.dstClickHouseEngine[dstIndex] = propValue;
+					} else {
+						this.dstClickHouseEngine[dstIndex] = "ReplacingMergeTree";
+					}
+					break;
+
+				case FERRETDB:	
 				case MONGODB:
 					propValue = properties.get("dst-mongodb-use-transactions-" + dstIndex);
 					if (propValue != null) {
@@ -1724,10 +1726,12 @@ public class ConfLoader {
 					} else {
 						this.dstMongoDBUseTransactions[dstIndex] = false;
 					}
-	
+
+					/*
 					if (this.dstMongoDBUseTransactions[dstIndex] == false) {
 						this.dstDisableMetadataTable[dstIndex] = true;
-					}
+					}*/
+					
 					break;
 	
 			case APACHE_ICEBERG:

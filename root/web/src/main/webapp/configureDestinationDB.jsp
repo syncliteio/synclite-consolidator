@@ -48,24 +48,14 @@ if (request.getParameter("dstIndex") != null) {
 }
 Integer numDestinations = Integer.valueOf(session.getAttribute("num-destinations").toString());
 
-String defaultConnStrSQLite = "jdbc:sqlite:" + Path.of(properties.get("device-data-root").toString(), "consolidated_db_" + dstIndex + ".sqlite") + "?journal_mode=WAL";
-String defaultConnStrDuckDB = "jdbc:duckdb:" + Path.of(properties.get("device-data-root").toString(), "consolidated_db_" + dstIndex + ".duckdb");
-String defaultConnStrSQLServer = "jdbc:sqlserver://localhost:1433;encrypt=true;trustServerCertificate=true;username=synclite;password=synclite;databaseName=synclitedb";
-String defaultConnStrMySQL = "jdbc:mysql://127.0.0.1:3306/syncliteschema?user=synclite&password=synclite";
-String defaultConnStrOracle = "jdbc:oracle:thin:syncliteschema/synclite@localhost:1521:xe";
-String defaultConnStrDB2 = "jdbc:db2://127.0.0.1:25000/syncdb";
-String defaultConnStrPostgreSQL = "jdbc:postgresql://127.0.0.1:5432/synclitedb?user=synclite&password=synclite"; 
-String defaultConnStrRedshiftSQL = "jdbc:redshift://redshift-cluster-1.abcdef123456.us-west-1.redshift.amazonaws.com:5439/synclitedb?user=synclite&password=synclite"; 
-String defaultConnStrSnowflake = "jdbc:snowflake://account.snowflakecomputing.com/?user=synclite&password=synclite&warehouse=mywh";
-String defaultConnStrClickHouse = "jdbc:ch:https://foo.ap-south-1.aws.clickhouse.cloud:8443?username=synclite&password=synclite";
-String defaultConnStrMongoDB = "mongodb://localhost:27017/?w=majority";
-String defaultConnStrFerretDB = "mongodb://synclite:synclite@localhost:27017/ferretdb?authMechanism=PLAIN";
-String defaultConnStrCosmosDBForMongoDB = "mongodb+srv://synclite:synclite@synclitedb.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000";
 String defaultConnStrCSV = "Not Applicable";
-String defaultConnStrAzureEventHub = "Endpoint=sb://synclite.servicebus.windows.net/;SharedAccessKeyName=synclite_policy;SharedAccessKey=synclite;EntityPath=synclite";
-String defaultConnStrDatabricksSQL = "jdbc:databricks://xyz.14.azuredatabricks.net:443/default;transportMode=http;ssl=1;AuthMech=3;httpPath=/sql/1.0/warehouses/9b8ad0941b1a1448";
-String defaultConnStrApacheHive = "jdbc:hive2://localhost:10000/synclitedb;user=synclite;password=synclite";
-
+String defaultConnStrClickHouse = "jdbc:ch://localhost:8123?username=synclite&password=synclite";
+String defaultConnStrDuckDB = "jdbc:duckdb:" + Path.of(properties.get("device-data-root").toString(), "consolidated_db_" + dstIndex + ".duckdb");
+String defaultConnStrFerretDB = "mongodb://synclite:synclite@localhost:27017/ferretdb?authMechanism=PLAIN";
+String defaultConnStrMongoDB = "mongodb://localhost:27017/?w=majority";
+String defaultConnStrMySQL = "jdbc:mysql://127.0.0.1:3306/syncliteschema?user=synclite&password=synclite";
+String defaultConnStrPostgreSQL = "jdbc:postgresql://127.0.0.1:5432/synclitedb?user=synclite&password=synclite"; 
+String defaultConnStrSQLite = "jdbc:sqlite:" + Path.of(properties.get("device-data-root").toString(), "consolidated_db_" + dstIndex + ".sqlite") + "?journal_mode=WAL";
 
 if (request.getParameter("dst-type-" + dstIndex) != null) {
 	properties.put("dst-type-" + dstIndex, request.getParameter("dst-type-" + dstIndex));
@@ -105,6 +95,38 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 			}
 			properties.put("dst-user-" + dstIndex, "Not Applicable");
 			properties.put("dst-password-" + dstIndex, "Not Applicable");
+			break;
+
+		case "CLICKHOUSE" :
+			if (request.getParameter("dst-connection-string-" + dstIndex) != null) {
+				properties.put("dst-connection-string-" + dstIndex, request.getParameter("dst-connection-string-" + dstIndex));
+			} else {
+				properties.put("dst-connection-string-" + dstIndex, defaultConnStrClickHouse);
+			}
+
+			if (request.getParameter("dst-user-" + dstIndex) != null) {
+				properties.put("dst-user-" + dstIndex, request.getParameter("dst-user-" + dstIndex));
+			} else {
+				properties.put("dst-user-" + dstIndex, "");
+			}
+
+			if (request.getParameter("dst-password-" + dstIndex) != null) {
+				properties.put("dst-password-" + dstIndex, request.getParameter("dst-password-" + dstIndex));
+			} else {
+				properties.put("dst-password-" + dstIndex, "");
+			}
+
+			if (request.getParameter("dst-database-" + dstIndex) != null) {
+				properties.put("dst-database-" + dstIndex, request.getParameter("dst-database-" + dstIndex));
+			} else {
+				properties.put("dst-database-" + dstIndex, "synclitedb");
+			}
+			
+			if (request.getParameter("dst-schema-" + dstIndex) != null) {
+				properties.put("dst-schema-" + dstIndex, request.getParameter("dst-schema-" + dstIndex));
+			} else {
+				properties.put("dst-schema-" + dstIndex, "Not Applicable");
+			}
 			break;
 			
 		case "DUCKDB" :
@@ -169,6 +191,38 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 			}
 			break;
 
+		case "FERRETDB" :
+			if (request.getParameter("dst-connection-string-" + dstIndex) != null) {
+				properties.put("dst-connection-string-" + dstIndex, request.getParameter("dst-connection-string-" + dstIndex));
+			} else {
+				properties.put("dst-connection-string-" + dstIndex, defaultConnStrFerretDB);
+			}
+
+			if (request.getParameter("dst-user-" + dstIndex) != null) {
+				properties.put("dst-user-" + dstIndex, request.getParameter("dst-user-" + dstIndex));
+			} else {
+				properties.put("dst-user-" + dstIndex, "");
+			}
+
+			if (request.getParameter("dst-password-" + dstIndex) != null) {
+				properties.put("dst-password-" + dstIndex, request.getParameter("dst-password-" + dstIndex));
+			} else {
+				properties.put("dst-password-" + dstIndex, "");
+			}
+
+			if (request.getParameter("dst-database-" + dstIndex) != null) {
+				properties.put("dst-database-" + dstIndex, request.getParameter("dst-database-" + dstIndex));
+			} else {
+				properties.put("dst-database-" + dstIndex, "synclitedb");
+			}
+			
+			if (request.getParameter("dst-schema-" + dstIndex) != null) {
+				properties.put("dst-schema-" + dstIndex, request.getParameter("dst-schema-" + dstIndex));
+			} else {
+				properties.put("dst-schema-" + dstIndex, "Not Applicable");
+			}
+			break;
+			
 		case "MYSQL" :
 			if (request.getParameter("dst-connection-string-" + dstIndex) != null) {
 				properties.put("dst-connection-string-" + dstIndex, request.getParameter("dst-connection-string-" + dstIndex));
@@ -624,6 +678,18 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 			document.getElementById("dst-database-<%=dstIndex%>").value = "synclitedb";
 			document.getElementById("dst-schema-<%=dstIndex%>").value = "Not Applicable";
 			document.getElementById("dst-connection-string-<%=dstIndex%>").value = "<%=defaultConnStrMongoDB%>";
+		} else if (dstType.toString() === "FERRETDB") {
+			document.getElementById("dst-database-<%=dstIndex%>").value = "synclitedb";
+			document.getElementById("dst-schema-<%=dstIndex%>").value = "Not Applicable";
+			document.getElementById("dst-connection-string-<%=dstIndex%>").value = "<%=defaultConnStrFerretDB%>";
+		} else if (dstType.toString() === "CLICKHOUSE") {
+			document.getElementById("dst-database-<%=dstIndex%>").value = "synclitedb";
+			document.getElementById("dst-database-<%=dstIndex%>").disabled = false;
+			document.getElementById("dst-database-<%=dstIndex%>").readonly= false;
+			document.getElementById("dst-schema-<%=dstIndex%>").value = "Not Applicable";
+			document.getElementById("dst-schema-<%=dstIndex%>").disabled= true;
+			document.getElementById("dst-schema-<%=dstIndex%>").readonly = true;			
+			document.getElementById("dst-connection-string-<%=dstIndex%>").value = "<%=defaultConnStrClickHouse%>";
 		} else if (dstType.toString() === "MYSQL") {
 			document.getElementById("dst-database-<%=dstIndex%>").value = "Not Applicable";
 			document.getElementById("dst-database-<%=dstIndex%>").disabled = true;
@@ -641,7 +707,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 			document.getElementById("dst-schema-<%=dstIndex%>").value = "Not Applicable";
 			document.getElementById("dst-schema-<%=dstIndex%>").disabled = true;
 			document.getElementById("dst-schema-<%=dstIndex%>").readonly = true;
-			document.getElementById("dst-connection-string-<%=dstIndex%>").value = "<%=defaultConnStrApacheHive%>";
+			document.getElementById("dst-connection-string-<%=dstIndex%>").value = "<%=defaultConnStrSQLite%>";
 		} 	 
 	}
 </script>
@@ -677,11 +743,21 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 								} else {
 									out.println("<option value=\"APACHE_ICEBERG\">Apache Iceberg</option>");
 								}
+								if (properties.get("dst-type-" + dstIndex).equals("CLICKHOUSE")) {
+									out.println("<option value=\"CLICKHOUSE\" selected>ClickHouse</option>");
+								} else {
+									out.println("<option value=\"CLICKHOUSE\">ClickHouse</option>");
+								}
 								if (properties.get("dst-type-" + dstIndex).equals("DUCKDB")) {
 									out.println("<option value=\"DUCKDB\" selected>DuckDB</option>");
 								} else {
 									out.println("<option value=\"DUCKDB\">DuckDB</option>");
-								}								
+								}
+								if (properties.get("dst-type-" + dstIndex).equals("FERRETDB")) {
+									out.println("<option value=\"FERRETDB\" selected>FerretDB</option>");
+								} else {
+									out.println("<option value=\"FERRETDB\">FerretDB</option>");
+								}
 								if (properties.get("dst-type-" + dstIndex).equals("MONGODB")) {
 									out.println("<option value=\"MONGODB\" selected>MongoDB</option>");
 								} else {
