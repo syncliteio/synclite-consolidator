@@ -112,6 +112,10 @@ public class DeviceConsolidator extends DeviceProcessor {
 			} catch(SyncLiteException e) {
 				throw new SyncLiteException("Failed to initialize the checkpoint table in SyncLite consolidator metadata file : ", e);			
 			}
+
+			ConsolidatorSrcTable replicatorCheckpointTable = ConsolidatorSrcTable.from(SyncLiteConsolidatorInfo.getCheckpointTableID(device.getDeviceUUID(), device.getDeviceName(), this.dstIndex));
+			//Block the synclite_metadata table as it should not be created on destination.
+			ConfLoader.getInstance().blockTable(dstIndex, replicatorCheckpointTable.id.table);
 		}
 	}
 

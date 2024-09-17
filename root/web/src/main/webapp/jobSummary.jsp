@@ -465,7 +465,7 @@ String saveStatusDetails = request.getParameter("saveStatusDetails");
 					out.print("<b>Quote Column Names</b> : " + session.getAttribute("dst-quote-column-names-" + dstIndex).toString() + "<br>");
 					out.print("<b>Use Catalog Scope Resolution</b> : " + session.getAttribute("dst-use-catalog-scope-resolution-" + dstIndex).toString() + "<br>");
 					out.print("<b>Use Schema Scope Resolution</b> : " + session.getAttribute("dst-use-schema-scope-resolution-" + dstIndex).toString() + "<br>");
-
+					out.print("<b>Disable SyncLite Metadata on Destination DB</b> : " + session.getAttribute("dst-disable-metadata-table-" + dstIndex).toString() + "<br>");
 					out.print("<b>Skip Failed Log Files</b> : " + session.getAttribute("dst-skip-failed-log-files-" + dstIndex).toString() + "<br>");
 					
 					if (session.getAttribute("dst-clickhouse-engine-" + dstIndex) != null) {

@@ -167,6 +167,21 @@ public class ValidateDBWriterConfiguration extends HttpServlet {
 				throw new ServletException("Please specify a valid boolean value for \"Skip Failed Log Files\"");
 			}
 
+			String dstDisableMetadataTableStr = request.getParameter("dst-disable-metadata-table-" + dstIndex);
+			try {
+				Boolean val = Boolean.valueOf(dstDisableMetadataTableStr); 
+				if (val == null) {
+					throw new ServletException("Please specify a valid boolean value for \"Disable SyncLite Metadata on Destination DB\"");
+				}
+				if (val == true) {
+					if (dstIdempotentDataIngestionStr.equals("false")) {
+						throw new ServletException("\"Idempotent Data Ingestion\" must be enabled when SyncLite Metadata is disabed on Destination DB");
+					}
+				}
+			} catch(NumberFormatException e) {
+				throw new ServletException("Please specify a valid boolean value for \"Disable SyncLite Metadata on Destination DB\"");
+			}
+
 			String dstSetUnparsableValuesToNullStr = request.getParameter("dst-set-unparsable-values-to-null-" + dstIndex);
 			try {
 				if (Boolean.valueOf(dstSetUnparsableValuesToNullStr) == null) {
@@ -292,6 +307,7 @@ public class ValidateDBWriterConfiguration extends HttpServlet {
 			request.getSession().setAttribute("dst-txn-retry-interval-ms-" + dstIndex, dstTxnRetryIntervalMsStr);
 			request.getSession().setAttribute("dst-idempotent-data-ingestion-" + dstIndex, dstIdempotentDataIngestionStr);
 			request.getSession().setAttribute("dst-idempotent-data-ingestion-method-" + dstIndex, dstIdempotentDataIngestionMethodStr);
+			request.getSession().setAttribute("dst-disable-metadata-table-" + dstIndex, dstDisableMetadataTableStr);			
 			request.getSession().setAttribute("dst-skip-failed-log-files-" + dstIndex, dstSkipFailedLogFilesStr);			
 			request.getSession().setAttribute("dst-set-unparsable-values-to-null-" + dstIndex, dstSetUnparsableValuesToNullStr);			
 			request.getSession().setAttribute("dst-quote-object-names-" + dstIndex, dstQuoteObjectNamesStr);
@@ -318,7 +334,7 @@ public class ValidateDBWriterConfiguration extends HttpServlet {
 			}
 		} catch(Exception e) {
 			//		request.setAttribute("saveStatus", "FAIL");
-			String errorMsg = "Exception : " + e.getClass() + " : " + e.getCause(); 
+			String errorMsg = "Exception : " + e.getClass() + " : " + e.getMessage(); 
 			this.globalTracer.error("Failed to validate db writer configuration for destination index : " + dstIndex + " : " + e.getMessage(), e);
 			request.getRequestDispatcher("configureDBWriter.jsp?dstIndex=" + dstIndex + "&errorMsg=" + errorMsg).forward(request, response);
 		}

@@ -544,6 +544,7 @@ public class SaveJobConfiguration extends HttpServlet {
 				builder.append("dst-txn-retry-interval-ms-" + dstIndex + " = ").append(session.getAttribute("dst-txn-retry-interval-ms-" + dstIndex).toString()).append("\n");
 				builder.append("dst-idempotent-data-ingestion-" + dstIndex + " = ").append(session.getAttribute("dst-idempotent-data-ingestion-" + dstIndex).toString()).append("\n");
 				builder.append("dst-idempotent-data-ingestion-method-" + dstIndex + " = ").append(session.getAttribute("dst-idempotent-data-ingestion-method-" + dstIndex).toString()).append("\n");
+				builder.append("dst-disable-metadata-table-" + dstIndex + " = ").append(session.getAttribute("dst-disable-metadata-table-" + dstIndex).toString()).append("\n");
 				builder.append("dst-skip-failed-log-files-" + dstIndex + " = ").append(session.getAttribute("dst-skip-failed-log-files-" + dstIndex).toString()).append("\n");
 				builder.append("dst-set-unparsable-values-to-null-" + dstIndex + " = ").append(session.getAttribute("dst-set-unparsable-values-to-null-" + dstIndex).toString()).append("\n");
 				builder.append("dst-quote-object-names-" + dstIndex + " = ").append(session.getAttribute("dst-quote-object-names-" + dstIndex).toString()).append("\n");

@@ -60,6 +60,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 	properties.put("dst-txn-retry-interval-ms-" + dstIndex, request.getParameter("dst-txn-retry-interval-ms-" + dstIndex));
 	properties.put("dst-idempotent-data-ingestion-" + dstIndex, request.getParameter("dst-idempotent-data-ingestion-" + dstIndex));
 	properties.put("dst-idempotent-data-ingestion-method-" + dstIndex, request.getParameter("dst-idempotent-data-ingestion-method-" + dstIndex));
+	properties.put("dst-disable-metadata-table-" + dstIndex, request.getParameter("dst-disable-metadata-table-" + dstIndex));
 	properties.put("dst-skip-failed-log-files-" + dstIndex, request.getParameter("dst-skip-failed-log-files-" + dstIndex));
 	properties.put("dst-set-unparsable-values-to-null-" + dstIndex, request.getParameter("dst-set-unparsable-values-to-null-" + dstIndex));
 	properties.put("dst-quote-object-names-" + dstIndex, request.getParameter("dst-quote-object-names-" + dstIndex));
@@ -168,7 +169,8 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
 		break;
 	}
-	
+
+	properties.put("dst-disable-metadata-table-" + dstIndex, "false");
 	properties.put("dst-skip-failed-log-files-" + dstIndex, "false");
 	properties.put("dst-set-unparsable-values-to-null-" + dstIndex, "false");
 	properties.put("dst-quote-object-names-" + dstIndex, "false");
@@ -633,6 +635,25 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 									out.println("<option value=\"true\">true</option>");
 								}
 								if (properties.get("dst-skip-failed-log-files-" + dstIndex).equals("false")) {
+									out.println("<option value=\"false\" selected>false</option>");
+								} else {
+									out.println("<option value=\"false\">false</option>");
+								}
+								%>
+						</select></td>
+					</tr>					
+
+					<tr>
+						<td>Disable SyncLite Metadata on Destination DB</td>
+						<td><select id="dst-disable-metadata-table-<%=dstIndex%>"
+							name="dst-disable-metadata-table-<%=dstIndex%>" title="Specify if SyncLite metadta table should not be created on destination DB. If this is set to true then metadata table is created locally by SyncLite Consolidator inside workDir. If this option is set to true then idempotent data ingestion must be set to true to ensure exactly once delivery of INSERT operations.">
+								<%
+								if (properties.get("dst-disable-metadata-table-" + dstIndex).equals("true")) {
+									out.println("<option value=\"true\" selected>true</option>");
+								} else {
+									out.println("<option value=\"true\">true</option>");
+								}
+								if (properties.get("dst-disable-metadata-table-" + dstIndex).equals("false")) {
 									out.println("<option value=\"false\" selected>false</option>");
 								} else {
 									out.println("<option value=\"false\">false</option>");
