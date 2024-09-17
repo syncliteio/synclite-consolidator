@@ -303,6 +303,9 @@ public class ConfLoader {
 		if (!getDstEnableFilterMapperRules(dstIndex)) {
 			return true;
 		}
+		if (tableName == null) {
+			return true;
+		}
 		String rule = dstTableFilterMapperRules[dstIndex].get(tableName.toUpperCase());
 		if (rule == null) {
 			//unspecified table in the rules
@@ -401,9 +404,11 @@ public class ConfLoader {
 			return columnName;
 		}
 		String rule = null;
-		if (dstColumnFilterMapperRules[dstIndex].get(tableName.toUpperCase()) != null) {
-			rule = dstColumnFilterMapperRules[dstIndex].get(tableName.toUpperCase()).get(columnName.toUpperCase());
-		} 
+		if (dstColumnFilterMapperRules[dstIndex] != null) {
+			if (dstColumnFilterMapperRules[dstIndex].get(tableName.toUpperCase()) != null) {
+				rule = dstColumnFilterMapperRules[dstIndex].get(tableName.toUpperCase()).get(columnName.toUpperCase());
+			} 
+		}
 		if (rule == null) {
 			//unspecified column in the rules
 			if (dstAllowUnspecifiedColumns[dstIndex] == true) {
@@ -1593,6 +1598,26 @@ public class ConfLoader {
 				}
 			} else {
 				this.dstIdempotentDataIngestionMethod[dstIndex] = DstIdempotentDataIngestionMethod.NATIVE_UPSERT;
+			}
+
+			propValue = properties.get("dst-disable-metadata-table-" + dstIndex);
+			if (propValue != null) {
+				try {
+					this.dstDisableMetadataTable[dstIndex] = Boolean.valueOf(propValue);
+					if ( this.dstDisableMetadataTable[dstIndex] == null) {
+						throw new SyncLitePropsException("Invalid value specified for dst-disable-metadata-table-" + dstIndex + " in configuration file : " + propValue);
+					}
+				} catch (IllegalArgumentException e) {
+					throw new SyncLitePropsException("Invalid value specified for dst-disable-metadata-table-" + dstIndex + " in configuration file : " + propValue);
+				}				
+			} else {
+				this.dstDisableMetadataTable[dstIndex] = false;
+			}
+			
+			if (this.dstDisableMetadataTable[dstIndex] == true) {
+				if (this.dstIdempotentDataIngestion[dstIndex] == false) {
+					throw new SyncLitePropsException("dst-idempotent-data-ingestion-" + dstIndex + " must be set to true while dst-disable-metadata-table-" + dstIndex + " is set to true in configuration file : " + propValue);
+				}
 			}
 
 			propValue = properties.get("dst-skip-failed-log-files-" + dstIndex);
@@ -2809,6 +2834,21 @@ public class ConfLoader {
 		}
 	}
 	
+	//If this is called by multiple devices in parallel then make sure they are exclusive.
+	public synchronized void blockTable(int dstIndex, String tableName) {
+		this.dstEnableFilterMapperRules[dstIndex] = true;
+		if (this.dstTableFilterMapperRules[dstIndex] == null) {
+			this.dstTableFilterMapperRules[dstIndex] = new HashMap<String, String>();
+		}
+		this.dstTableFilterMapperRules[dstIndex].put(tableName.toUpperCase(), "false");
+		if (this.dstAllowUnspecifiedTables[dstIndex] == null) {
+			this.dstAllowUnspecifiedTables[dstIndex] = true;
+		}
+		if (this.dstAllowUnspecifiedColumns[dstIndex] == null) {
+			this.dstAllowUnspecifiedColumns[dstIndex] = true;
+		}		
+	}
+	
 	private void parseFilterMapperRulesFile(Path filterMapperRulesFile, int dstIndex) throws SyncLitePropsException {		
 		this.dstTableFilterMapperRules[dstIndex] = new HashMap<String, String>();
 		this.dstTableToSrcTableMap[dstIndex] = new HashMap<String, String>();
@@ -2839,7 +2879,11 @@ public class ConfLoader {
 				if (keyTokens.length == 1) {
 					//Table rule
 					this.dstTableFilterMapperRules[dstIndex].put(key, val);
-					this.dstTableToSrcTableMap[dstIndex].put(val.toUpperCase(), key);
+					//if the value is a table then maintain a reverse map
+					//
+					if (!val.equals("true") && !val.equals("false")) {
+						this.dstTableToSrcTableMap[dstIndex].put(val.toUpperCase(), key);
+					}
 				} else if(keyTokens.length == 2) {
 					HashMap<String, String> colRules = this.dstColumnFilterMapperRules[dstIndex].get(keyTokens[0]);
 					if (colRules == null) {
