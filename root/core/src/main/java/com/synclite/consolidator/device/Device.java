@@ -741,10 +741,10 @@ public class Device {
 			break;
 		}
 		RollingFileAppender fa = new RollingFileAppender();
-		fa.setName("DeviceTracer");
+		fa.setName("SyncLiteConsolidatorDeviceTracer");
 		String deviceTraceFileName = "synclite_device.trace";
 		fa.setFile(Path.of(Device.this.rootPath.toString(), deviceTraceFileName).toString());
-		fa.setLayout(new PatternLayout("%d %-5p [%t] %m%n"));
+		fa.setLayout(new PatternLayout("%d %-5p [%c{1}] [%t] %m%n"));
 		fa.setMaxBackupIndex(10);
 		fa.setAppend(true);
 		fa.activateOptions();

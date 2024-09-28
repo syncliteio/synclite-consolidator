@@ -160,9 +160,9 @@ public class SyncDriver implements Runnable{
 			break;
 		}
 		RollingFileAppender fa = new RollingFileAppender();
-		fa.setName("FileLogger");
+		fa.setName("SyncLiteConsolidatorTracer");
 		fa.setFile(Path.of(ConfLoader.getInstance().getDeviceDataRoot().toString(), "synclite_consolidator.trace").toString());
-		fa.setLayout(new PatternLayout("%d %-5p [%c{1}] %m%n"));
+		fa.setLayout(new PatternLayout("%d %-5p [%c{1}] [%t] %m%n"));
 		fa.setMaxBackupIndex(10);
 		fa.setMaxFileSize("10MB"); // Set the maximum file size to 10 MB
 		fa.setAppend(true);
