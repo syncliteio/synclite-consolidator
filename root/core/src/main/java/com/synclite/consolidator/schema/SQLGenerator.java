@@ -82,6 +82,10 @@ public abstract class SQLGenerator {
 	        	INSTANCES[dstIndex] = new MySQLSQLGenerator(dstIndex);
 	        	break;
 
+	        case MSSQL:
+	        	INSTANCES[dstIndex] = new MSSQLSQLGenerator(dstIndex);
+	        	break;
+
 	        case POSTGRESQL:
 	        	INSTANCES[dstIndex] = new PGSQLGenerator(dstIndex);
 	        	break;

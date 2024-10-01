@@ -23,6 +23,7 @@ public enum DstType {
 	FERRETDB,
 	MONGODB,
     MYSQL,
+    MSSQL,
     POSTGRESQL,
     SQLITE,
     ALL

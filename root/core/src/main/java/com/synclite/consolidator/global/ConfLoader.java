@@ -1787,7 +1787,7 @@ public class ConfLoader {
 			if (propValue != null) {
 				dstTypeName[dstIndex] = propValue;
 			} else {
-				dstTypeName[dstIndex] = getDstName(dstType[dstIndex], dstDataLakeDataFormat[dstIndex]);
+				dstTypeName[dstIndex] = getDstName(dstType[dstIndex]);
 			}
 		}
 
@@ -2939,14 +2939,22 @@ public class ConfLoader {
 		return value;
 	}
 
-	private final String getDstName(DstType dType, DstDataLakeDataFormat dstDataLakeFormat) {
+	private final String getDstName(DstType dType) {
 		switch (dType) {
+		case CLICKHOUSE:
+			return "ClickHouse";
 		case DUCKDB:
 			return "DuckDB";
+		case FERRETDB:
+			return "FerretDB";
+		case APACHE_ICEBERG:
+			return "Apache Iceberg";
 		case MONGODB:
 			return "MongoDB";		
 		case MYSQL:
 			return "MySQL";
+		case MSSQL:
+			return "Microsoft SQL Server";
 		case POSTGRESQL:
 			return "PostgreSQL";
 		case SQLITE:

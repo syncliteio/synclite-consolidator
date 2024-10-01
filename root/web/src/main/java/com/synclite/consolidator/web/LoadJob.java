@@ -108,33 +108,32 @@ public class LoadJob extends HttpServlet {
 		request.getSession().setAttribute("job-status","STARTED");
 		request.getSession().setAttribute("job-type","SYNC");
 		//TODO fix start time for job being loaded
-		request.getSession().setAttribute("job-start-time",System.currentTimeMillis());
-		
+		request.getSession().setAttribute("job-start-time",System.currentTimeMillis());		
 	}
 
-	private final String getDstName(String dstType) {
-		String dstTypeName = dstType;
-		switch(dstType) {
-		case "DUCKDB":
-			dstTypeName = "DuckDB";
-			break;
-		case "SQLITE":
-			dstTypeName = "SQLite";
-			break;
-		case "MSSQL":
-			dstTypeName = "Microsoft SQL Server";
-			break;
-		case "MYSQL":
-			dstTypeName = "MySQL";
-			break;				
-		case "POSTGRESQL" :
-			dstTypeName = "PostgreSQL";
-			break;
-		case "SNOWFLAKE":
-			dstTypeName = "Snowflake";
-			break;
+	private final String getDstName(String dType) {
+		switch (DstType.valueOf(dType)) {
+		case CLICKHOUSE:
+			return "ClickHouse";
+		case DUCKDB:
+			return "DuckDB";
+		case FERRETDB:
+			return "FerretDB";
+		case APACHE_ICEBERG:
+			return "Apache Iceberg";
+		case MONGODB:
+			return "MongoDB";		
+		case MYSQL:
+			return "MySQL";
+		case MSSQL:
+			return "Microsoft SQL Server";
+		case POSTGRESQL:
+			return "PostgreSQL";
+		case SQLITE:
+			return "SQLite";
+		default:
+			return dType.toString();
 		}
-		return dstTypeName;
 	}
 
 	private final void loadConsolidatorConfig(HttpServletRequest request, Path propsPath) throws ServletException {

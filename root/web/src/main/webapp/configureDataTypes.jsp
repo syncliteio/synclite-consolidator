@@ -201,7 +201,27 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 				'DATE -> TIMESTAMP\n' +
 				'DATETIME -> TIMESTAMP\n';
 			}
-		}  else if ((dstType.toString() === "POSTGRESQL")) {
+		}  else if (dstType.toString() === "MSSQL") {
+			if (dstDataTypeMapping === "ALL_TEXT") {
+				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> NVARCHAR(MAX)\n' +
+				'TEXT -> NVARCHAR(MAX)\n' +
+				'CLOB -> NVARCHAR(MAX)\n' +
+				'BLOB -> VARBINARY(MAX)\n' +
+				'REAL -> NVARCHAR(MAX)\n' +
+				'BOOLEAN -> NVARCHAR(MAX)\n' +
+				'DATE -> NVARCHAR(MAX)\n' +
+				'DATETIME -> NVARCHAR(MAX)\n';
+			} else if (dstDataTypeMapping === "BEST_EFFORT") {
+				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> BIGINT\n' +
+				'TEXT -> NVARCHAR(MAX)\n' +
+				'CLOB -> NVARCHAR(MAX)\n' +
+				'BLOB -> VARBINARY(MAX)\n' +
+				'REAL -> FLOAT\n' +
+				'BOOLEAN -> BIT\n' +
+				'DATE -> DATETIME\n' +
+				'DATETIME -> DATETIME\n';
+			}
+		} else if ((dstType.toString() === "POSTGRESQL")) {
 			if (dstDataTypeMapping === "ALL_TEXT") {
 				document.getElementById("dst-data-type-all-mappings-<%=dstIndex%>").innerHTML = 'INTEGER -> TEXT\n' +
 				'TEXT -> TEXT\n' +
@@ -334,7 +354,12 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 									out.println("<option value=\"MYSQL\" selected>MySQL</option>");
 								} else {
 									out.println("<option value=\"MYSQL\">MySQL</option>");
-								}							
+								}
+								if (properties.get("dst-type-" + dstIndex).equals("MSSQL")) {
+									out.println("<option value=\"MSSQL\" selected>Microsoft SQL Server</option>");
+								} else {
+									out.println("<option value=\"MSSQL\">Microsoft SQL Server</option>");
+								}
 								if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL")) {
 									out.println("<option value=\"POSTGRESQL\" selected>PostgreSQL</option>");
 								} else {
