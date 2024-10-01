@@ -241,6 +241,13 @@ public class ValidateDestinationDB extends HttpServlet {
 				//Validate connecting to destination DB
 				validateConnection(dstConnectionString, dstConnectionTimeoutMs, dstUser, dstPassword);
 				break;
+
+			case MSSQL:
+				dstTypeName = "Microsoft SQL Server";
+				Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+				//Validate connecting to destination DB
+				validateConnection(dstConnectionString, dstConnectionTimeoutMs, dstUser, dstPassword);
+				break;
 				
 			case POSTGRESQL :
 				dstTypeName = "PostgreSQL";
@@ -364,8 +371,8 @@ public class ValidateDestinationDB extends HttpServlet {
 		} catch (Exception e) {
 			//		request.setAttribute("saveStatus", "FAIL");
 			System.out.println("exception : " + e);
-			String errorMsg = e.getMessage();
-			globalTracer.error("Failed to validate configured destination db : " +  " : " + e.getMessage(), e);
+			String errorMsg = "Failed to validate configured destination db : " + e.getMessage();
+			globalTracer.error(errorMsg, e);
 			request.getRequestDispatcher("configureDestinationDB.jsp?dstIndex=" + dstIndex + "&errorMsg=" + errorMsg).forward(request, response);
 		}
 	}

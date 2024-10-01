@@ -68,6 +68,8 @@ public abstract class SQLExecutor implements AutoCloseable{
             return new MongoDBExecutor(device, dstIndex, tracer);
         case MYSQL:
         	return new MySQLExecutor(device, dstIndex, tracer);
+        case MSSQL:
+        	return new MSSQLExecutor(device, dstIndex, tracer);
         case POSTGRESQL:
         	return new PGExecutor(device, dstIndex, tracer);
         case SQLITE:

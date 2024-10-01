@@ -42,6 +42,8 @@ public abstract class DataTypeMapper {
         	return new SQLiteDataTypeMapper(dstIndex);
         case MYSQL:        	
         	return new MySQLDataTypeMapper(dstIndex);
+        case MSSQL:  	
+        	return new MSSQLDataTypeMapper(dstIndex);
         case POSTGRESQL:
             return new PGDataTypeMapper(dstIndex);
         case SQLITE:

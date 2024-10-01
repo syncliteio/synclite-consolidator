@@ -88,12 +88,12 @@ function highlightSyntax() {
 		case "DUCKDB":
 			Class.forName("org.duckdb.DuckDBDriver");
 			break;		
-		case "MSSQL":
-			Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
-			break;
 		case "MYSQL":
 			Class.forName("com.mysql.cj.jdbc.Driver");
 			break;			
+		case "MSSQL":
+			Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+			break;
 		case "POSTGRESQL" :
 			Class.forName("org.postgresql.Driver");
 			break;

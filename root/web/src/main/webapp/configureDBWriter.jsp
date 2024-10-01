@@ -145,6 +145,14 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
 		break;
 
+	case "MSSQL":
+		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
+		properties.put("dst-update-batch-size-" + dstIndex, "100000");
+		properties.put("dst-delete-batch-size-" + dstIndex, "100000");
+		properties.put("dst-txn-retry-count-" + dstIndex, "100");
+		properties.put("dst-txn-retry-interval-ms-" + dstIndex, "10000");
+		break;
+
 	case "POSTGRESQL":
 		properties.put("dst-insert-batch-size-" + dstIndex, "100000");
 		properties.put("dst-update-batch-size-" + dstIndex, "100000");
@@ -319,6 +327,11 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 								} else {
 									out.println("<option value=\"MYSQL\">MySQL</option>");
 								}							
+								if (properties.get("dst-type-" + dstIndex).equals("MSSQL")) {
+									out.println("<option value=\"MSSQL\" selected>Microsoft SQL Server</option>");
+								} else {
+									out.println("<option value=\"MSSQL\">Microsoft SQL Server</option>");
+								}
 								if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL")) {
 									out.println("<option value=\"POSTGRESQL\" selected>PostgreSQL</option>");
 								} else {

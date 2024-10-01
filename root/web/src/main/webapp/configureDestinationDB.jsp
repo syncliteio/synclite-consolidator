@@ -56,6 +56,7 @@ String defaultConnStrMongoDB = "mongodb://localhost:27017/?w=majority";
 String defaultConnStrMySQL = "jdbc:mysql://127.0.0.1:3306/syncliteschema?user=synclite&password=synclite";
 String defaultConnStrPostgreSQL = "jdbc:postgresql://127.0.0.1:5432/synclitedb?user=synclite&password=synclite"; 
 String defaultConnStrSQLite = "jdbc:sqlite:" + Path.of(properties.get("device-data-root").toString(), "consolidated_db_" + dstIndex + ".sqlite") + "?journal_mode=WAL";
+String defaultConnStrSQLServer = "jdbc:sqlserver://localhost:1433;encrypt=true;trustServerCertificate=true;username=synclite;password=synclite;databaseName=synclitedb";
 
 if (request.getParameter("dst-type-" + dstIndex) != null) {
 	properties.put("dst-type-" + dstIndex, request.getParameter("dst-type-" + dstIndex));
@@ -190,7 +191,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 				properties.put("dst-schema-" + dstIndex, "Not Applicable");
 			}
 			break;
-
+			
 		case "FERRETDB" :
 			if (request.getParameter("dst-connection-string-" + dstIndex) != null) {
 				properties.put("dst-connection-string-" + dstIndex, request.getParameter("dst-connection-string-" + dstIndex));
@@ -286,6 +287,39 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 				properties.put("dst-schema-" + dstIndex, "syncliteschema");
 			}
 			break;
+			
+		case "MSSQL" :
+			if (request.getParameter("dst-connection-string-" + dstIndex) != null) {
+				properties.put("dst-connection-string-" + dstIndex, request.getParameter("dst-connection-string-" + dstIndex));
+			} else {
+				properties.put("dst-connection-string-" + dstIndex, defaultConnStrSQLServer);
+			}
+
+			if (request.getParameter("dst-user-" + dstIndex) != null) {
+				properties.put("dst-user-" + dstIndex, request.getParameter("dst-user-" + dstIndex));
+			} else {
+				properties.put("dst-user-" + dstIndex, "");
+			}
+
+			if (request.getParameter("dst-password-" + dstIndex) != null) {
+				properties.put("dst-password-" + dstIndex, request.getParameter("dst-password-" + dstIndex));
+			} else {
+				properties.put("dst-password-" + dstIndex, "");
+			}
+
+			if (request.getParameter("dst-database-" + dstIndex) != null) {
+				properties.put("dst-database-" + dstIndex, request.getParameter("dst-database-" + dstIndex));
+			} else {
+				properties.put("dst-database-" + dstIndex, "synclitedb");
+			}
+			
+			if (request.getParameter("dst-schema-" + dstIndex) != null) {
+				properties.put("dst-schema-" + dstIndex, request.getParameter("dst-schema-" + dstIndex));
+			} else {
+				properties.put("dst-schema-" + dstIndex, "syncliteschema");
+			}
+			break;
+	
 	}
 
 	if (request.getParameter("dst-connection-timeout-s-" + dstIndex) != null) {
@@ -697,7 +731,11 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 			document.getElementById("dst-schema-<%=dstIndex%>").value = "syncliteschema";
 			document.getElementById("dst-schema-<%=dstIndex%>").disabled= false;
 			document.getElementById("dst-schema-<%=dstIndex%>").readonly = false;			
-			document.getElementById("dst-connection-string-<%=dstIndex%>").value = "<%=defaultConnStrMySQL%>";
+			document.getElementById("dst-connection-string-<%=dstIndex%>").value = "<%=defaultConnStrMySQL%>";		
+		} else if (dstType.toString() === "MSSQL") {
+			document.getElementById("dst-database-<%=dstIndex%>").value = "synclitedb";
+			document.getElementById("dst-schema-<%=dstIndex%>").value = "syncliteschema";
+			document.getElementById("dst-connection-string-<%=dstIndex%>").value = "<%=defaultConnStrSQLServer%>";		
 		} else if (dstType.toString() === "POSTGRESQL") {
 			document.getElementById("dst-database-<%=dstIndex%>").value = "synclitedb";
 			document.getElementById("dst-schema-<%=dstIndex%>").value = "syncliteschema";
@@ -768,6 +806,11 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 								} else {
 									out.println("<option value=\"MYSQL\">MySQL</option>");
 								}							
+								if (properties.get("dst-type-" + dstIndex).equals("MSSQL")) {
+									out.println("<option value=\"MSSQL\" selected>Microsoft SQL Server</option>");
+								} else {
+									out.println("<option value=\"MSSQL\">Microsoft SQL Server</option>");
+								}
 								if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL")) {
 									out.println("<option value=\"POSTGRESQL\" selected>PostgreSQL</option>");
 								} else {
