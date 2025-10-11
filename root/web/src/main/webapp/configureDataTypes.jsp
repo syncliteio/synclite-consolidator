@@ -67,7 +67,11 @@ if (request.getParameter("dst-data-type-mapping-" + dstIndex) != null) {
 		} else if (properties.get("dst-type-" + dstIndex).toString().equals("DUCKDB")) {
 			properties.put("dst-data-type-mapping-" + dstIndex, "EXACT");
 		} else {
-			properties.put("dst-data-type-mapping-" + dstIndex, "ALL_TEXT");
+			if (session.getAttribute("dst-sync-mode").toString().equals("REPLICATION")) {
+				properties.put("dst-data-type-mapping-" + dstIndex, "BEST_EFFORT");
+			} else {
+				properties.put("dst-data-type-mapping-" + dstIndex, "ALL_TEXT");
+			}
 		}
 	}
 	

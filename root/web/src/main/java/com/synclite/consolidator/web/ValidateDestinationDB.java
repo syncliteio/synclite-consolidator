@@ -313,7 +313,7 @@ public class ValidateDestinationDB extends HttpServlet {
 				request.getSession().removeAttribute("dst-duckdb-reader-port-" + dstIndex);
 			}
 			
-			if (dstType == DstType.POSTGRESQL) {
+			if ((dstType == DstType.POSTGRESQL) || (dstType == DstType.MSSQL)) {
 				if (request.getParameter("dst-postgresql-vector-extension-enabled-" + dstIndex) != null) {
 					String val = request.getParameter("dst-postgresql-vector-extension-enabled-" + dstIndex);
 					request.getSession().setAttribute("dst-postgresql-vector-extension-enabled-" + dstIndex, val);
