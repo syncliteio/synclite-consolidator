@@ -832,8 +832,8 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 							out.println("<td><textarea id=\"dst-spark-configuration-" + dstIndex + "\" name=\"dst-spark-configuration-" + dstIndex + "\" rows=\"10\" cols=\"120\" title=\"Specify spark configurations as <confName>=<confValue> pairs, one line per config\">" + properties.get("dst-spark-configuration-" + dstIndex) + "</textarea></td>");
 							out.println("</tr>");
 						}
-						if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL")) {
-							out.println("<tr><td>PG Vector Extension Enabled</td>");
+						if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL") || properties.get("dst-type-" + dstIndex).equals("MSSQL")) {
+							out.println("<tr><td>Vector Extension Enabled</td>");
 							out.println("<td><select id=\"dst-postgresql-vector-extension-enabled-" + dstIndex + "\" name=\"dst-postgresql-vector-extension-enabled-" + dstIndex  +"\" value=\"" + properties.get("dst-postgresql-vector-extension-" + dstIndex) + "\" title=\"Specify destination file storage type\">");
 							if (properties.get("dst-postgresql-vector-extension-enabled-" + dstIndex).equals("true")) {
 								out.println("<option value=\"true\" selected>true</option>");

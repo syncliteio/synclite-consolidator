@@ -186,12 +186,11 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 	properties.put("dst-use-catalog-scope-resolution-" + dstIndex, "true");
 	properties.put("dst-use-schema-scope-resolution-" + dstIndex, "true");
 	
+	properties.put("dst-device-schema-name-policy-" + dstIndex, "SPECIFIED_DST_CATALOG_SCHEMA");
 	if(properties.get("src-app-type").equals("SYNCLITE-DBREADER")) {
 		properties.put("dst-idempotent-data-ingestion-" + dstIndex, "true");
-		properties.put("dst-device-schema-name-policy-" + dstIndex, "SPECIFIED_DST_CATALOG_SCHEMA");		
 	} else {
 		properties.put("dst-idempotent-data-ingestion-" + dstIndex, "false");
-		properties.put("dst-device-schema-name-policy-" + dstIndex, "SYNCLITE_DEVICE_ID_AND_NAME");
 	}
 	
 	//ClickHouse does not support idempotent dta ingestion.

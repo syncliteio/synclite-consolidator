@@ -29,13 +29,7 @@ public class PGDataTypeMapper extends DataTypeMapper {
     @Override
     protected DataType doMapTypeConservative(DataType type) {
         if (type.dbNativeDataType.equalsIgnoreCase("blob")) {
-            return new DataType("BYTEA", JDBCType.BLOB, getStorageClass("BYTEA"));
-        } else if ((type.javaSQLType == JDBCType.ARRAY) && (type.dbNativeDataType.equalsIgnoreCase("FLOAT[]") || type.dbNativeDataType.equalsIgnoreCase("DOUBLE[]"))) {
-        	if (ConfLoader.getInstance().getDstPGVectorExtensionEnabled(dstIndex)) {
-        		return new DataType("VECTOR", JDBCType.ARRAY, getStorageClass("TEXT"));
-        	} else {
-        		return new DataType("TEXT", JDBCType.VARCHAR, getStorageClass("TEXT"));
-        	}
+            return new DataType("BYTEA", JDBCType.BLOB, getStorageClass("BYTEA"));        
         } else {
             return new DataType("TEXT", JDBCType.VARCHAR, getStorageClass("TEXT"));
         }
@@ -43,16 +37,15 @@ public class PGDataTypeMapper extends DataTypeMapper {
 
 	@Override
 	protected DataType getBestEffortArrayDataType(DataType t) {
-        String typeToCheck = t.dbNativeDataType.toLowerCase().trim().split("[\\s(]+")[0];
-        
+        String typeToCheck = t.dbNativeDataType.toLowerCase().trim().split("[\\s(]+")[0];        
         if (ConfLoader.getInstance().getDstPGVectorExtensionEnabled(dstIndex)) {
-        	if (typeToCheck.equals("float[]") || typeToCheck.equals("vector")) {
+        	if (typeToCheck.startsWith("float") || typeToCheck.startsWith("vector")) {
         		return new DataType("VECTOR", JDBCType.ARRAY, getStorageClass("TEXT"));
         	} else {
-        		return new DataType("text[]", JDBCType.ARRAY, getStorageClass("TEXT"));
+        		return new DataType(t.dbNativeDataType, JDBCType.ARRAY, getStorageClass("TEXT"));
         	}
         } else {
-    		return new DataType("text[]", JDBCType.ARRAY, getStorageClass("TEXT"));
+    		return new DataType(t.dbNativeDataType, JDBCType.ARRAY, getStorageClass("TEXT"));
         }
 	}
     

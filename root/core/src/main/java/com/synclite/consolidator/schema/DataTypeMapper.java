@@ -192,6 +192,7 @@ public abstract class DataTypeMapper {
 
     protected DataType doMapTypeBestEffort(DataType type) {
         String typeToCheck = type.dbNativeDataType.toLowerCase().trim().split("[\\s(]+")[0];
+        typeToCheck = typeToCheck.contains("[") ? typeToCheck.substring(0, typeToCheck.indexOf('[')) + "[" : typeToCheck;
         switch(typeToCheck) {
         case "smallserial" :
         case "serial" :
@@ -225,19 +226,19 @@ public abstract class DataTypeMapper {
         case "json":
         	return getBestEffortTextDataType();
         case "array":
-		case "integer[]":
-		case "bigint[]":
-		case "text[]":
-		case "boolean[]":
-		case "float[]":
-		case "numeric[]":
-		case "timestamp[]":
-		case "date[]":
-		case "time[]":
-		case "character[]":
-		case "json[]":
-		case "jsonb[]":
-		case "vector":	
+		case "integer[":
+		case "bigint[":
+		case "text[":
+		case "boolean[":
+		case "float[":
+		case "numeric[":
+		case "timestamp[":
+		case "date[":
+		case "time[":
+		case "character[":
+		case "json[":
+		case "jsonb[":
+		case "vector":
         	//return new DataType("text", JDBCType.CLOB, StorageClass.TEXT);
         	return getBestEffortArrayDataType(type);
         case "clob":

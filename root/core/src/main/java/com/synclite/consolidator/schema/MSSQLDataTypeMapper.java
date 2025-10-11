@@ -2,6 +2,8 @@ package com.synclite.consolidator.schema;
 
 import java.sql.JDBCType;
 
+import com.synclite.consolidator.global.ConfLoader;
+
 public class MSSQLDataTypeMapper extends DataTypeMapper {
 
 	protected MSSQLDataTypeMapper(int dstIndex) {
@@ -18,8 +20,28 @@ public class MSSQLDataTypeMapper extends DataTypeMapper {
 			return new DataType("NVARCHAR(MAX)", JDBCType.NVARCHAR , getStorageClass("NVARCHAR(MAX)"));
 		} else if (type.dbNativeDataType.startsWith("NVARCHAR")){
 			return new DataType("NVARCHAR(MAX)", JDBCType.NVARCHAR, getStorageClass("NVARCHAR(MAX)"));
-		}
+		}		
 		return new DataType("VARCHAR(MAX)", JDBCType.VARCHAR, getStorageClass("VARCHAR(MAX)"));
+	}
+
+	@Override
+	protected DataType getBestEffortArrayDataType(DataType t) {
+        String typeToCheck = t.dbNativeDataType.toLowerCase().trim().split("[\\s(]+")[0];       
+        if (ConfLoader.getInstance().getDstPGVectorExtensionEnabled(dstIndex)) {
+        	if (typeToCheck.startsWith("float") || typeToCheck.startsWith("vector")) {
+				String s = typeToCheck;
+				try {
+					int subscript = Integer.parseInt(s.substring(s.indexOf('[') + 1, s.indexOf(']')));
+	        		return new DataType("VECTOR(" + subscript + ")", JDBCType.ARRAY, getStorageClass("TEXT"));
+				} catch (NumberFormatException e) {
+	        		return new DataType("TEXT", JDBCType.VARCHAR, getStorageClass("TEXT"));
+				}
+        	} else {
+        		return new DataType("TEXT", JDBCType.VARCHAR, getStorageClass("TEXT"));
+        	}
+        } else {
+    		return new DataType("TEXT", JDBCType.VARCHAR, getStorageClass("TEXT"));
+        }
 	}
 
 	@Override
