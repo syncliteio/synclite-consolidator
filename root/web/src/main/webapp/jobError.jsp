@@ -29,7 +29,10 @@
 		String jobType = request.getParameter("jobType");
 		String errorMsg = request.getParameter("errorMsg");		
 		if (errorMsg != null) {
-			out.println("<h4 style=\"color: red;\">Failed to execute " + jobType + " job : " + errorMsg + "</h4>");
+			// Escape HTML to prevent XSS
+			String safeJobType = (jobType != null) ? jobType.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") : "";
+			String safeErrorMsg = errorMsg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+			out.println("<h4 style=\"color: red;\">Failed to execute " + safeJobType + " job : " + safeErrorMsg + "</h4>");
 		}
 		%>
 	</div>

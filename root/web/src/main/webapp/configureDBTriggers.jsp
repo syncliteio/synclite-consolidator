@@ -175,8 +175,7 @@ function resetFields() {
 			out.println("<h4 style=\"color: red;\">" + errorMsg + "</h4>");
 		}
 		%>
-		<form action="${pageContext.request.contextPath}/validateDBTriggers" method="post">
-			<input type="hidden" name ="dst-index" id ="dst-index" value="<%=dstIndex%>">
+		<form action="${pageContext.request.contextPath}/validateDBTriggers" method="post">			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">			<input type="hidden" name ="dst-index" id ="dst-index" value="<%=dstIndex%>">
 		
 			<table>
 				<tbody>

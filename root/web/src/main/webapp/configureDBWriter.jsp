@@ -283,8 +283,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		%>
 
 		<form action="${pageContext.request.contextPath}/validateDBWriterConfiguration"
-			method="post">
-			<input type="hidden" name ="dst-index" id ="dst-index" value="<%=dstIndex%>">
+			method="post">			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">			<input type="hidden" name ="dst-index" id ="dst-index" value="<%=dstIndex%>">
 			<table>
 				<tbody>
 					<tr>

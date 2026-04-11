@@ -126,6 +126,7 @@ function onChangePatternType() {
 		%>
 
 		<form action="${pageContext.request.contextPath}/manageDevices" method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<table>
 				<tbody>
 					<tr>

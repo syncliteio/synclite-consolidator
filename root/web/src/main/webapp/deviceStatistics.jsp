@@ -317,6 +317,7 @@
 			<h2>Table Statistics</h2>
 			<center>
 				<form name="tableForm" id="tableForm" method="post">
+					<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 					<input type="hidden" name ="sortColumn" id="sortColumn" value=<%=sortColumn%>>
 					<input type="hidden" name ="sortOrder" id="sortOrder" value="<%=sortOrder%>">
 					<table>

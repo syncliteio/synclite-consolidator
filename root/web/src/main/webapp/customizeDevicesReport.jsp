@@ -209,6 +209,7 @@
 			}
 		%>
 		<form name="customizeDeviceForm" id="customizeDeviceForm" method="post">	
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<table>
 				<tr>
 					<td>

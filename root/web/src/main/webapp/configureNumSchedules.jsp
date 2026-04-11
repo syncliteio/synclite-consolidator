@@ -91,6 +91,7 @@
 		%>
 	
 		<form action="${pageContext.request.contextPath}/validateNumSchedules" method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<table>
 				<tbody>
 					<tr>

@@ -50,6 +50,7 @@
 		%>
 
 		<form name="confForm" method="post" action="editConfigurations">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<table>
 			<tr>
 			<td>
