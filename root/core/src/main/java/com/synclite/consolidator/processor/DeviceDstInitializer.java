@@ -89,7 +89,7 @@ public class DeviceDstInitializer {
 	}
 
 	protected void initializeDataLakeObject() throws SyncLiteException {
-		//Snapshot is not for telemetry file initialization as no one else is operating on replica file for Telemetry device.
+		//Snapshot is not for dblogger file initialization as no one else is operating on replica file for DBLogger device.
 		//We can directly initialize from replica file.
 		List<ConsolidatorSrcTable> srcTables = device.schemaReader.fetchConsolidatorSrcTables(device.getReplica(this.dstIndex), this.dstIndex);
 		Table checkpointTable = ConsolidatorSrcTable.from(SyncLiteConsolidatorInfo.getCheckpointTableID(device.getDeviceUUID(), device.getDeviceName(), this.dstIndex));
@@ -116,9 +116,9 @@ public class DeviceDstInitializer {
 							throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 						}
 						try {
-							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 						} catch (InterruptedException e1) {
-							Thread.interrupted();
+							Thread.currentThread().interrupt();
 						}
 						device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 					}
@@ -140,9 +140,9 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 				device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 			}
@@ -287,7 +287,7 @@ public class DeviceDstInitializer {
 				initTableSchema(srcTable, tableMapper);
 			}
 		} catch (SyncLiteException e) {
-			throw new SyncLiteException("Failed to initialize new telemetry file", e);
+			throw new SyncLiteException("Failed to initialize new dblogger file", e);
 		}
 	}
 
@@ -316,9 +316,9 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 				device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 			}
@@ -338,9 +338,9 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 				device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 			}
@@ -451,9 +451,9 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 				device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 			}
@@ -494,9 +494,9 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 				device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 			}

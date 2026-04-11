@@ -283,7 +283,7 @@ public class DuckDBSQLGenerator extends JDBCSQLGenerator {
         builder.append(insertColListBuilder.toString());
         builder.append(") SELECT ");
         
-        first = false;
+        first = true;
         
         StringBuilder selectColListBuilder = new StringBuilder();
         for (Column c : loadFile.tbl.columns) {

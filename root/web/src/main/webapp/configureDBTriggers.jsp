@@ -182,7 +182,7 @@ function resetFields() {
 					<tr>
 						<td>Enable Triggers</td>
 						<td>
-							<select id="dst-enable-triggers-<%=dstIndex%>" name="dst-enable-triggers-<%=dstIndex%>"  onchange="this.form.action='configureDBTriggers.jsp'; resetFields(); this.form.submit();"   title="Specify if values read from source need to be mapped to different values at destination">
+							<select id="dst-enable-triggers-<%=dstIndex%>" name="dst-enable-triggers-<%=dstIndex%>"  onchange="this.form.action='configureDBTriggers.jsp'; resetFields(); this.form.submit();"   title="Specify if database triggers should be enabled for destination tables">
 							<%
 								if (properties.get("dst-enable-triggers-" + dstIndex).equals("true")) {
 									out.println("<option value=\"true\" selected>true</option>");

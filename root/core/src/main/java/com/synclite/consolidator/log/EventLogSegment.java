@@ -303,7 +303,7 @@ public class EventLogSegment extends LogSegment {
 				try {
 					Thread.sleep(ConfLoader.getInstance().getSyncLiteOperRetryIntervalMs());
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}

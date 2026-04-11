@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.synclite.consolidator.device.Device;
 import com.synclite.consolidator.exception.SyncLiteException;
@@ -106,9 +107,9 @@ public class DeviceLogCleaner {
 		//Delete txn log files first 
 		//
 		if (device.allowsConcurrentWriters()) {
-			try {
+			try (Stream<Path> stream = Files.walk(cmdLogSegmentPath.getParent())) {
 				//Get a list of all txn files for this log segment first
-				List<Path> txnFiles = Files.walk(cmdLogSegmentPath.getParent()).filter(s->SyncLiteLoggerInfo.isTxnFileForCmdLog(cmdLogSegmentPath, s)).collect(Collectors.toList());
+				List<Path> txnFiles = stream.filter(s->SyncLiteLoggerInfo.isTxnFileForCmdLog(cmdLogSegmentPath, s)).collect(Collectors.toList());
 				//Delete each from stage first and then from local
 				for (Path f : txnFiles) {
 					Path txnFilePathInUpload = cmdLogSegmentPathInUploadDir.getParent().resolve(f.getFileName().toString());
@@ -150,9 +151,9 @@ public class DeviceLogCleaner {
 		//Delete txn log files first 
 		//
 		if (device.allowsConcurrentWriters()) {
-			try {
+			try (Stream<Path> stream = Files.walk(cmdLogSegmentPath.getParent())) {
 				//Get a list of all txn files for this log segment first
-				List<Path> txnFiles = Files.walk(cmdLogSegmentPath.getParent()).filter(s->SyncLiteLoggerInfo.isTxnFileForCmdLog(cmdLogSegmentPath, s)).collect(Collectors.toList());
+				List<Path> txnFiles = stream.filter(s->SyncLiteLoggerInfo.isTxnFileForCmdLog(cmdLogSegmentPath, s)).collect(Collectors.toList());
 
 				//Delete each from stage first and then from local
 
@@ -220,9 +221,9 @@ public class DeviceLogCleaner {
 		//Delete txn log files first 
 		//
 		if (device.allowsConcurrentWriters()) {
-			try {
+			try (Stream<Path> stream = Files.walk(eventLogSegmentPath.getParent())) {
 				//Get a list of all txn files for this log segment first
-				List<Path> txnFiles = Files.walk(eventLogSegmentPath.getParent()).filter(s->SyncLiteLoggerInfo.isTxnFileForEventLog(eventLogSegmentPath, s)).collect(Collectors.toList());
+				List<Path> txnFiles = stream.filter(s->SyncLiteLoggerInfo.isTxnFileForEventLog(eventLogSegmentPath, s)).collect(Collectors.toList());
 				//Delete each from stage first and then from local
 				for (Path f : txnFiles) {
 					Path txnFilePathInUpload = eventLogSegmentPathInUploadDir.getParent().resolve(f.getFileName().toString());

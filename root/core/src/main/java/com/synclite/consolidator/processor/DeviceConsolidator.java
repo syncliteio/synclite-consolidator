@@ -147,9 +147,9 @@ public class DeviceConsolidator extends DeviceProcessor {
 						throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+						Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}
 					device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 				}
@@ -220,7 +220,7 @@ public class DeviceConsolidator extends DeviceProcessor {
                         try {
                             Thread.sleep(PropsLoader.getInstance().getOperRetryIntervalMs());
                         } catch (InterruptedException e1) {
-                            Thread.interrupted();
+                            Thread.currentThread().interrupt();
                         }
                         device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
                     }
@@ -256,9 +256,9 @@ public class DeviceConsolidator extends DeviceProcessor {
 							}
 						}
 						try {
-							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 						} catch (InterruptedException e1) {
-							Thread.interrupted();
+							Thread.currentThread().interrupt();
 						}
 						device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 					}
@@ -561,6 +561,36 @@ public class DeviceConsolidator extends DeviceProcessor {
 										Oper addColOper= srcTable.generateAddColumnOper(newTableCols);
 										if (addColOper != null) {
 											dstExecutor.execute(addColOper.map(tableMapper));
+											try {
+												consolidatorMetadataMgr.upsertSchema(srcTable);
+											} catch (SQLException e) {
+												throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
+											}
+										}
+										++currentCDCLogSegmentOperCnt;
+									}
+									break;
+								case ALTERCOLUMN:
+									//SELECT column_index, column_name, column_type, column_not_null,
+									//column_default_value, column_primary_key, column_auto_increment
+									newTableCols = new ArrayList<Column>();
+									cdcLogSchemaReaderPstmt.setLong(1, changeNumber);
+									try (ResultSet rsSchema= cdcLogSchemaReaderPstmt.executeQuery()) {
+										while(rsSchema.next()) {
+											long cid = rsSchema.getLong(1);
+											String columnName = rsSchema.getString(2);
+											String columnType= rsSchema.getString(3);
+											int isNotNull = rsSchema.getInt(4);
+											String defaultValue = rsSchema.getString(5);
+											int isPrimaryKey = rsSchema.getInt(6);
+											int isAutoIncrement = rsSchema.getInt(7);
+											DataType dataType = new DataType(columnType, device.schemaReader.getJavaSqlType(columnType), device.schemaReader.getStorageClass(columnType));
+											Column c = new Column(cid, columnName , dataType, isNotNull, defaultValue, isPrimaryKey, isAutoIncrement);
+											newTableCols.add(c);
+										}
+										Oper alterColOper = srcTable.generateAlterColumnOper(newTableCols);
+										if (alterColOper != null) {
+											dstExecutor.execute(alterColOper.map(tableMapper));
 											try {
 												consolidatorMetadataMgr.upsertSchema(srcTable);
 											} catch (SQLException e) {

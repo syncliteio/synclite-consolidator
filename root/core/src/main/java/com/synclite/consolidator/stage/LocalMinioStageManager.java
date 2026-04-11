@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.log4j.Logger;
 
@@ -41,8 +42,8 @@ public class LocalMinioStageManager extends RemoteMinioStageManager {
 	@Override
 	public Path findObjectWithSuffix(Path container, String suffix, SyncLiteObjectType objType) throws SyncLiteStageException {
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
-			try {
-				List<Path> filesInContainer = Files.walk(container).filter(s->s.toString().endsWith(suffix)).collect(Collectors.toList());
+			try (Stream<Path> stream = Files.walk(container)) {
+				List<Path> filesInContainer = stream.filter(s->s.toString().endsWith(suffix)).collect(Collectors.toList());
 				if (filesInContainer.size() > 0) {
 					return filesInContainer.get(0);
 				} else {
@@ -54,9 +55,9 @@ public class LocalMinioStageManager extends RemoteMinioStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}				
 			}
 		}
@@ -66,8 +67,8 @@ public class LocalMinioStageManager extends RemoteMinioStageManager {
 	public List<Path> findObjectsWithSuffixPrefix(Path container, String prefix, String suffix, SyncLiteObjectType objType) throws SyncLiteStageException  {
 		List<Path> objects = null;
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
-			try {
-				objects = Files.walk(container).filter(s->(s.getFileName().toString().startsWith(prefix) && s.getFileName().toString().endsWith(suffix))).collect(Collectors.toList());
+			try (Stream<Path> stream = Files.walk(container)) {
+				objects = stream.filter(s->(s.getFileName().toString().startsWith(prefix) && s.getFileName().toString().endsWith(suffix))).collect(Collectors.toList());
 				return objects;
 			} catch (IOException e) {
 				tracer.error("Exception while finding object with prefix : " + prefix + " and suffix : " + suffix + " from device stage in container : " + container, e);				
@@ -75,9 +76,9 @@ public class LocalMinioStageManager extends RemoteMinioStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -88,8 +89,8 @@ public class LocalMinioStageManager extends RemoteMinioStageManager {
 	public List<Path> listContainers(Path startFrom, SyncLiteObjectType objType) throws SyncLiteStageException {
 		List<Path> deviceUploadRoots = new ArrayList<Path>(); 
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
-			try {
-				deviceUploadRoots = Files.walk(startFrom).filter(Files::isDirectory).collect(Collectors.toList());
+			try (Stream<Path> stream = Files.walk(startFrom)) {
+				deviceUploadRoots = stream.filter(Files::isDirectory).collect(Collectors.toList());
 				return deviceUploadRoots;
 			} catch (IOException e) {
 				tracer.error("Exception while listing containers from device stage in container : ", e);				
@@ -97,9 +98,9 @@ public class LocalMinioStageManager extends RemoteMinioStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}

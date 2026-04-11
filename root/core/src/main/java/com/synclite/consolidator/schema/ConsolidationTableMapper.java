@@ -32,8 +32,6 @@ import com.synclite.consolidator.global.DstObjectInitMode;
 import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
 import com.synclite.consolidator.oper.AddColumn;
 import com.synclite.consolidator.oper.AlterColumn;
-import com.synclite.consolidator.oper.CopyColumn;
-import com.synclite.consolidator.oper.CopyTable;
 import com.synclite.consolidator.oper.CreateTable;
 import com.synclite.consolidator.oper.DML;
 import com.synclite.consolidator.oper.Delete;
@@ -291,29 +289,29 @@ public class ConsolidationTableMapper extends TableMapper {
 
     @Override
     public List<Oper> mapOper(DropTable dropTableOper) {
-        return mapOper(new TruncateTable(dropTableOper.tbl));
+        //In CONSOLIDATION mode, ignore DROP TABLE as the target table is shared across
+        //multiple devices and must not be dropped or truncated.
+        return Collections.EMPTY_LIST;
     }
 
 
     @Override
     public List<Oper> mapOper(RenameColumn renameColumnOper) {
-        List<Oper> opers = new ArrayList<Oper>();
+        //In CONSOLIDATION mode, just add the new column without copying data.
+        //Old data stays in the old column, new data from this device will go into the new column.
         Column colToRename = renameColumnOper.columns.get(0);
         if (!ConfLoader.getInstance().isAllowedColumn(dstIndex, renameColumnOper.tbl.id.table, renameColumnOper.columns.get(0).column)) {
         	return Collections.EMPTY_LIST;
         }
         Column newCol = new Column(colToRename.cid, colToRename.column, colToRename.type, colToRename.isNotNull, colToRename.defaultValue, colToRename.pkIndex, colToRename.isAutoIncrement);
-        opers.addAll(mapOper(new AddColumn(renameColumnOper.tbl, newCol)));
-        opers.addAll(mapOper(new CopyColumn(renameColumnOper.tbl, colToRename, newCol)));
-        return opers;
+        return mapOper(new AddColumn(renameColumnOper.tbl, newCol));
     }
 
     @Override
     public List<Oper> mapOper(RenameTable renameTableOper) {
-        List<Oper> opers = new ArrayList<Oper>();
-        opers.addAll(mapOper(new CreateTable(renameTableOper.newTable)));
-        opers.addAll(mapOper(new CopyTable(renameTableOper.newTable, renameTableOper.oldTable)));
-        return opers;
+        //In CONSOLIDATION mode, just create the new table without copying data.
+        //Old data stays in the old table, new data from this device will go into the new table.
+        return mapOper(new CreateTable(renameTableOper.newTable));
     }
 
 
@@ -351,7 +349,7 @@ public class ConsolidationTableMapper extends TableMapper {
         	//Hence, we change the data type to text on any attempt to change the data type.        	
         	//
         	Column mappedCol = mapColumn(alterColumn.tbl.id, c);
-        	c.type = dataTypeMapper.getBestEffortTextDataType();
+        	mappedCol.type = dataTypeMapper.getBestEffortTextDataType();
             dstColumnsToAlter.add(mappedCol);
         }
         if (dstColumnsToAlter.isEmpty()) {

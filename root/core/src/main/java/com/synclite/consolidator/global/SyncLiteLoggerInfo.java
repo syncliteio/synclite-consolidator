@@ -163,6 +163,7 @@ public final class SyncLiteLoggerInfo {
     	case DERBY_APPENDER:
     	case H2_APPENDER:
     	case HYPERSQL_APPENDER:
+    	case STORE:
     		return true;
     	default:
     		return false;
@@ -172,7 +173,7 @@ public final class SyncLiteLoggerInfo {
 
 	public static boolean isStreamingDevice(DeviceType deviceType) {
     	switch (deviceType) {
-    	case TELEMETRY:
+    	case DBLOGGER:
     	case STREAMING:
     		return true;
     	default:

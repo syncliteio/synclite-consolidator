@@ -348,7 +348,7 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
 
     @Override
     public String getRenameTableSQL(RenameTable renameTable) {
-        return "ALTER TABLE " + getTableNameSQL(renameTable.oldTable.id) + " RENAME TO " + renameTable.newTable.id.table;
+        return "ALTER TABLE " + getTableNameSQL(renameTable.oldTable.id) + " RENAME TO " + getTableNameSQL(renameTable.newTable.id);
     }
 
     @Override
@@ -360,7 +360,7 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
 
     @Override
     public String getRenameColumnSQL(RenameColumn renameColumn) {
-        return "ALTER TABLE " + getTableNameSQL(renameColumn.tbl.id) + " RENAME COLUMN " + getColumnNameSQL(renameColumn.columns.get(0)) + " TO " + renameColumn.newName;
+        return "ALTER TABLE " + getTableNameSQL(renameColumn.tbl.id) + " RENAME COLUMN " + getColumnNameSQL(renameColumn.columns.get(0)) + " TO " + quoteColumnNameIfNeeded(renameColumn.newName);
     }
 
     protected String getColumnTypeSQLNoConstraint(Column c) {
@@ -731,7 +731,7 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
         	if (!first) {
                 insertColListBuilder.append(",");
         	}
-            insertColListBuilder.append(c.column);
+            insertColListBuilder.append(getColumnNameSQL(c));
             first = false;
         }
         
@@ -739,7 +739,7 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
         builder.append("INSERT INTO ");
         builder.append(getTableNameSQL(tbl.id));
         builder.append(" SELECT ");
-        builder.append(getTableNameSQL(tbl.id));
+        builder.append(insertColListBuilder.toString());
         builder.append(" FROM ");
         builder.append(getTableNameSQL(tmpTableID));
         return builder.toString();

@@ -334,10 +334,10 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		properties.put("dst-connection-timeout-s-" + dstIndex, "30");
 	}
 
-	if (request.getParameter("dst-postgresql-vector-extension-enabled-" + dstIndex) != null) {
-		properties.put("dst-postgresql-vector-extension-enabled-" + dstIndex, request.getParameter("dst-postgresql-vector-extension-enabled-" + dstIndex));
+	if (request.getParameter("dst-vector-extension-enabled-" + dstIndex) != null) {
+		properties.put("dst-vector-extension-enabled-" + dstIndex, request.getParameter("dst-vector-extension-enabled-" + dstIndex));
 	} else {
-		properties.put("dst-postgresql-vector-extension-enabled-" + dstIndex, "false");
+		properties.put("dst-vector-extension-enabled-" + dstIndex, "false");
 	}
 
 	if (request.getParameter("dst-alias-" + dstIndex) != null) {
@@ -841,13 +841,13 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 						}
 						if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL") || properties.get("dst-type-" + dstIndex).equals("MSSQL")) {
 							out.println("<tr><td>Vector Extension Enabled</td>");
-							out.println("<td><select id=\"dst-postgresql-vector-extension-enabled-" + dstIndex + "\" name=\"dst-postgresql-vector-extension-enabled-" + dstIndex  +"\" value=\"" + properties.get("dst-postgresql-vector-extension-" + dstIndex) + "\" title=\"Specify destination file storage type\">");
-							if (properties.get("dst-postgresql-vector-extension-enabled-" + dstIndex).equals("true")) {
+							out.println("<td><select id=\"dst-vector-extension-enabled-" + dstIndex + "\" name=\"dst-vector-extension-enabled-" + dstIndex  +"\" value=\"" + properties.get("dst-vector-extension-enabled-" + dstIndex) + "\" title=\"Specify if vector extension is enabled on destination DB\">");
+							if (properties.get("dst-vector-extension-enabled-" + dstIndex).equals("true")) {
 								out.println("<option value=\"true\" selected>true</option>");
 							} else {
 								out.println("<option value=\"true\">true</option>");
 							}
-							if (properties.get("dst-postgresql-vector-extension-enabled-" + dstIndex).equals("false")) {
+							if (properties.get("dst-vector-extension-enabled-" + dstIndex).equals("false")) {
 								out.println("<option value=\"false\" selected>false</option>");
 							} else {
 								out.println("<option value=\"false\">false</option>");

@@ -87,6 +87,11 @@ public class MSSQLSQLGenerator extends JDBCSQLGenerator {
 	}
 
 	@Override
+    protected String quote(String item) {
+    	return "[" + item + "]";
+    }
+
+	@Override
 	public boolean isPKUpdateAllowed() {
 		return true;
 	}

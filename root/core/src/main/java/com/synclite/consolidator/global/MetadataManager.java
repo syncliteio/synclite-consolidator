@@ -80,7 +80,7 @@ public class MetadataManager {
 					try {
 						Thread.sleep(ConfLoader.getInstance().getSyncLiteOperRetryIntervalMs());
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}
 				} else {
 					throw e;
@@ -107,7 +107,7 @@ public class MetadataManager {
 					try {
 						Thread.sleep(ConfLoader.getInstance().getSyncLiteOperRetryIntervalMs());
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}
 				} else {
 					throw e;
@@ -134,7 +134,7 @@ public class MetadataManager {
 					try {
 						Thread.sleep(ConfLoader.getInstance().getSyncLiteOperRetryIntervalMs());
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}
 				} else {
 					throw e;

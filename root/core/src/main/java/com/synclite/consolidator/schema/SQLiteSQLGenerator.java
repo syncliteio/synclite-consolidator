@@ -49,7 +49,7 @@ public class SQLiteSQLGenerator extends JDBCSQLGenerator {
 
 	@Override
 	public String getTableExistsCheckSQL(Table tbl) {
-		return "SELECT name FROM sqlite_master WHERE type='table' AND lower(name)='" + tbl.id.table + "'";
+		return "SELECT name FROM sqlite_master WHERE type='table' AND lower(name)='" + tbl.id.table.toLowerCase() + "'";
 	}
 
 	@Override

@@ -314,11 +314,11 @@ public class ValidateDestinationDB extends HttpServlet {
 			}
 			
 			if ((dstType == DstType.POSTGRESQL) || (dstType == DstType.MSSQL)) {
-				if (request.getParameter("dst-postgresql-vector-extension-enabled-" + dstIndex) != null) {
-					String val = request.getParameter("dst-postgresql-vector-extension-enabled-" + dstIndex);
-					request.getSession().setAttribute("dst-postgresql-vector-extension-enabled-" + dstIndex, val);
+				if (request.getParameter("dst-vector-extension-enabled-" + dstIndex) != null) {
+					String val = request.getParameter("dst-vector-extension-enabled-" + dstIndex);
+					request.getSession().setAttribute("dst-vector-extension-enabled-" + dstIndex, val);
 				} else {
-					request.getSession().removeAttribute("dst-postgresql-vector-extension-enabled-" + dstIndex);
+					request.getSession().removeAttribute("dst-vector-extension-enabled-" + dstIndex);
 				}
 			}
 			

@@ -64,9 +64,9 @@ public class ConfLoader {
 	private Set<String> excludeDeviceNames;
 	private Pattern includeDeviceIDPattern;
 	private Pattern includeDeviceNamePattern;
-	private Boolean enableReplicasForTelemetryDevices;
+	private Boolean enableReplicasForStreamingDevices;
 	private Boolean skipBadTxnFiles;
-	private Boolean disableReplicasForAppenderDevices;
+	private Boolean disableReplicasForStoreAndAppenderDevices;
 	private Long deviceCountLimit;
 	private Long perDeviceOperationCountLimit;
 	private Long perDeviceProcessedLogSizeLimit;
@@ -139,7 +139,7 @@ public class ConfLoader {
 	private Long[] dstConnectionTimeoutS;
 	private String[] dstUser;
 	private String[] dstPassword;
-	private Boolean[] dstPGVectorExtensionEnabled;
+	private Boolean[] dstVectorExtensionEnabled;
 	private String[] dstSparkConfigurations;
 	private Long[] dstInsertBatchSize;
 	private Long[] dstUpdateBatchSize;
@@ -546,8 +546,8 @@ public class ConfLoader {
 		return this.dstPassword[dstIndex];
 	}
 
-	public Boolean getDstPGVectorExtensionEnabled(int dstIndex) {
-		return this.dstPGVectorExtensionEnabled[dstIndex];
+	public Boolean getDstVectorExtensionEnabled(int dstIndex) {
+		return this.dstVectorExtensionEnabled[dstIndex];
 	}
 
 	public String getDstSparkConfigurations(int dstIndex) {
@@ -974,16 +974,16 @@ public class ConfLoader {
 		return this.failedStageOperRetryIntervalMs;
 	}
 
-	public Boolean getEnableReplicasForTelemetryDevices() {
-		return this.enableReplicasForTelemetryDevices;
+	public Boolean getEnableReplicasForStreamingDevices() {
+		return this.enableReplicasForStreamingDevices;
 	}
 
 	public Boolean getSkipBadTxnFiles() {
 		return this.skipBadTxnFiles;
 	}
 
-	public Boolean getDisableReplicasForAppenderDevices() {
-		return this.disableReplicasForAppenderDevices;
+	public Boolean getDisableReplicasForStoreAndAppenderDevices() {
+		return this.disableReplicasForStoreAndAppenderDevices;
 	}
 
 	public String getManageDevicesNameList() {
@@ -1163,7 +1163,7 @@ public class ConfLoader {
 		this.dstConnectionTimeoutS = new Long[numDestinations + 1];
 		this.dstUser = new String[numDestinations + 1];
 		this.dstPassword = new String[numDestinations + 1];
-		this.dstPGVectorExtensionEnabled  = new Boolean[numDestinations + 1];
+		this.dstVectorExtensionEnabled  = new Boolean[numDestinations + 1];
 		this.dstSparkConfigurations = new String[numDestinations + 1];
 		this.dstInsertBatchSize = new Long[numDestinations + 1];
 		this.dstUpdateBatchSize = new Long[numDestinations + 1];
@@ -1297,18 +1297,15 @@ public class ConfLoader {
 			}
 
 
-			propValue = properties.get("dst-postgresql-vector-extension-enabled-" + dstIndex);
+			propValue = properties.get("dst-vector-extension-enabled-" + dstIndex);
 			if (propValue != null) {
-				try {
-					this.dstPGVectorExtensionEnabled[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstPGVectorExtensionEnabled[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-postgresql-vector-extension-enabled--" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
-					throw new SyncLitePropsException("Invalid value specified for dst-postgresql-vector-extension-enabled-" + dstIndex + " in configuration file : " + propValue);
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
+					this.dstVectorExtensionEnabled[dstIndex] = Boolean.valueOf(propValue);
+				} else {
+					throw new SyncLitePropsException("Invalid value specified for dst-vector-extension-enabled-" + dstIndex + " in configuration file : " + propValue);
 				}
 			} else {
-				this.dstPGVectorExtensionEnabled[dstIndex] = false;
+				this.dstVectorExtensionEnabled[dstIndex] = false;
 			}
 
 			propValue = properties.get("dst-user-" + dstIndex);
@@ -1415,14 +1412,11 @@ public class ConfLoader {
 
 			propValue = properties.get("dst-enable-filter-mapper-rules-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstEnableFilterMapperRules[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstEnableFilterMapperRules[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-enable-filter-mapper-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-enable-filter-mapper-" + dstIndex + " in configuration file : " + propValue);
-				}				
+				}
 				
 				/*
 				if (this.dstEnableFilterMapperRules[dstIndex]) {
@@ -1437,12 +1431,9 @@ public class ConfLoader {
 			if (this.dstEnableFilterMapperRules[dstIndex] == true) {
 				propValue = properties.get("dst-allow-unspecified-tables-" + dstIndex);
 				if (propValue != null) {
-					try {
+					if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 						this.dstAllowUnspecifiedTables[dstIndex] = Boolean.valueOf(propValue);
-						if ( this.dstAllowUnspecifiedTables[dstIndex] == null) {
-							throw new SyncLitePropsException("Invalid value specified for dst-allow-unspecified-tables-" + dstIndex + " in configuration file : " + propValue);
-						}
-					} catch (IllegalArgumentException e) {
+					} else {
 						throw new SyncLitePropsException("Invalid value specified for dst-allow-unspecified-tables-" + dstIndex + " in configuration file : " + propValue);
 					}
 				} else {
@@ -1451,12 +1442,9 @@ public class ConfLoader {
 
 				propValue = properties.get("dst-allow-unspecified-columns-" + dstIndex);				
 				if (propValue != null) {
-					try {
+					if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 						this.dstAllowUnspecifiedColumns[dstIndex] = Boolean.valueOf(propValue);
-						if ( this.dstAllowUnspecifiedColumns[dstIndex] == null) {
-							throw new SyncLitePropsException("Invalid value specified for dst-allow-unspecified-columns-" + dstIndex + " in configuration file : " + propValue);
-						}
-					} catch (IllegalArgumentException e) {
+					} else {
 						throw new SyncLitePropsException("Invalid value specified for dst-allow-unspecified-columns-" + dstIndex + " in configuration file : " + propValue);
 					}
 				} else {
@@ -1481,20 +1469,17 @@ public class ConfLoader {
 
 			propValue = properties.get("dst-enable-value-mapper-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstEnableValueMapper[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstEnableValueMapper[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-enable-value-mapper-" + dstIndex + " in configuration file : " + propValue);
-					}
 					/*
 					if (this.dstEnableValueMapper[dstIndex]) {
 						if (this.edition == ConsolidatorEdition.DEVELOPER) {
 							throw new SyncLitePropsException("Feature Not Supported : Value Mapping is not supported in developer edition.");
 						}
 					}*/
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-enable-value-mapper-" + dstIndex + " in configuration file : " + propValue);
-				}			
+				}
 
 			} else {
 				this.dstEnableValueMapper[dstIndex] = false;
@@ -1520,20 +1505,17 @@ public class ConfLoader {
 
 			propValue = properties.get("dst-enable-triggers-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstEnableTriggers[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstEnableTriggers[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-enable-triggers-" + dstIndex + " in configuration file : " + propValue);
-					}
 					/*
 					if (this.dstEnableTriggers[dstIndex]) {
 						if (this.edition == ConsolidatorEdition.DEVELOPER) {
 							throw new SyncLitePropsException("Feature Not Supported : Triggers not supported in developer edition.");
 						}
 					} */
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-enable-triggers-" + dstIndex + " in configuration file : " + propValue);
-				}			
+				}
 
 			} else {
 				this.dstEnableTriggers[dstIndex] = false;
@@ -1560,12 +1542,9 @@ public class ConfLoader {
 			
 			propValue = properties.get("dst-oper-predicate-optimization-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstOperPredicateOpt[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstOperPredicateOpt[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-oper-predicate-optimization-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-oper-predicate-optimization-" + dstIndex + " in configuration file : " + propValue);
 				}
 			} else {
@@ -1574,12 +1553,9 @@ public class ConfLoader {
 
 			propValue = properties.get("dst-idempotent-data-ingestion-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstIdempotentDataIngestion[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstIdempotentDataIngestion[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-idempotent-data-ingestion-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-idempotent-data-ingestion-" + dstIndex + " in configuration file" + propValue);
 				}
 			} else {
@@ -1602,14 +1578,11 @@ public class ConfLoader {
 
 			propValue = properties.get("dst-disable-metadata-table-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstDisableMetadataTable[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstDisableMetadataTable[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-disable-metadata-table-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-disable-metadata-table-" + dstIndex + " in configuration file : " + propValue);
-				}				
+				}
 			} else {
 				this.dstDisableMetadataTable[dstIndex] = false;
 			}
@@ -1622,98 +1595,77 @@ public class ConfLoader {
 
 			propValue = properties.get("dst-skip-failed-log-files-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstSkipFailedLogFiles[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstSkipFailedLogFiles[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-skip-failed-log-files-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-skip-failed-log-files-" + dstIndex + " in configuration file : " + propValue);
-				}				
+				}
 			} else {
 				this.dstSkipFailedLogFiles[dstIndex] = false;
 			}
 
 			propValue = properties.get("dst-set-unparsable-values-to-null-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstSetUnparsableValuesToNull[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstSetUnparsableValuesToNull[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-set-unparsable-values-to-null-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-set-unparsable-values-to-null-" + dstIndex + " in configuration file : " + propValue);
-				}				
+				}
 			} else {
 				this.dstSetUnparsableValuesToNull[dstIndex] = false;
 			}
 
 			propValue = properties.get("dst-quote-object-names-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstQuoteObjectNames[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstQuoteObjectNames[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-quote-object-names-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-quote-object-names-" + dstIndex + " in configuration file : " + propValue);
-				}				
+				}
 			} else {
 				this.dstQuoteObjectNames[dstIndex] = false;
 			}
 
 			propValue = properties.get("dst-quote-column-names-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstQuoteColumnNames[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstQuoteColumnNames[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-quote-column-names-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-quote-column-names-" + dstIndex + " in configuration file : " + propValue);
-				}				
+				}
 			} else {
 				this.dstQuoteColumnNames[dstIndex] = false;
 			}
 
 			propValue = properties.get("dst-use-catalog-scope-resolution-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstUseCatalogScopeResolution[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstUseCatalogScopeResolution[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-use-catalog-scope-resolution-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-use-catalog-scope-resolution-" + dstIndex + " in configuration file : " + propValue);
-				}				
+				}
 			} else {
 				this.dstUseCatalogScopeResolution[dstIndex] = true;
 			}
 
 			propValue = properties.get("dst-use-schema-scope-resolution-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstUseSchemaScopeResolution[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstUseSchemaScopeResolution[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-use-schema-scope-resolution-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-use-schema-scope-resolution-" + dstIndex + " in configuration file : " + propValue);
-				}				
+				}
 			} else {
 				this.dstUseSchemaScopeResolution[dstIndex] = true;
 			}
 
 			propValue = properties.get("dst-disable-metadata-table-" + dstIndex);
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.dstDisableMetadataTable[dstIndex] = Boolean.valueOf(propValue);
-					if ( this.dstDisableMetadataTable[dstIndex] == null) {
-						throw new SyncLitePropsException("Invalid value specified for dst-disable-metadata-table-" + dstIndex + " in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for dst-disable-metadata-table-" + dstIndex + " in configuration file : " + propValue);
-				}				
+				}
 			} else {
 				this.dstDisableMetadataTable[dstIndex] = false;
 			}
@@ -1740,12 +1692,9 @@ public class ConfLoader {
 				case MONGODB:
 					propValue = properties.get("dst-mongodb-use-transactions-" + dstIndex);
 					if (propValue != null) {
-						try {
+						if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 							this.dstMongoDBUseTransactions[dstIndex] = Boolean.valueOf(propValue);
-							if ( this.dstMongoDBUseTransactions[dstIndex] == null) {
-								throw new SyncLitePropsException("Invalid value specified for dst-mongodb-use-transactions-" + dstIndex + " in configuration file : " + propValue);
-							}
-						} catch (IllegalArgumentException e) {
+						} else {
 							throw new SyncLitePropsException("Invalid value specified for dst-mongodb-use-transactions-" + dstIndex + " in configuration file : " + propValue);
 						}
 					} else {
@@ -2053,12 +2002,9 @@ public class ConfLoader {
 
 			propValue = properties.get("throttle-stage-request-rate");
 			if (propValue != null) {
-				try {
+				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 					this.throttleStageRequestRate = Boolean.valueOf(propValue);
-					if ( this.throttleStageRequestRate == null) {
-						throw new SyncLitePropsException("Invalid value specified for throttle-stage-request-rate in configuration file : " + propValue);
-					}
-				} catch (IllegalArgumentException e) {
+				} else {
 					throw new SyncLitePropsException("Invalid value specified for throttle-stage-request-rate in configuration file : " + propValue);
 				}
 			} else {
@@ -2113,12 +2059,9 @@ public class ConfLoader {
 
 		propValue = properties.get("device-encryption-enabled");
 		if (propValue != null) {
-			try {
+			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 				this.deviceEncryptionEnabled = Boolean.valueOf(propValue);
-				if ( this.deviceEncryptionEnabled == null) {
-					throw new SyncLitePropsException("Invalid value specified for device-encryption-enabled in configuration file : " + propValue);
-				}
-			} catch (IllegalArgumentException e) {
+			} else {
 				throw new SyncLitePropsException("Invalid value specified for device-encryption-enabled in configuration file : " + propValue);
 			}
 			
@@ -2133,12 +2076,9 @@ public class ConfLoader {
 
 		propValue = properties.get("enable-device-command-handler");
 		if (propValue != null) {
-			try {
+			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 				this.enableDeviceCommandHandler = Boolean.valueOf(propValue);
-				if ( this.enableDeviceCommandHandler == null) {
-					throw new SyncLitePropsException("Invalid value specified for enable-device-command-handler in configuration file : " + propValue);
-				}
-			} catch (IllegalArgumentException e) {
+			} else {
 				throw new SyncLitePropsException("Invalid value specified for enable-device-command-handler in configuration file : " + propValue);
 			}
 			/*
@@ -2172,12 +2112,9 @@ public class ConfLoader {
 
 		propValue = properties.get("enable-request-processor");
 		if (propValue != null) {
-			try {
+			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 				this.enableRequestProcessor = Boolean.valueOf(propValue);
-				if ( this.enableRequestProcessor == null) {
-					throw new SyncLitePropsException("Invalid value specified for enable-request-processor in configuration file : " + propValue);
-				}
-			} catch (IllegalArgumentException e) {
+			} else {
 				throw new SyncLitePropsException("Invalid value specified for enable-request-processor in configuration file : " + propValue);
 			}
 		} else {
@@ -2505,42 +2442,33 @@ public class ConfLoader {
 			}
 		} */
 
-		propValue = properties.get("enable-replicas-for-telemetry-devices");
+		propValue = properties.get("enable-replicas-for-streaming-devices");
 		if (propValue != null) {
-			try {
-				this.enableReplicasForTelemetryDevices = Boolean.valueOf(propValue);
-				if ( this.enableReplicasForTelemetryDevices == null) {
-					throw new SyncLitePropsException("Invalid value specified for enable-replicas-for-telemetry-devices in configuration file : " + propValue);
-				}
-			} catch (IllegalArgumentException e) {
-				throw new SyncLitePropsException("Invalid value specified for enable-replicas-for-telemetry-devices in configuration file : " + propValue);
+			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
+				this.enableReplicasForStreamingDevices = Boolean.valueOf(propValue);
+			} else {
+				throw new SyncLitePropsException("Invalid value specified for enable-replicas-for-streaming-devices in configuration file : " + propValue);
 			}
 		} else {
-			this.enableReplicasForTelemetryDevices = false;
+			this.enableReplicasForStreamingDevices = false;
 		}
 		
-		propValue = properties.get("disable-replicas-for-appender-devices");
+		propValue = properties.get("disable-replicas-for-store-and-appender-devices");
 		if (propValue != null) {
-			try {
-				this.disableReplicasForAppenderDevices = Boolean.valueOf(propValue);
-				if ( this.disableReplicasForAppenderDevices == null) {
-					throw new SyncLitePropsException("Invalid value specified for disable-replicas-for-appender-devices in configuration file : " + propValue);
-				}
-			} catch (IllegalArgumentException e) {
-				throw new SyncLitePropsException("Invalid value specified for disable-replicas-for-appender-devices in configuration file : " + propValue);
+			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
+				this.disableReplicasForStoreAndAppenderDevices = Boolean.valueOf(propValue);
+			} else {
+				throw new SyncLitePropsException("Invalid value specified for disable-replicas-for-store-and-appender-devices in configuration file : " + propValue);
 			}
 		} else {
-			this.disableReplicasForAppenderDevices = false;
+			this.disableReplicasForStoreAndAppenderDevices = false;
 		}
 
 		propValue = properties.get("skip-bad-txn-files");
 		if (propValue != null) {
-			try {
+			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 				this.skipBadTxnFiles = Boolean.valueOf(propValue);
-				if ( this.skipBadTxnFiles == null) {
-					throw new SyncLitePropsException("Invalid value specified for skip-bad-txn-files in configuration file : " + propValue);
-				}
-			} catch (IllegalArgumentException e) {
+			} else {
 				throw new SyncLitePropsException("Invalid value specified for skip-bad-txn-files in configuration file : " + propValue);
 			}
 		} else {
@@ -2549,14 +2477,10 @@ public class ConfLoader {
 
 		propValue = properties.get("gui-dashboard");
 		if (propValue != null) {
-			try {
+			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 				this.guiDashboard = Boolean.valueOf(propValue);
-				if ( this.guiDashboard == null) {
-					throw new SyncLitePropsException("Invalid value specified for gui-dashboard in configuration file : " + propValue);
-				}
-			} catch (IllegalArgumentException e) {
+			} else {
 				throw new SyncLitePropsException("Invalid value specified for gui-dashboard in configuration file : " + propValue);
-
 			}
 		} else {
 			this.guiDashboard = true;
@@ -2576,14 +2500,10 @@ public class ConfLoader {
 
 		propValue = properties.get("enable-prometheus-statistics-publisher");
 		if (propValue != null) {
-			try {
+			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 				this.enablePrometheusStatisticsPublisher = Boolean.valueOf(propValue);
-				if ( this.enablePrometheusStatisticsPublisher == null) {
-					throw new SyncLitePropsException("Invalid value specified for enable-prometheus-statistics-publisher in configuration file : " + propValue);
-				}
-			} catch (IllegalArgumentException e) {
+			} else {
 				throw new SyncLitePropsException("Invalid value specified for enable-prometheus-statistics-publisher in configuration file : " + propValue);
-
 			}
 		} else {
 			this.enablePrometheusStatisticsPublisher = false;
@@ -3045,12 +2965,9 @@ public class ConfLoader {
 
 		propValue = properties.get("remove-devices-from-dst");
 		if (propValue != null) {
-			try {
+			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
 				this.removeDevicesFromDst = Boolean.valueOf(propValue);
-				if (this.removeDevicesFromDst == null) {
-					throw new SyncLitePropsException("Invalid value specified for remove-devices-from-dst in the configuration file : " + propValue);
-				} 
-			} catch (IllegalArgumentException e) {
+			} else {
 				throw new SyncLitePropsException("Invalid value specified for remove-devices-from-dst in the configuration file : " + propValue);
 			}
 		} else {

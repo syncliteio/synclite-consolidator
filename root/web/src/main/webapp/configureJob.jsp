@@ -81,8 +81,8 @@ if (request.getParameter("dst-sync-mode") != null) {
 	properties.put("num-device-processors", request.getParameter("num-device-processors"));
 	properties.put("device-name-pattern", request.getParameter("device-name-pattern"));
 	properties.put("device-id-pattern", request.getParameter("device-id-pattern"));
-	properties.put("enable-replicas-for-telemetry-devices", request.getParameter("enable-replicas-for-telemetry-devices"));
-	properties.put("disable-replicas-for-appender-devices", request.getParameter("disable-replicas-for-appender-devices"));
+	properties.put("enable-replicas-for-streaming-devices", request.getParameter("enable-replicas-for-streaming-devices"));
+	properties.put("disable-replicas-for-store-and-appender-devices", request.getParameter("disable-replicas-for-store-and-appender-devices"));
 	properties.put("skip-bad-txn-files", request.getParameter("skip-bad-txn-files"));
 	properties.put("failed-device-retry-interval-s", request.getParameter("failed-device-retry-interval-s"));
 	properties.put("device-trace-level", request.getParameter("device-trace-level"));
@@ -118,8 +118,8 @@ if (request.getParameter("dst-sync-mode") != null) {
 	}
 	properties.put("device-name-pattern", ".*");
 	properties.put("device-id-pattern", ".*");
-	properties.put("enable-replicas-for-telemetry-devices", "false");
-	properties.put("disable-replicas-for-appender-devices", "true");	
+	properties.put("enable-replicas-for-streaming-devices", "false");
+	properties.put("disable-replicas-for-store-and-appender-devices", "true");	
 	properties.put("skip-bad-txn-files", "false");	
 	properties.put("failed-device-retry-interval-s", 30);
 	properties.put("device-trace-level", "INFO");
@@ -246,7 +246,7 @@ if (request.getParameter("dst-sync-mode") != null) {
 						<td><input type="text" id="device-name-pattern"
 							name="device-name-pattern"
 							value="<%=properties.get("device-name-pattern")%>"
-							title ="Specify a (Java) regular expression pattern of device names to allow consolidation of only a selected devices."/>
+							title ="Specify a (Java) regular expression pattern of device names to allow consolidation of only selected devices."/>
 						</td>
 					</tr>
 
@@ -255,23 +255,23 @@ if (request.getParameter("dst-sync-mode") != null) {
 						<td><input type="text" id="device-id-pattern"
 							name="device-id-pattern"
 							value="<%=properties.get("device-id-pattern")%>"
-							title ="Specify a (Java) regular expression pattern of device IDs to allow consolidation of only a selected devices."/></td>
+							title ="Specify a (Java) regular expression pattern of device IDs to allow consolidation of only selected devices."/></td>
 					</tr>
 
 					<tr>
-						<td>Enable Replicas For Streaming/Telemetry Devices</td>
+						<td>Enable Replicas For Streaming/DBLogger Devices</td>
 						<td>
-							<select id="enable-replicas-for-telemetry-devices"
-							name="enable-replicas-for-telemetry-devices"
-							value="<%=properties.get("enable-replicas-for-telemetry-devices")%>" 
-							title="Specify if a replicas must be enabled for telemetry devices. By default, replicas are disabled for telemetry devices."/>						
+							<select id="enable-replicas-for-streaming-devices"
+							name="enable-replicas-for-streaming-devices"
+							value="<%=properties.get("enable-replicas-for-streaming-devices")%>" 
+							title="Specify if replicas must be enabled for streaming devices. By default, replicas are disabled for streaming devices."/>						
 								<%
-								if (properties.get("enable-replicas-for-telemetry-devices").equals("true")) {
+								if (properties.get("enable-replicas-for-streaming-devices").equals("true")) {
 									out.println("<option value=\"true\" selected>true</option>");
 								} else {
 									out.println("<option value=\"true\">true</option>");
 								}
-								if (properties.get("enable-replicas-for-telemetry-devices").equals("false")) {
+								if (properties.get("enable-replicas-for-streaming-devices").equals("false")) {
 									out.println("<option value=\"false\" selected>false</option>");
 								} else {
 									out.println("<option value=\"false\">false</option>");
@@ -280,19 +280,19 @@ if (request.getParameter("dst-sync-mode") != null) {
 						</td>
 					</tr>
 					<tr>
-						<td>Disable Replicas For Appender Devices</td>
+						<td>Disable Replicas For Store And Appender Devices</td>
 						<td>
-							<select id="disable-replicas-for-appender-devices"
-							name="disable-replicas-for-appender-devices"
-							value="<%=properties.get("disable-replicas-for-appender-devices")%>" 
-							title="Specify if a replicas must be disabled for appender devices. By default, replicas are enabled for appender devices."/>						
+							<select id="disable-replicas-for-store-and-appender-devices"
+							name="disable-replicas-for-store-and-appender-devices"
+							value="<%=properties.get("disable-replicas-for-store-and-appender-devices")%>" 
+							title="Specify if replicas must be disabled for store and appender devices. By default, replicas are enabled for store and appender devices."/>						
 								<%
-								if (properties.get("disable-replicas-for-appender-devices").equals("true")) {
+								if (properties.get("disable-replicas-for-store-and-appender-devices").equals("true")) {
 									out.println("<option value=\"true\" selected>true</option>");
 								} else {
 									out.println("<option value=\"true\">true</option>");
 								}
-								if (properties.get("disable-replicas-for-appender-devices").equals("false")) {
+								if (properties.get("disable-replicas-for-store-and-appender-devices").equals("false")) {
 									out.println("<option value=\"false\" selected>false</option>");
 								} else {
 									out.println("<option value=\"false\">false</option>");
@@ -306,7 +306,7 @@ if (request.getParameter("dst-sync-mode") != null) {
 							<select id="skip-bad-txn-files"
 							name="skip-bad-txn-files"
 							value="<%=properties.get("skip-bad-txn-files")%>" 
-							title="Specify if missing/corrupt SyncLite transactionl files which are reffered by the incoming sqllog files should be skipped to continue consolidation/replication without failing."/>						
+							title="Specify if missing/corrupt SyncLite transactional files which are referred by the incoming sqllog files should be skipped to continue consolidation/replication without failing."/>						
 								<%
 								if (properties.get("skip-bad-txn-files").equals("true")) {
 									out.println("<option value=\"true\" selected>true</option>");
