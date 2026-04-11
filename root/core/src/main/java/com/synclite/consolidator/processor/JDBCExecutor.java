@@ -1045,7 +1045,15 @@ public abstract class JDBCExecutor extends SQLExecutor {
 		tracer.debug(prevBatchOper.tbl +  " : Flushing delete subbatch of deleteinsert batch of size : " + batchOperCount);
 		executeDeleteBatch();
 		tracer.debug(prevBatchOper.tbl +  " : Flushing insert subbatch of deleteinsert batch of size : " + batchOperCount);
-		executeInsertBatch();
+		try {
+			executeInsertBatch();
+		} catch (DstExecutionException e) {
+			if (isDuplicateKeyException(e)) {
+				throw new DstDuplicateKeyException(e);
+			} else {
+				throw e;
+			}
+		}
 	}
 
 

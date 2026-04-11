@@ -73,9 +73,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -120,9 +120,9 @@ public class S3StageManager extends DeviceStageManager {
 						throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}					
 				}
 			} catch (IOException e) {				
@@ -131,9 +131,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -164,9 +164,9 @@ public class S3StageManager extends DeviceStageManager {
 						throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}					
 				}
 			} catch (IOException e) {				
@@ -175,9 +175,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -197,9 +197,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -227,9 +227,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -259,9 +259,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -281,9 +281,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -313,9 +313,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -399,9 +399,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -424,9 +424,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -446,9 +446,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -470,9 +470,9 @@ public class S3StageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}

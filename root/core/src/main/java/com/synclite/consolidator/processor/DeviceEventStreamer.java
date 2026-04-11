@@ -111,13 +111,13 @@ public class DeviceEventStreamer extends DeviceProcessor {
 		this.applyInsertsIdempotently = ConfLoader.getInstance().getDstIdempotentDataIngestion(dstIndex);
 		this.replicaAppenderEnabled = false;
 		if (SyncLiteLoggerInfo.isAppenderDevice(device.getDeviceType())) {
-			if (ConfLoader.getInstance().getDisableReplicasForAppenderDevices()) {
+			if (ConfLoader.getInstance().getDisableReplicasForStoreAndAppenderDevices()) {
 				replicaAppenderEnabled = false;
 			} else {
 				replicaAppenderEnabled = true;
 			}
 		} else if (SyncLiteLoggerInfo.isStreamingDevice(device.getDeviceType())) {
-			if (ConfLoader.getInstance().getEnableReplicasForTelemetryDevices()) {
+			if (ConfLoader.getInstance().getEnableReplicasForStreamingDevices()) {
 				replicaAppenderEnabled = true;
 			} else {
 				replicaAppenderEnabled = false;
@@ -167,7 +167,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 			}
 			//            this.updateTxnTablePstmt = targetReplicaDB.prepare(updateTxnTableSql);
 		} catch (SQLException e) {
-			throw new SyncLiteException("Failed to initialize the synclite telemetry checkpoint table in replica : " + replicaPath, e);
+			throw new SyncLiteException("Failed to initialize the synclite dblogger checkpoint table in replica : " + replicaPath, e);
 		}
 		
 		if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
@@ -232,9 +232,9 @@ public class DeviceEventStreamer extends DeviceProcessor {
 						throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+						Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}
 					device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 				}
@@ -311,9 +311,9 @@ public class DeviceEventStreamer extends DeviceProcessor {
 							}
 						}
 						try {
-							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex));
+							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
 						} catch (InterruptedException e1) {
-							Thread.interrupted();
+							Thread.currentThread().interrupt();
 						}
 						device.tracer.error("Retry attempt : " + (i + 2)  + " : Retrying transaction after an exception from dst :" + e);
 					}
@@ -432,7 +432,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 					}
 					//
 					//Replicate the log on replica first if populateReplica option is ON
-					//Regardless of this option, we always excecute the DDL on replica file of telemetry device
+					//Regardless of this option, we always excecute the DDL on replica file of dblogger device
 					//This option is only to decide if we need to execute INSERTs and LOADs on replica file.
 					//System.out.println("Log record : " + log);
 					//
@@ -1236,7 +1236,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 		} else if (opType == OperType.ALTERCOLUMN) {
 			//
 			//SQLite does not support alter column
-			//We are supporting this only for telemetry device as below 
+			//We are supporting this only for dblogger device as below 
 			//1. Drop column (unlogged)
 			//2. Create Column (unlogged)
 			//

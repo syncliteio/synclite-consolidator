@@ -38,6 +38,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -688,7 +689,7 @@ public class Device {
 				}
 			} else {
 				//
-				//For telemetry and appender devices, we maintain one replica per destination
+				//For dblogger and appender devices, we maintain one replica per destination
 				//
 				Path replicaPath = SyncLiteLoggerInfo.getDataBackupPath(rootPath, dbName);
 				for (int dstIndex : this.allDstIndexes) {
@@ -721,7 +722,7 @@ public class Device {
 		try {
 			deviceCommandQueue.put(deviceCommand);
 		} catch (InterruptedException e) {
-			Thread.interrupted();
+			Thread.currentThread().interrupt();
 		}
 	}
 
@@ -1503,8 +1504,8 @@ public class Device {
 	}
 
 	private final void cleanupDevice() throws SyncLiteException {
-		try {
-			Files.walk(rootPath).map(Path::toFile).filter(s->!(s.toString().endsWith(".trace"))).forEach(File::delete);
+		try (Stream<Path> stream = Files.walk(rootPath)) {
+			stream.map(Path::toFile).filter(s->!(s.toString().endsWith(".trace"))).forEach(File::delete);
 		} catch (IOException e) {
 			throw new SyncLiteException("Failed to cleanup device :", e);
 		}

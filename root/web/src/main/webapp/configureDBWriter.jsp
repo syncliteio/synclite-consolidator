@@ -600,7 +600,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 					<tr>
 						<td>Use Catalog Scope Resolution</td>
 						<td><select id="dst-use-catalog-scope-resolution-<%=dstIndex%>"
-							name="dst-use-catalog-scope-resolution-<%=dstIndex%>" title="Specify if consolidator should add catalog name prefix while framing SQL statemewnts for each destination table">
+							name="dst-use-catalog-scope-resolution-<%=dstIndex%>" title="Specify if consolidator should add catalog name prefix while framing SQL statements for each destination table">
 								<%
 								if (properties.get("dst-use-catalog-scope-resolution-" + dstIndex).equals("true")) {
 									out.println("<option value=\"true\" selected>true</option>");
@@ -657,7 +657,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 					<tr>
 						<td>Disable SyncLite Metadata on Destination DB</td>
 						<td><select id="dst-disable-metadata-table-<%=dstIndex%>"
-							name="dst-disable-metadata-table-<%=dstIndex%>" title="Specify if SyncLite metadta table should not be created on destination DB. If this is set to true then metadata table is created locally by SyncLite Consolidator inside workDir. If this option is set to true then idempotent data ingestion must be set to true to ensure exactly once delivery of INSERT operations.">
+							name="dst-disable-metadata-table-<%=dstIndex%>" title="Specify if SyncLite metadata table should not be created on destination DB. If this is set to true then metadata table is created locally by SyncLite Consolidator inside workDir. If this option is set to true then idempotent data ingestion must be set to true to ensure exactly once delivery of INSERT operations.">
 								<%
 								if (properties.get("dst-disable-metadata-table-" + dstIndex).equals("true")) {
 									out.println("<option value=\"true\" selected>true</option>");

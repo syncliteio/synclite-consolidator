@@ -49,7 +49,7 @@ public class PGSQLGenerator extends JDBCSQLGenerator {
     
     @Override
 	public String getColumnExistsCheckSQL(Table tbl, Column c) {
-    	return "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE LOWER(TABLE_SCHEMA) = '" + tbl.id.schema.toLowerCase() + "'" + " AND TABLE_NAME = '" + tbl.id.table + "'" + " AND LOWER(COLUMN_NAME) = '" + c.column.toLowerCase() + "'";
+    	return "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE LOWER(TABLE_SCHEMA) = '" + tbl.id.schema.toLowerCase() + "'" + " AND LOWER(TABLE_NAME) = '" + tbl.id.table.toLowerCase() + "'" + " AND LOWER(COLUMN_NAME) = '" + c.column.toLowerCase() + "'";
 	}
 
 	@Override

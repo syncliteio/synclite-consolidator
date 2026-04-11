@@ -67,12 +67,12 @@ public class Monitor {
 
 	private abstract class Dumper extends Thread {
 		public void run() {
-			while (!Thread.interrupted()) {
+			while (!Thread.currentThread().isInterrupted()) {
 				try {            	
 					dump();
 					Thread.sleep(screenRefreshIntervalMs);
 				} catch (InterruptedException e) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -466,7 +466,7 @@ public class Monitor {
 			changedDevices.put(d);
 			this.lastStatChangeTime = System.currentTimeMillis();
 		} catch (InterruptedException e) {
-			Thread.interrupted();
+			Thread.currentThread().interrupt();
 		}
 	}
 

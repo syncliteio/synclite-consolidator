@@ -48,7 +48,7 @@ public class MySQLSQLGenerator extends JDBCSQLGenerator {
 
 	@Override
 	public String getTableExistsCheckSQL(Table tbl) {
-		return "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_SCHEMA) = '" + tbl.id.schema.toLowerCase() + "' LOWER(TABLE_NAME) = '" + tbl.id.table.toLowerCase() + "'";		
+		return "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_SCHEMA) = '" + tbl.id.schema.toLowerCase() + "' AND LOWER(TABLE_NAME) = '" + tbl.id.table.toLowerCase() + "'";		
 	}
     
     @Override
@@ -100,6 +100,11 @@ public class MySQLSQLGenerator extends JDBCSQLGenerator {
 	public String getFileLoaderDeleteSQL(Delete delete, Path csvFilePath) {
 		throw new UnsupportedOperationException();
 	}
+
+	@Override
+    protected String quote(String item) {
+    	return "`" + item + "`";
+    }
 
 	@Override
 	public boolean isPKUpdateAllowed() {

@@ -77,7 +77,8 @@ public class SyncDriver implements Runnable{
 	private Set<Device> devices = Collections.newSetFromMap(new ConcurrentHashMap<>());
 	private Set<Device> failedDevices = Collections.newSetFromMap(new ConcurrentHashMap<>());
 	// private HashMap<Device, List<>>
-	private final BlockingQueue<Device> tasks = new LinkedBlockingQueue<Device>(Integer.MAX_VALUE);
+	private final BlockingQueue<Device> tasks = new LinkedBlockingQueue<Device>();
+	private final Set<Device> queuedDevices = Collections.newSetFromMap(new ConcurrentHashMap<>());
 	private ScheduledExecutorService deviceLocator;
 	private ExecutorService deviceDetector;
 	private ExecutorService deviceScheduler;
@@ -214,8 +215,16 @@ public class SyncDriver implements Runnable{
 				deviceWatcher.close();
 			}
 
+			if (deviceParentWatcher != null) {
+				deviceParentWatcher.close();
+			}
+
 			if (deviceLocator != null) {
 				deviceLocator.shutdownNow();
+			}
+
+			if (deviceDetector != null) {
+				deviceDetector.shutdownNow();
 			}
 
 			if (deviceScheduler != null) {
@@ -230,28 +239,44 @@ public class SyncDriver implements Runnable{
 				deviceRegisterScheduler.shutdownNow();
 			}
 
-			syncer.shutdownNow();
+			if (deviceLocatorAndScheduler != null) {
+				deviceLocatorAndScheduler.shutdownNow();
+			}
+
+			if (syncer != null) {
+				syncer.shutdownNow();
+			}
 
 			if (deviceLocator != null) {
-				deviceLocator.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
+				deviceLocator.awaitTermination(30, TimeUnit.SECONDS);
+			}
+
+			if (deviceDetector != null) {
+				deviceDetector.awaitTermination(30, TimeUnit.SECONDS);
 			}
 
 			if (deviceScheduler != null) {
-				deviceScheduler.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
+				deviceScheduler.awaitTermination(30, TimeUnit.SECONDS);
 			}
 
 			if (failedDeviceScheduler != null) {				
-				failedDeviceScheduler.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
+				failedDeviceScheduler.awaitTermination(30, TimeUnit.SECONDS);
 			}
 
 			if (deviceRegisterScheduler != null) {
-				deviceRegisterScheduler.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
+				deviceRegisterScheduler.awaitTermination(30, TimeUnit.SECONDS);
 			}
 
-			syncer.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
+			if (deviceLocatorAndScheduler != null) {
+				deviceLocatorAndScheduler.awaitTermination(30, TimeUnit.SECONDS);
+			}
+
+			if (syncer != null) {
+				syncer.awaitTermination(30, TimeUnit.SECONDS);
+			}
 
 		} catch (InterruptedException e) {
-			Thread.interrupted();
+			Thread.currentThread().interrupt();
 		} catch (Exception e) {
 			//Ignore
 		}
@@ -297,10 +322,10 @@ public class SyncDriver implements Runnable{
 			}*/
 
 
-			failedDeviceScheduler = Executors.newScheduledThreadPool(1);
+			failedDeviceScheduler = Executors.newSingleThreadScheduledExecutor();
 			failedDeviceScheduler.scheduleWithFixedDelay(this::scheduleFailedDevices, 0, ConfLoader.getInstance().getFailedDeviceRetryIntervalS(), TimeUnit.SECONDS);
 
-			deviceRegisterScheduler = Executors.newScheduledThreadPool(1);
+			deviceRegisterScheduler = Executors.newSingleThreadScheduledExecutor();
 			deviceRegisterScheduler.scheduleWithFixedDelay(this::registerDevices, 0, 10, TimeUnit.SECONDS);
 
 			//externalCommandLoader = Executors.newScheduledThreadPool(1);
@@ -309,13 +334,16 @@ public class SyncDriver implements Runnable{
 			syncer.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
 			
 		} catch (InterruptedException e) {
-			Thread.interrupted();
+			Thread.currentThread().interrupt();
 		}
 	}
 
 	private final void detectNewDevices() {
-		while (!Thread.interrupted()) {
+		while (!Thread.currentThread().isInterrupted()) {
 			try {
+				if (deviceParentWatcher != null) {
+					try { deviceParentWatcher.close(); } catch (Exception ignore) {}
+				}
 				deviceParentWatcher = FileSystems.getDefault().newWatchService();
 				Path deviceUploadRoot = ConfLoader.getInstance().getDeviceUploadRoot();
 				Path deviceDataRoot = ConfLoader.getInstance().getDeviceDataRoot();
@@ -343,10 +371,8 @@ public class SyncDriver implements Runnable{
 							}
 							//Check if device exists in deviceDataRoot and if does not exists then create it
 							//Replace uploadRoot by dataRoot in the detectedDevicePathInUpload and construct the deviceDataRootPath
-							Path detectedDevicePathInDataRoot  = Path.of(deviceDataRoot.toString(), deviceUploadRoot.relativize(detectedDevicePathInUpload).toString());
-							if (! Files.exists(detectedDevicePathInDataRoot)) {
-								Files.createDirectories(detectedDevicePathInDataRoot);
-							}
+									Path detectedDevicePathInDataRoot  = Path.of(deviceDataRoot.toString(), deviceUploadRoot.relativize(detectedDevicePathInUpload).toString());
+							Files.createDirectories(detectedDevicePathInDataRoot);
 							Device device = this.locator.locateDeviceAtPath(detectedDevicePathInDataRoot, detectedDevicePathInUpload);
 							if (device != null) {
 								if ((devices.size() + failedDevices.size()) < ConfLoader.getInstance().getDeviceCountLimit()) {
@@ -384,11 +410,12 @@ public class SyncDriver implements Runnable{
 	}
 
 	private final void watchAndScheduleDevices() {
-		while (!Thread.interrupted()) {
+		while (!Thread.currentThread().isInterrupted()) {
 			try {
+				if (deviceWatcher != null) {
+					try { deviceWatcher.close(); } catch (Exception ignore) {}
+				}
 				deviceWatcher = FileSystems.getDefault().newWatchService();
-				Path deviceUploadRoot = ConfLoader.getInstance().getDeviceUploadRoot();
-				Path deviceDataRoot = ConfLoader.getInstance().getDeviceDataRoot();
 				//Watch all device parents and also device directories individually
 
 				for (Device device : devices) {
@@ -399,6 +426,7 @@ public class SyncDriver implements Runnable{
 				while (poll) {
 					try {
 						WatchKey key = deviceWatcher.take();
+						key.pollEvents();
 						Path detectedDevicePath = (Path) key.watchable();
 						Device device = Device.findInstance(detectedDevicePath);
 						if (device != null) {
@@ -414,7 +442,6 @@ public class SyncDriver implements Runnable{
 								}								
 							} 
 						}
-						key.pollEvents();
 						poll = key.reset();
 					} catch (ClosedWatchServiceException e) {
 						//Ignore						 
@@ -448,7 +475,7 @@ public class SyncDriver implements Runnable{
 					try {
 						addDeviceTask(device);
 					} catch (InterruptedException e) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}
 				}
 			}
@@ -505,7 +532,7 @@ public class SyncDriver implements Runnable{
 							}
 						}
 					} catch (InterruptedException e) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					} catch(Exception e) {
 						//Catch all kinds of exceptions , dump and move on
 						//We should not let this thread give up as it is critical for detecting new devices., 
@@ -556,7 +583,7 @@ public class SyncDriver implements Runnable{
 							addDeviceTask(device);
 						}
 					} catch (InterruptedException e) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					} catch (Exception e) {
 						globalTracer.error("Failed device scheduler failed with exception for device : " + device, e);
 					}
@@ -570,12 +597,13 @@ public class SyncDriver implements Runnable{
 	}
 
 	private final void doSyncContinuous() {
-		while(! Thread.interrupted()) {
+		while(! Thread.currentThread().isInterrupted()) {
 			try {
 				Device device = tasks.take();
+				queuedDevices.remove(device);
 				doSyncInternal(device);
 			} catch (InterruptedException e) {
-				Thread.interrupted();
+				Thread.currentThread().interrupt();
 				return;
 			}
 		}
@@ -586,6 +614,9 @@ public class SyncDriver implements Runnable{
 		Device device = null;
 		//device = tasks.poll(Long.MAX_VALUE, TimeUnit.DAYS);        	
 		device = tasks.poll();
+		if (device != null) {
+			queuedDevices.remove(device);
+		}
 		doSyncInternal(device);
 	}
 
@@ -637,7 +668,7 @@ public class SyncDriver implements Runnable{
 				} 
 			}
 		} catch(InterruptedException e) {
-			Thread.interrupted();
+			Thread.currentThread().interrupt();
 		} catch(Exception e) {
 			try {
 				device.tracer.error("Failed with exception : " + e.getMessage(), e);
@@ -658,15 +689,10 @@ public class SyncDriver implements Runnable{
 		}
 	}
 
-	private void doSyncInternal() {
-		// TODO Auto-generated method stub
-
-	}
-
 	private final void doSyncStatic(Integer dstIndex) {
-		while(! Thread.interrupted()) {
+		while(! Thread.currentThread().isInterrupted()) {
 			try {
-				for (Device device : devices) {
+				for (Device device : Set.copyOf(devices)) {
 					try {
 						if ((device.getStatus() == DeviceStatus.SYNCING) ||
 								(device.getStatus() == DeviceStatus.SYNCING_FAILED) ||
@@ -701,13 +727,16 @@ public class SyncDriver implements Runnable{
 		}
 	}
 
-	private final synchronized void addDeviceTask(Device device) throws InterruptedException {
-		tasks.put(device);
+	private final void addDeviceTask(Device device) throws InterruptedException {
+		if (queuedDevices.add(device)) {
+			tasks.put(device);
+		}
 		//Set global latency to the latency of the last device in the task queue( worst case ) 
 		Monitor.getInstance().setlastQueuedDevice(device);
 	}
 
-	private final synchronized void removeDeviceTask(Device device) throws InterruptedException {
+	private final void removeDeviceTask(Device device) throws InterruptedException {
+		queuedDevices.remove(device);
 		while (tasks.remove(device)) {
 			;
 		}
@@ -771,7 +800,7 @@ public class SyncDriver implements Runnable{
 					try {
 						addDeviceTask(device);
 					} catch (InterruptedException e) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}
 				} 
 			}			
@@ -780,28 +809,28 @@ public class SyncDriver implements Runnable{
 		//registerDevices();
 		if (ConfLoader.getInstance().getDeviceSchedulerType() == DeviceSchedulerType.POLLING) {
 			//Polling device scheduler needs a continuous device locator thread to detect new devices
-			deviceLocator = Executors.newScheduledThreadPool(1);
+			deviceLocator = Executors.newSingleThreadScheduledExecutor();
 			deviceLocator.scheduleWithFixedDelay(this::locateNewDevices, ConfLoader.getInstance().getDeviceScannerIntervalS(), ConfLoader.getInstance().getDeviceScannerIntervalS(), TimeUnit.SECONDS);
 		} else if (ConfLoader.getInstance().getDeviceSchedulerType() == DeviceSchedulerType.STATIC) { 
 			//Static device scheduler needs a continuous device locator thread to detect new devices
-			deviceLocator = Executors.newScheduledThreadPool(1);
+			deviceLocator = Executors.newSingleThreadScheduledExecutor();
 			deviceLocator.scheduleWithFixedDelay(this::locateNewDevices, ConfLoader.getInstance().getDeviceScannerIntervalS(), ConfLoader.getInstance().getDeviceScannerIntervalS(), TimeUnit.SECONDS);		
 		} else if (ConfLoader.getInstance().getDeviceSchedulerType() == DeviceSchedulerType.EVENT_BASED) {
 			//EVENT_BASED scheduler needs a dedicated device scheduler thread that 
 			//- locates new devices if any
 			//- schedules devices for work on detecting any file activity in any device
 
-			deviceDetector = Executors.newFixedThreadPool(1);
+			deviceDetector = Executors.newSingleThreadExecutor();
 			deviceDetector.submit(this::detectNewDevices);
 
-			deviceScheduler = Executors.newFixedThreadPool(1);
+			deviceScheduler = Executors.newSingleThreadExecutor();
 			deviceScheduler.submit(this::watchAndScheduleDevices);
 
 			//
 			//The File activity based watched also can miss events at a large scale 
 			//Schedule all devices for at polling interval to check for any missed work
 			//
-			deviceLocator = Executors.newScheduledThreadPool(1);
+			deviceLocator = Executors.newSingleThreadScheduledExecutor();
 			long devicePollingIntervalMs = ConfLoader.getInstance().getDevicePollingIntervalMs();
 			if (devicePollingIntervalMs > 0) {
 				deviceLocator.scheduleWithFixedDelay(this::locateNewAndscheduleAllDevices, ConfLoader.getInstance().getDevicePollingIntervalMs() , ConfLoader.getInstance().getDevicePollingIntervalMs(), TimeUnit.MILLISECONDS);

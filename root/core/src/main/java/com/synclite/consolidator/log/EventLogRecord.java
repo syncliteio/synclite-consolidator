@@ -47,7 +47,7 @@ public class EventLogRecord extends CommandLogRecord {
     	this.sql = sql.strip();
     	if ((this.opType == OperType.INSERT) && (argCnt == 0)) {    		
 			//
-			//DISCLAIMER: THIS IS ONLY TESTING PATH. WE OFFICIALLY SUPPORT ONLY PREPARED STATEMENT BASED INSERTS for TELEMETRY DEVICES.
+			//DISCLAIMER: THIS IS ONLY TESTING PATH. WE OFFICIALLY SUPPORT ONLY PREPARED STATEMENT BASED INSERTS for DBLOGGER DEVICES.
 			//
 			//This is an unprepared INSERT.
 			//Try to parse arguments from sql.

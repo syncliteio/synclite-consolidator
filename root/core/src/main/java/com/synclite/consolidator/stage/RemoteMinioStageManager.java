@@ -107,9 +107,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			} catch (ErrorResponseException e) {
 				return false;
@@ -150,9 +150,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 						throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}					
 				}
 			} catch (InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException | IOException e) {
@@ -161,9 +161,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -197,9 +197,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 						throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}					
 				}
 			} catch (InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException | IOException e) {
@@ -208,9 +208,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -235,9 +235,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -262,9 +262,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -292,9 +292,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -323,9 +323,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -351,9 +351,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -376,9 +376,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 						throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 					} catch (InterruptedException e1) {
-						Thread.interrupted();
+						Thread.currentThread().interrupt();
 					}					
 				}
 			} catch (IOException | InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException e) {
@@ -387,9 +387,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -420,9 +420,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -447,9 +447,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -476,9 +476,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs());
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
 				} catch (InterruptedException e1) {
-					Thread.interrupted();
+					Thread.currentThread().interrupt();
 				}
 			}
 		}

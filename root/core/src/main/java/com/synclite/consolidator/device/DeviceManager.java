@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import org.apache.log4j.Logger;
 
@@ -292,8 +293,8 @@ public class DeviceManager {
  	
 	private final void deleteDeviceDataDir(Device d) throws SyncLiteException {
 		Path directory = d.getDeviceDataRoot();
-		try {
-			Files.walk(directory)
+		try (Stream<Path> stream = Files.walk(directory)) {
+			stream
 			.sorted((a, b) -> b.compareTo(a))
 			.forEach(path -> {
 				try {

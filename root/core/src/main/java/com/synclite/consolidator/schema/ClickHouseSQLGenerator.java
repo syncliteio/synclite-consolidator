@@ -34,7 +34,7 @@ public class ClickHouseSQLGenerator extends JDBCSQLGenerator {
 
 	@Override
 	public String getTableExistsCheckSQL(Table tbl) {
-		return "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(CATALOG_NAME) = '" + tbl.id.database.toLowerCase() + "' LOWER(TABLE_NAME) = '" + tbl.id.table.toLowerCase() + "'";		
+		return "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(CATALOG_NAME) = '" + tbl.id.database.toLowerCase() + "' AND LOWER(TABLE_NAME) = '" + tbl.id.table.toLowerCase() + "'";		
 	}
     
     @Override
@@ -105,7 +105,7 @@ public class ClickHouseSQLGenerator extends JDBCSQLGenerator {
         builder.append(insertColListBuilder.toString());
         builder.append(") SELECT ");
         
-        first = false;
+        first = true;
         
         StringBuilder selectColListBuilder = new StringBuilder();
         for (Column c : loadFile.tbl.columns) {

@@ -170,7 +170,7 @@ public abstract class SQLGenerator {
     	return item;
     }
 
-    private String quote(String item) {
+    protected String quote(String item) {
     	return "\"" + item + "\""; 
     }
     
@@ -179,12 +179,16 @@ public abstract class SQLGenerator {
     }
 
     public String getColumnNameSQL(Column c) {
+    	return quoteColumnNameIfNeeded(c.column);
+    }
+
+    public String quoteColumnNameIfNeeded(String columnName) {
     	if (ConfLoader.getInstance().getDstQuoteColumnNames(dstIndex)) {
-    		return quote(c.column);
-    	} else if (c.column.matches(".*\\s+.*")) {
-    		return quote(c.column);
+    		return quote(columnName);
+    	} else if (columnName.matches(".*\\s+.*")) {
+    		return quote(columnName);
     	}
-        return c.column;
+        return columnName;
     }
 
     public String getDatabaseNameSQL(Table tbl) {

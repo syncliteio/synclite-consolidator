@@ -130,12 +130,12 @@ public class SaveJobConfiguration extends HttpServlet {
 			if (!session.getAttribute("device-id-pattern").toString().trim().equals(".*")) {
 				builder.append("device-id-pattern = ").append(session.getAttribute("device-id-pattern").toString()).append("\n");
 			}
-			if (session.getAttribute("enable-replicas-for-telemetry-devices") != null) {
-				builder.append("enable-replicas-for-telemetry-devices = ").append(session.getAttribute("enable-replicas-for-telemetry-devices").toString()).append("\n");
+			if (session.getAttribute("enable-replicas-for-streaming-devices") != null) {
+				builder.append("enable-replicas-for-streaming-devices = ").append(session.getAttribute("enable-replicas-for-streaming-devices").toString()).append("\n");
 			}
 
-			if (session.getAttribute("disable-replicas-for-appender-devices") != null) {
-				builder.append("disable-replicas-for-appender-devices = ").append(session.getAttribute("disable-replicas-for-appender-devices").toString()).append("\n");
+			if (session.getAttribute("disable-replicas-for-store-and-appender-devices") != null) {
+				builder.append("disable-replicas-for-store-and-appender-devices = ").append(session.getAttribute("disable-replicas-for-store-and-appender-devices").toString()).append("\n");
 			}
 
 			if (session.getAttribute("skip-bad-txn-files") != null) {
@@ -299,8 +299,8 @@ public class SaveJobConfiguration extends HttpServlet {
 					builder.append("dst-connection-string-" + dstIndex + " = ").append(session.getAttribute("dst-connection-string-" + dstIndex).toString()).append("\n");
 				}
 
-				if (session.getAttribute("dst-postgresql-vector-extension-enabled-" + dstIndex) != null) {
-					builder.append("dst-postgresql-vector-extension-enabled-" + dstIndex + " = ").append(session.getAttribute("dst-postgresql-vector-extension-enabled-" + dstIndex).toString()).append("\n");
+				if (session.getAttribute("dst-vector-extension-enabled-" + dstIndex) != null) {
+					builder.append("dst-vector-extension-enabled-" + dstIndex + " = ").append(session.getAttribute("dst-vector-extension-enabled-" + dstIndex).toString()).append("\n");
 				}
 				
 				if (session.getAttribute("dst-user-" + dstIndex) != null) {

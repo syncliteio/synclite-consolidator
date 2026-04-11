@@ -27,7 +27,7 @@ public class MSSQLDataTypeMapper extends DataTypeMapper {
 	@Override
 	protected DataType getBestEffortArrayDataType(DataType t) {
         String typeToCheck = t.dbNativeDataType.toLowerCase().trim().split("[\\s(]+")[0];       
-        if (ConfLoader.getInstance().getDstPGVectorExtensionEnabled(dstIndex)) {
+        if (ConfLoader.getInstance().getDstVectorExtensionEnabled(dstIndex)) {
         	if (typeToCheck.startsWith("float") || typeToCheck.startsWith("vector")) {
 				String s = typeToCheck;
 				try {

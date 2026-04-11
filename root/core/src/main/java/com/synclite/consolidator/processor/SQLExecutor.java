@@ -112,7 +112,7 @@ public abstract class SQLExecutor implements AutoCloseable{
     public abstract boolean isDuplicateKeyException(Exception e);
     public abstract boolean canCreateDatabase();
 /*    public void closeTelemetryFile(Path telemetryFilePath) throws DstExecutionException {
-    	throw new DstExecutionException("Destination type : " + ConfLoader.getInstance().getDstType() + " does not support Telemetry file destination");
+    	throw new DstExecutionException("Destination type : " + ConfLoader.getInstance().getDstType() + " does not support DBLogger file destination");
     }
   */  
     public void execute(List<Oper> opers) throws DstExecutionException {

@@ -154,41 +154,26 @@ public class ValidateJobConfiguration extends HttpServlet {
 			}
 				
 
-			String enableReplicasForTelemetryDevicesStr = "false";
-			Boolean enableReplicasForTelemetryDevices = false;
-			if (request.getParameter("enable-replicas-for-telemetry-devices") != null) {
-				enableReplicasForTelemetryDevicesStr = request.getParameter("enable-replicas-for-telemetry-devices");
-				try {
-					if (Boolean.valueOf(enableReplicasForTelemetryDevices) == null) {
-						throw new ServletException("Please specify a valid boolean value for \"Enable Replicas For Telemetry Devices\"");
-					} else {
-						enableReplicasForTelemetryDevices = Boolean.valueOf(enableReplicasForTelemetryDevicesStr);
-					}
-				} catch(NumberFormatException e) {
-					throw new ServletException("Please specify a valid boolean value for \"Enable Replicas For Telemetry Devices\"");
+			String enableReplicasForStreamingDevicesStr = "false";
+			if (request.getParameter("enable-replicas-for-streaming-devices") != null) {
+				enableReplicasForStreamingDevicesStr = request.getParameter("enable-replicas-for-streaming-devices");
+				if (!enableReplicasForStreamingDevicesStr.equalsIgnoreCase("true") && !enableReplicasForStreamingDevicesStr.equalsIgnoreCase("false")) {
+					throw new ServletException("Please specify a valid boolean value for \"Enable Replicas For Streaming Devices\"");
 				}
 			}
 
-			String disableReplicasForAppenderDevicesStr = "false";
-			if (request.getParameter("disable-replicas-for-appender-devices") != null) {
-				disableReplicasForAppenderDevicesStr = request.getParameter("disable-replicas-for-appender-devices");
-				try {
-					if (Boolean.valueOf(disableReplicasForAppenderDevicesStr) == null) {
-						throw new ServletException("Please specify a valid boolean value for \"Disable Replicas For Appender Devices\"");
-					} 
-				} catch(NumberFormatException e) {
-					throw new ServletException("Please specify a valid boolean value for \"Disable Replicas For Appender Devices\"");
+			String disableReplicasForStoreAndAppenderDevicesStr = "false";
+			if (request.getParameter("disable-replicas-for-store-and-appender-devices") != null) {
+				disableReplicasForStoreAndAppenderDevicesStr = request.getParameter("disable-replicas-for-store-and-appender-devices");
+				if (!disableReplicasForStoreAndAppenderDevicesStr.equalsIgnoreCase("true") && !disableReplicasForStoreAndAppenderDevicesStr.equalsIgnoreCase("false")) {
+					throw new ServletException("Please specify a valid boolean value for \"Disable Replicas For Store And Appender Devices\"");
 				}
 			}
 
 			String skipBadTxnFilesStr = "false";
 			if (request.getParameter("skip-bad-txn-files") != null) {
 				skipBadTxnFilesStr = request.getParameter("skip-bad-txn-files");
-				try {
-					if (Boolean.valueOf(skipBadTxnFilesStr) == null) {
-						throw new ServletException("Please specify a valid boolean value for \"Skip Missing/Corrupt Transaction Files\"");
-					}
-				} catch(NumberFormatException e) {
+				if (!skipBadTxnFilesStr.equalsIgnoreCase("true") && !skipBadTxnFilesStr.equalsIgnoreCase("false")) {
 					throw new ServletException("Please specify a valid boolean value for \"Skip Missing/Corrupt Transaction Files\"");
 				}
 			}
@@ -267,8 +252,8 @@ public class ValidateJobConfiguration extends HttpServlet {
 			request.getSession().setAttribute("num-device-processors",numDeviceProcessors);
 			request.getSession().setAttribute("device-name-pattern",deviceNamePattern);
 			request.getSession().setAttribute("device-id-pattern",deviceNamePattern);
-			request.getSession().setAttribute("enable-replicas-for-telemetry-devices",enableReplicasForTelemetryDevicesStr);
-			request.getSession().setAttribute("disable-replicas-for-appender-devices",disableReplicasForAppenderDevicesStr);
+			request.getSession().setAttribute("enable-replicas-for-streaming-devices",enableReplicasForStreamingDevicesStr);
+			request.getSession().setAttribute("disable-replicas-for-store-and-appender-devices",disableReplicasForStoreAndAppenderDevicesStr);
 			request.getSession().setAttribute("skip-bad-txn-files",skipBadTxnFilesStr);
 			request.getSession().setAttribute("failed-device-retry-interval-s",failedDeviceRetryIntervalS);
 			request.getSession().setAttribute("device-trace-level",deviceTraceLevel);

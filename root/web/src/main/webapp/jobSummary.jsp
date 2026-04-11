@@ -66,8 +66,8 @@ String saveStatusDetails = request.getParameter("saveStatusDetails");
 						<b>Device Processors</b>                : <% out.print(session.getAttribute("num-device-processors").toString()); %><br>
 						<b>Allowed Device Name Pattern</b>      : <% out.print(session.getAttribute("device-name-pattern").toString()); %><br>
 						<b>Allowed Device ID Pattern</b>        : <% out.print(session.getAttribute("device-id-pattern").toString()); %><br>
-						<b>Enable Replicas For Streaming/Telemetry Devices</b>   : <% out.print(session.getAttribute("enable-replicas-for-telemetry-devices").toString()); %><br>
-					    <b>Disable Replicas For Appender Devices</b>   : <% out.print(session.getAttribute("disable-replicas-for-appender-devices").toString()); %><br>						
+						<b>Enable Replicas For Streaming/DBLogger Devices</b>   : <% out.print(session.getAttribute("enable-replicas-for-streaming-devices").toString()); %><br>
+					    <b>Disable Replicas For Store And Appender Devices</b>   : <% out.print(session.getAttribute("disable-replicas-for-store-and-appender-devices").toString()); %><br>						
 					    <b>Skip Missing/Corrupt Transaction Files</b>   : <% out.print(session.getAttribute("skip-bad-txn-files").toString()); %><br>						
 						<b>Failed Device Retry Interval (s)</b> : <% out.print(session.getAttribute("failed-device-retry-interval-s")); %><br>
 						<b>Job Trace Level</b>                  : <% out.print(session.getAttribute("device-trace-level").toString()); %><br>
@@ -335,8 +335,8 @@ String saveStatusDetails = request.getParameter("saveStatusDetails");
 							out.print("<b>Databrics DBFS Base Path</b> : " + session.getAttribute("dst-databricks-dbfs-basepath-" + dstIndex).toString() + "<br>");
 						}
 			    	} else if (session.getAttribute("dst-type-" + dstIndex).toString().equals("POSTGRESQL")) {
-						if (session.getAttribute("dst-postgresql-vector-extension-enabled-" + dstIndex) != null) {
-							out.print("<b>PG Vector Extension Enabled</b> : " + session.getAttribute("dst-postgresql-vector-extension-enabled-" + dstIndex).toString() + "<br>");
+						if (session.getAttribute("dst-vector-extension-enabled-" + dstIndex) != null) {
+							out.print("<b>Vector Extension Enabled</b> : " + session.getAttribute("dst-vector-extension-enabled-" + dstIndex).toString() + "<br>");
 						}
 			    	}
 
