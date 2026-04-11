@@ -64,6 +64,7 @@ if (request.getParameter("keep-job-configuration") != null) {
 		%>
 
 		<form action="${pageContext.request.contextPath}/resetJob" method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<table>
 				<tbody>
 					<tr>

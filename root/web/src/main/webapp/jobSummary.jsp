@@ -51,6 +51,7 @@ String saveStatusDetails = request.getParameter("saveStatusDetails");
 
 		<form action="${pageContext.request.contextPath}/saveJobConfiguration"
 			method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 
 			<table>
 				<tr></tr>

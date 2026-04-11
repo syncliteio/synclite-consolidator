@@ -35,6 +35,15 @@
 <title>SyncLite Devices</title>
 </head>
 
+<%!
+	// HTML encoding utility to prevent XSS
+	public static String escHtml(String input) {
+		if (input == null) return "";
+		return input.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+		            .replace("\"", "&quot;").replace("'", "&#39;");
+	}
+%>
+
 <script type="text/javascript">
 
 	function processSort(sortColumn) {
@@ -144,27 +153,47 @@
 			if (request.getParameter("sortOrder") != null) {
 				sortOrder = request.getParameter("sortOrder");
 			}
-					
-			
+
+			// Validate sortColumn against whitelist to prevent SQL injection
+			java.util.Set<String> validColumns = new java.util.HashSet<>(java.util.Arrays.asList(
+				"synclite_device_id", "synclite_device_name", "synclite_device_type", "status",
+				"destination_database_alias", "log_segments_applied", "processed_log_size",
+				"processed_oper_count", "processed_txn_count", "latency", "last_consolidated_commit_id"
+			));
+			if (!validColumns.contains(sortColumn)) {
+				sortColumn = "synclite_device_id";
+			}
+			// Validate sortOrder
+			if (!"asc".equalsIgnoreCase(sortOrder) && !"desc".equalsIgnoreCase(sortOrder)) {
+				sortOrder = "asc";
+			}
+
 			String whereClause = " where 1=1";
-			
+			java.util.List<String> queryParams = new java.util.ArrayList<>();
+
 			if (!deviceStatus.equals("ALL")) {
-				whereClause += " and status = '" + deviceStatus + "'";
+				whereClause += " and status = ?";
+				queryParams.add(deviceStatus);
 			}
 			
 			if (!deviceName.isEmpty()) {
-				whereClause += " and synclite_device_name like '" + deviceName.replace("*", "%") + "'";
+				whereClause += " and synclite_device_name like ?";
+				queryParams.add(deviceName.replace("*", "%"));
 			}
 
 			if (!deviceUUID.isEmpty()) {
-				whereClause += " and synclite_device_id like '" + deviceUUID.replace("*", "%") + "'";
+				whereClause += " and synclite_device_id like ?";
+				queryParams.add(deviceUUID.replace("*", "%"));
 			}
 
 			Long numDevices = 0L;
 			Class.forName("org.sqlite.JDBC");					
 			try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + statsFilePath)) {
-				try (Statement stat = conn.createStatement()) {
-					try (ResultSet countRS = stat.executeQuery("select count(*) from device_status " + whereClause)) {
+				try (PreparedStatement pstmt = conn.prepareStatement("select count(*) from device_status " + whereClause)) {
+					for (int i = 0; i < queryParams.size(); i++) {
+						pstmt.setString(i + 1, queryParams.get(i));
+					}
+					try (ResultSet countRS = pstmt.executeQuery()) {
 						numDevices = countRS.getLong(1);
 					}
 				}
@@ -227,8 +256,9 @@
 		%>
 		<center>
 			<form name="deviceForm" id="deviceForm" method="post" action="devices.jsp">
-				<input type="hidden" name ="sortColumn" id="sortColumn" value=<%=sortColumn%>>
-				<input type="hidden" name ="sortOrder" id="sortOrder" value="<%=sortOrder%>">
+				<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
+				<input type="hidden" name ="sortColumn" id="sortColumn" value="<%=escHtml(sortColumn)%>">
+				<input type="hidden" name ="sortOrder" id="sortOrder" value="<%=escHtml(sortOrder)%>">
 				<table>
 					<tr>
 						<td>
@@ -280,11 +310,11 @@
 						</td>					
 						<td>
 							Device UUID
-							<input type="text" size="36" name = "deviceUUID" id = "deviceUUID" value = <%= deviceUUID%>>						 
+							<input type="text" size="36" name = "deviceUUID" id = "deviceUUID" value = "<%=escHtml(deviceUUID)%>">						 
 						</td>
 						<td>
 							Device Name
-							<input type="text" size="36" name = "deviceName" id = "deviceName" value = <%= deviceName%>>						 
+							<input type="text" size="36" name = "deviceName" id = "deviceName" value = "<%=escHtml(deviceName)%>">						 
 						</td>
 						<td>
 							<input type="button" name="Go" id="Go" value="Go" onclick = "this.form.submit()">
@@ -518,11 +548,14 @@
 
 						<%
 						try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + statsFilePath)) {
-							try (Statement stat = conn.createStatement()) {
-								try (ResultSet rs = stat.executeQuery("select synclite_device_id, synclite_device_name, synclite_device_type, status, destination_database_alias, log_segments_applied, processed_log_size, processed_oper_count, processed_txn_count, latency, last_consolidated_commit_id from device_status "
-										+ whereClause + " order by " + sortColumn + " " + sortOrder + " limit " + startOffset + ", "
-										+ numDevicesPerPage
-								)) {
+							String mainQuery = "select synclite_device_id, synclite_device_name, synclite_device_type, status, destination_database_alias, log_segments_applied, processed_log_size, processed_oper_count, processed_txn_count, latency, last_consolidated_commit_id from device_status "
+									+ whereClause + " order by " + sortColumn + " " + sortOrder + " limit " + startOffset + ", "
+									+ numDevicesPerPage;
+							try (PreparedStatement pstmt = conn.prepareStatement(mainQuery)) {
+								for (int i = 0; i < queryParams.size(); i++) {
+									pstmt.setString(i + 1, queryParams.get(i));
+								}
+								try (ResultSet rs = pstmt.executeQuery()) {
 									while (rs.next()) {
 										String deviceStatisticsURL = "deviceStatistics.jsp?uuid="
 												+ URLEncoder.encode(rs.getString("synclite_device_id"), Charset.defaultCharset()) + "&name="

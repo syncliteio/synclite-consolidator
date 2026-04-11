@@ -68,11 +68,13 @@
 		<h2>Configure SyncLite Consolidator</h2>
 		<%	
 		if (errorMsg != null) {
-			out.println("<h4 style=\"color: red;\">" + errorMsg + "</h4>");
+			String safeErrorMsg = errorMsg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+			out.println("<h4 style=\"color: red;\">" + safeErrorMsg + "</h4>");
 		}
 		%>
 	
 		<form method="post" action="validateWorkDirectory">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<table>
 				<tbody>
 

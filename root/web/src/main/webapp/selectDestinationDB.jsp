@@ -46,6 +46,7 @@
 		%>
 	
 		<form method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<table>
 				<tbody>
 					<tr>

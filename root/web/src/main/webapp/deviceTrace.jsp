@@ -67,7 +67,16 @@
 					throw new javax.servlet.jsp.SkipPageException();		
 			}
 				
-			Path deviceTraceFilePath = Path.of(devicePath, deviceTraceFileName);
+			Path deviceTraceFilePath = Path.of(devicePath, deviceTraceFileName).toAbsolutePath().normalize();
+			
+			// Path traversal protection: ensure path stays within device-data-root
+			if (session.getAttribute("device-data-root") != null) {
+				Path allowedRoot = Path.of(session.getAttribute("device-data-root").toString()).toAbsolutePath().normalize();
+				if (!deviceTraceFilePath.startsWith(allowedRoot)) {
+					out.println("<h4 style=\"color: red;\">Invalid device path.</h4>");
+					throw new javax.servlet.jsp.SkipPageException();
+				}
+			}
 			
 			StringBuilder traces = new StringBuilder();
 			Stack<String> lines = new Stack<String>(); 
@@ -105,6 +114,7 @@
 		%>
 
 		<form name="traceForm" method="post" action="<%=deviceTraceURL%>">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<input type ="hidden" name="path" id="path" value="<%=devicePath%>">
 			<table>
 			<tr>

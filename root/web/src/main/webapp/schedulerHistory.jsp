@@ -68,6 +68,7 @@
 		%>
 			<center>
 				<form name="tableForm" id="tableForm" method="post">
+					<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 					<table>
 						<tr>
 							<td>

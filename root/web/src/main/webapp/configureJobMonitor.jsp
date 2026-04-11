@@ -119,6 +119,7 @@ if (request.getParameter("update-statistics-interval-s") != null) {
 
 		<form action="${pageContext.request.contextPath}/validateJobMonitorConfiguration"
 			method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 
 			<table>
 				<tbody>

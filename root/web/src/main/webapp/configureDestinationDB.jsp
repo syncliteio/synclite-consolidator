@@ -29,6 +29,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href=css/SyncLiteStyle.css>
 
+<%!
+private String escHtml(Object val) {
+	if (val == null) return "";
+	return val.toString().replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&#39;");
+}
+%>
 <%
 String errorMsg = request.getParameter("errorMsg");
 HashMap<String, Object> properties = new HashMap<String, Object>();
@@ -49,14 +55,14 @@ if (request.getParameter("dstIndex") != null) {
 Integer numDestinations = Integer.valueOf(session.getAttribute("num-destinations").toString());
 
 String defaultConnStrCSV = "Not Applicable";
-String defaultConnStrClickHouse = "jdbc:ch://localhost:8123?username=synclite&password=synclite";
+String defaultConnStrClickHouse = "jdbc:ch://localhost:8123?username=synclite&password=CHANGE_ME";
 String defaultConnStrDuckDB = "jdbc:duckdb:" + Path.of(properties.get("device-data-root").toString(), "consolidated_db_" + dstIndex + ".duckdb");
-String defaultConnStrFerretDB = "mongodb://synclite:synclite@localhost:27017/ferretdb?authMechanism=PLAIN";
+String defaultConnStrFerretDB = "mongodb://synclite:CHANGE_ME@localhost:27017/ferretdb?authMechanism=PLAIN";
 String defaultConnStrMongoDB = "mongodb://localhost:27017/?w=majority";
-String defaultConnStrMySQL = "jdbc:mysql://127.0.0.1:3306/syncliteschema?user=synclite&password=synclite";
-String defaultConnStrPostgreSQL = "jdbc:postgresql://127.0.0.1:5432/synclitedb?user=synclite&password=synclite"; 
+String defaultConnStrMySQL = "jdbc:mysql://127.0.0.1:3306/syncliteschema?user=synclite&password=CHANGE_ME";
+String defaultConnStrPostgreSQL = "jdbc:postgresql://127.0.0.1:5432/synclitedb?user=synclite&password=CHANGE_ME"; 
 String defaultConnStrSQLite = "jdbc:sqlite:" + Path.of(properties.get("device-data-root").toString(), "consolidated_db_" + dstIndex + ".sqlite") + "?journal_mode=WAL";
-String defaultConnStrSQLServer = "jdbc:sqlserver://localhost:1433;encrypt=true;trustServerCertificate=true;username=synclite;password=synclite;databaseName=synclitedb";
+String defaultConnStrSQLServer = "jdbc:sqlserver://localhost:1433;encrypt=true;trustServerCertificate=true;username=synclite;password=CHANGE_ME;databaseName=synclitedb";
 
 if (request.getParameter("dst-type-" + dstIndex) != null) {
 	properties.put("dst-type-" + dstIndex, request.getParameter("dst-type-" + dstIndex));
@@ -762,19 +768,20 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 			out.println("<h2>Configure Destination Database " + dstIndex + "</h2>");
 		}
 		if (errorMsg != null) {
-			out.println("<h4 style=\"color: red;\">" + errorMsg + "</h4>");
+			out.println("<h4 style=\"color: red;\">" + escHtml(errorMsg) + "</h4>");
 		}
 		%>
 
 		<form action="${pageContext.request.contextPath}/validateDestinationDB"
 			method="post">
 
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<input type="hidden" name ="dst-index" id ="dst-index" value="<%=dstIndex%>">
 			<table>
 				<tbody>
 					<tr>
 						<td>Destination Type</td>
-						<td><select id="dst-type-<%=dstIndex%>" name="dst-type-<%=dstIndex%>" value="<%=properties.get("dst-type-" + dstIndex)%>" onchange="this.form.action='configureDestinationDB.jsp?dstIndex=<%=dstIndex%>'; resetFields(); this.form.submit();" title="Select destination database type.">
+						<td><select id="dst-type-<%=dstIndex%>" name="dst-type-<%=dstIndex%>" value="<%=escHtml(properties.get("dst-type-" + dstIndex))%>" onchange="this.form.action='configureDestinationDB.jsp?dstIndex=<%=dstIndex%>'; resetFields(); this.form.submit();" title="Select destination database type.">
 								<%
 								if (properties.get("dst-type-" + dstIndex).equals("APACHE_ICEBERG")) {									
 									out.println("<option value=\"APACHE_ICEBERG\" selected>Apache Iceberg</option>");
@@ -829,7 +836,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 						if (properties.get("dst-type-" + dstIndex).toString().equals("APACHE_ICEBERG")) {
 							out.println("<tr>");
 							out.println("<td>Spark Configurations</td>");
-							out.println("<td><textarea id=\"dst-spark-configuration-" + dstIndex + "\" name=\"dst-spark-configuration-" + dstIndex + "\" rows=\"10\" cols=\"120\" title=\"Specify spark configurations as <confName>=<confValue> pairs, one line per config\">" + properties.get("dst-spark-configuration-" + dstIndex) + "</textarea></td>");
+							out.println("<td><textarea id=\"dst-spark-configuration-" + dstIndex + "\" name=\"dst-spark-configuration-" + dstIndex + "\" rows=\"10\" cols=\"120\" title=\"Specify spark configurations as <confName>=<confValue> pairs, one line per config\">" + escHtml(properties.get("dst-spark-configuration-" + dstIndex)) + "</textarea></td>");
 							out.println("</tr>");
 						}
 						if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL") || properties.get("dst-type-" + dstIndex).equals("MSSQL")) {
@@ -861,7 +868,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 						%>
 						<td><input type="text" size = 80 id="dst-connection-string-<%=dstIndex%>"
 							name="dst-connection-string-<%=dstIndex%>"
-							value="<%=properties.get("dst-connection-string-" + dstIndex)%>" 
+							value="<%=escHtml(properties.get("dst-connection-string-" + dstIndex))%>" 
 							title="Specify a complete JDBC connection URL to connect to the destination database. Make sure the URL contains all properties required for a successful JDBC connection."
 							<%
 							if (properties.get("dst-connection-string-" + dstIndex).equals("Not Applicable")) {
@@ -874,7 +881,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 					<tr>
 						<td>User Name</td>
 						<td><input type="text" id="dst-user-<%=dstIndex%>" name="dst-user-<%=dstIndex%>"
-							value="<%=properties.get("dst-user-" + dstIndex)%>" 
+							value="<%=escHtml(properties.get("dst-user-" + dstIndex))%>" 
 							title="Specify user name. User must have a privilege to peform DDL and DML operations e.g. CREATE/DROP/INSERT/UPDATE/DELETE"							
 							<%
 							if (properties.get("dst-user-" + dstIndex).equals("Not Applicable")) {
@@ -886,7 +893,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 					<tr>
 						<td>Password</td>
 						<td><input type="password" id="dst-password-<%=dstIndex%>" name="dst-password-<%=dstIndex%>"
-							value="<%=properties.get("dst-password-" + dstIndex)%>" 
+							value="<%=escHtml(properties.get("dst-password-" + dstIndex))%>" 
 							title="Specify user password" 
 							<%
 							if (properties.get("dst-password-" + dstIndex).equals("Not Applicable")) {
@@ -900,7 +907,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 						<td>Connection Timeout (s)</td>
 						<td><input type="number" id="dst-connection-timeout-s-<%=dstIndex%>"
 							name="dst-connection-timeout-s-<%=dstIndex%>"
-							value="<%=properties.get("dst-connection-timeout-s-" + dstIndex)%>" 
+							value="<%=escHtml(properties.get("dst-connection-timeout-s-" + dstIndex))%>" 
 							title="Specify database connection timeout in seconds."/></td>
 					</tr>
 					
@@ -913,7 +920,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 						}
 						%>
 						<td><input type="text" id="dst-database-<%=dstIndex%>" name="dst-database-<%=dstIndex%>"
-							value="<%=properties.get("dst-database-" + dstIndex)%>" 
+							value="<%=escHtml(properties.get("dst-database-" + dstIndex))%>" 
 							title="Specify the database/catalog name if the configured destination DB supports the concept of database/catalog."							
 							<%
 							if (properties.get("dst-database-" + dstIndex).equals("Not Applicable")) {
@@ -925,7 +932,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 					<tr>
 						<td>Schema Name</td>
 						<td><input type="text" id="dst-schema-<%=dstIndex%>" name="dst-schema-<%=dstIndex%>"
-							value="<%=properties.get("dst-schema-" + dstIndex)%>"
+							value="<%=escHtml(properties.get("dst-schema-" + dstIndex))%>"
 							title="Specify the schema name if the destination DB supports the concept of schema."
 							<%
 							if (properties.get("dst-schema-" + dstIndex).equals("Not Applicable")) {
@@ -941,7 +948,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 							out.println("<td>");
 							out.println("<input type=\"number\" id=\"dst-duckdb-reader-port-" + dstIndex + "\" " +
 								"name=\"dst-duckdb-reader-port-" + dstIndex +  "\" " +
-								"value=\"" + properties.get("dst-duckdb-reader-port-" + dstIndex) + "\" " + 
+								"value=\"" + escHtml(properties.get("dst-duckdb-reader-port-" + dstIndex)) + "\" " + 
 								"title=\"Specify port number to expose for enable querying data from destination duckdb.\"/>");
 							out.println("</td>");
 							out.println("</tr>");
@@ -949,7 +956,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 					<tr>
 						<td>Destination DB Alias</td>
 						<td><input type="text" id="dst-alias-<%=dstIndex%>" name="dst-alias-<%=dstIndex%>"
-							value="<%=properties.get("dst-alias-" + dstIndex)%>"
+							value="<%=escHtml(properties.get("dst-alias-" + dstIndex))%>"
 							title="Specify an alias for this destination database. This alias is only used in Consolidator to identify individual destinations"/></td>
 					</tr>					
 				</tbody>				

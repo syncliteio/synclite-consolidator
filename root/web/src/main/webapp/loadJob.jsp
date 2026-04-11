@@ -65,6 +65,7 @@
 		%>
 	
 		<form action="${pageContext.request.contextPath}/loadJob" method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<table>
 				<tbody>
 				

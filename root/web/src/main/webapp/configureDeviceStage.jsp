@@ -381,6 +381,7 @@ if (request.getParameter("device-stage-type") != null) {
 
 		<form action="${pageContext.request.contextPath}/validateDeviceStage"
 			method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 
 			<table>
 				<tbody>

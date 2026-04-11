@@ -37,6 +37,15 @@
 <title>Query SyncLite Device Replica</title>
 </head>
 
+<%!
+	// HTML encoding utility to prevent XSS
+	public static String escHtml(String input) {
+		if (input == null) return "";
+		return input.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+		            .replace("\"", "&quot;").replace("'", "&#39;");
+	}
+%>
+
 	<%@include file="html/menu.html"%>
 
 <body>
@@ -135,10 +144,17 @@
 		if (devicePath.trim().isEmpty()) {
 			runStatus = "FAILED";
 			runStatusDetails = "Please specify a valid device path";
-		} else if (sql.trim().isEmpty()) {
-			runStatus = "FAILED";
-			runStatusDetails = "Please specify a valid SQL query";
-			
+		} else {
+			// Path traversal protection: normalize and verify the path
+			java.nio.file.Path normalizedPath = java.nio.file.Path.of(devicePath).toAbsolutePath().normalize();
+			devicePath = normalizedPath.toString();
+			if (!java.nio.file.Files.exists(normalizedPath)) {
+				runStatus = "FAILED";
+				runStatusDetails = "Specified device path does not exist";
+			} else if (sql.trim().isEmpty()) {
+				runStatus = "FAILED";
+				runStatusDetails = "Please specify a valid SQL query";
+			}
 		}
 	}
 %>
@@ -164,13 +180,13 @@
 					<tr>
 						<td>Device Path</td>
 						<td><input type="text" size = "105" id="devicePath" name="devicePath"
-							value="<%=devicePath%>" /></td>
+							value="<%=escHtml(devicePath)%>" /></td>
 					</tr>
 
 					<tr>
 						<td>Query</td>
 						<td><textarea name="workload" id="workload" rows="4" placeholder="SELECT * FROM t1" 
-								cols="103" style="color:blue;"><%=sql%></textarea></td>
+								cols="103" style="color:blue;"><%=escHtml(sql)%></textarea></td>
 					</tr>
 
 							<%

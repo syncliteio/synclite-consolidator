@@ -99,6 +99,7 @@ if (request.getParameter("num-destinations") != null) {
 
 		<form action="${pageContext.request.contextPath}/validateNumDestinations"
 			method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 
 			<table>
 				<tbody>

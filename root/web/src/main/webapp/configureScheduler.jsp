@@ -147,6 +147,7 @@
 		%>
 		
 		<form action="${pageContext.request.contextPath}/configureScheduler" method="post">
+			<input type="hidden" name="csrfToken" value="<%= session.getAttribute("csrfToken") %>">
 			<table>
 			<tr></tr>
 				<tr>
