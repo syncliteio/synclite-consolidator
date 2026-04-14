@@ -130,12 +130,8 @@ public class SaveJobConfiguration extends HttpServlet {
 			if (!session.getAttribute("device-id-pattern").toString().trim().equals(".*")) {
 				builder.append("device-id-pattern = ").append(session.getAttribute("device-id-pattern").toString()).append("\n");
 			}
-			if (session.getAttribute("enable-replicas-for-streaming-devices") != null) {
-				builder.append("enable-replicas-for-streaming-devices = ").append(session.getAttribute("enable-replicas-for-streaming-devices").toString()).append("\n");
-			}
-
-			if (session.getAttribute("disable-replicas-for-store-and-appender-devices") != null) {
-				builder.append("disable-replicas-for-store-and-appender-devices = ").append(session.getAttribute("disable-replicas-for-store-and-appender-devices").toString()).append("\n");
+			if (session.getAttribute("enable-replicas-for-store-and-streaming-devices") != null) {
+				builder.append("enable-replicas-for-store-and-streaming-devices = ").append(session.getAttribute("enable-replicas-for-store-and-streaming-devices").toString()).append("\n");
 			}
 
 			if (session.getAttribute("skip-bad-txn-files") != null) {

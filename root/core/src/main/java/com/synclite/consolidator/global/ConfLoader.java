@@ -64,9 +64,8 @@ public class ConfLoader {
 	private Set<String> excludeDeviceNames;
 	private Pattern includeDeviceIDPattern;
 	private Pattern includeDeviceNamePattern;
-	private Boolean enableReplicasForStreamingDevices;
+	private Boolean enableReplicasForStoreAndStreamingDevices;
 	private Boolean skipBadTxnFiles;
-	private Boolean disableReplicasForStoreAndAppenderDevices;
 	private Long deviceCountLimit;
 	private Long perDeviceOperationCountLimit;
 	private Long perDeviceProcessedLogSizeLimit;
@@ -974,16 +973,12 @@ public class ConfLoader {
 		return this.failedStageOperRetryIntervalMs;
 	}
 
-	public Boolean getEnableReplicasForStreamingDevices() {
-		return this.enableReplicasForStreamingDevices;
+	public Boolean getEnableReplicasForStoreAndStreamingDevices() {
+		return this.enableReplicasForStoreAndStreamingDevices;
 	}
 
 	public Boolean getSkipBadTxnFiles() {
 		return this.skipBadTxnFiles;
-	}
-
-	public Boolean getDisableReplicasForStoreAndAppenderDevices() {
-		return this.disableReplicasForStoreAndAppenderDevices;
 	}
 
 	public String getManageDevicesNameList() {
@@ -2442,26 +2437,15 @@ public class ConfLoader {
 			}
 		} */
 
-		propValue = properties.get("enable-replicas-for-streaming-devices");
+		propValue = properties.get("enable-replicas-for-store-and-streaming-devices");
 		if (propValue != null) {
 			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
-				this.enableReplicasForStreamingDevices = Boolean.valueOf(propValue);
+				this.enableReplicasForStoreAndStreamingDevices = Boolean.valueOf(propValue);
 			} else {
-				throw new SyncLitePropsException("Invalid value specified for enable-replicas-for-streaming-devices in configuration file : " + propValue);
+				throw new SyncLitePropsException("Invalid value specified for enable-replicas-for-store-and-streaming-devices in configuration file : " + propValue);
 			}
 		} else {
-			this.enableReplicasForStreamingDevices = false;
-		}
-		
-		propValue = properties.get("disable-replicas-for-store-and-appender-devices");
-		if (propValue != null) {
-			if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
-				this.disableReplicasForStoreAndAppenderDevices = Boolean.valueOf(propValue);
-			} else {
-				throw new SyncLitePropsException("Invalid value specified for disable-replicas-for-store-and-appender-devices in configuration file : " + propValue);
-			}
-		} else {
-			this.disableReplicasForStoreAndAppenderDevices = false;
+			this.enableReplicasForStoreAndStreamingDevices = false;
 		}
 
 		propValue = properties.get("skip-bad-txn-files");

@@ -154,19 +154,11 @@ public class ValidateJobConfiguration extends HttpServlet {
 			}
 				
 
-			String enableReplicasForStreamingDevicesStr = "false";
-			if (request.getParameter("enable-replicas-for-streaming-devices") != null) {
-				enableReplicasForStreamingDevicesStr = request.getParameter("enable-replicas-for-streaming-devices");
-				if (!enableReplicasForStreamingDevicesStr.equalsIgnoreCase("true") && !enableReplicasForStreamingDevicesStr.equalsIgnoreCase("false")) {
-					throw new ServletException("Please specify a valid boolean value for \"Enable Replicas For Streaming Devices\"");
-				}
-			}
-
-			String disableReplicasForStoreAndAppenderDevicesStr = "false";
-			if (request.getParameter("disable-replicas-for-store-and-appender-devices") != null) {
-				disableReplicasForStoreAndAppenderDevicesStr = request.getParameter("disable-replicas-for-store-and-appender-devices");
-				if (!disableReplicasForStoreAndAppenderDevicesStr.equalsIgnoreCase("true") && !disableReplicasForStoreAndAppenderDevicesStr.equalsIgnoreCase("false")) {
-					throw new ServletException("Please specify a valid boolean value for \"Disable Replicas For Store And Appender Devices\"");
+			String enableReplicasForStoreAndStreamingDevicesStr = "false";
+			if (request.getParameter("enable-replicas-for-store-and-streaming-devices") != null) {
+				enableReplicasForStoreAndStreamingDevicesStr = request.getParameter("enable-replicas-for-store-and-streaming-devices");
+				if (!enableReplicasForStoreAndStreamingDevicesStr.equalsIgnoreCase("true") && !enableReplicasForStoreAndStreamingDevicesStr.equalsIgnoreCase("false")) {
+					throw new ServletException("Please specify a valid boolean value for \"Enable Replicas For Store And Streaming Devices\"");
 				}
 			}
 
@@ -252,8 +244,7 @@ public class ValidateJobConfiguration extends HttpServlet {
 			request.getSession().setAttribute("num-device-processors",numDeviceProcessors);
 			request.getSession().setAttribute("device-name-pattern",deviceNamePattern);
 			request.getSession().setAttribute("device-id-pattern",deviceNamePattern);
-			request.getSession().setAttribute("enable-replicas-for-streaming-devices",enableReplicasForStreamingDevicesStr);
-			request.getSession().setAttribute("disable-replicas-for-store-and-appender-devices",disableReplicasForStoreAndAppenderDevicesStr);
+			request.getSession().setAttribute("enable-replicas-for-store-and-streaming-devices",enableReplicasForStoreAndStreamingDevicesStr);
 			request.getSession().setAttribute("skip-bad-txn-files",skipBadTxnFilesStr);
 			request.getSession().setAttribute("failed-device-retry-interval-s",failedDeviceRetryIntervalS);
 			request.getSession().setAttribute("device-trace-level",deviceTraceLevel);

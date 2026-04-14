@@ -66,8 +66,7 @@ String saveStatusDetails = request.getParameter("saveStatusDetails");
 						<b>Device Processors</b>                : <% out.print(session.getAttribute("num-device-processors").toString()); %><br>
 						<b>Allowed Device Name Pattern</b>      : <% out.print(session.getAttribute("device-name-pattern").toString()); %><br>
 						<b>Allowed Device ID Pattern</b>        : <% out.print(session.getAttribute("device-id-pattern").toString()); %><br>
-						<b>Enable Replicas For Streaming/DBLogger Devices</b>   : <% out.print(session.getAttribute("enable-replicas-for-streaming-devices").toString()); %><br>
-					    <b>Disable Replicas For Store And Appender Devices</b>   : <% out.print(session.getAttribute("disable-replicas-for-store-and-appender-devices").toString()); %><br>						
+						<b>Enable Replicas For Store And Streaming Devices</b>   : <% out.print(session.getAttribute("enable-replicas-for-store-and-streaming-devices").toString()); %><br>						
 					    <b>Skip Missing/Corrupt Transaction Files</b>   : <% out.print(session.getAttribute("skip-bad-txn-files").toString()); %><br>						
 						<b>Failed Device Retry Interval (s)</b> : <% out.print(session.getAttribute("failed-device-retry-interval-s")); %><br>
 						<b>Job Trace Level</b>                  : <% out.print(session.getAttribute("device-trace-level").toString()); %><br>

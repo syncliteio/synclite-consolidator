@@ -47,9 +47,12 @@ import com.synclite.consolidator.log.CommandLogRecord.DDLInfo;
 import com.synclite.consolidator.log.EventLogRecord;
 import com.synclite.consolidator.log.EventLogSegment;
 import com.synclite.consolidator.log.EventLogSegment.EventLogSegmentReader;
+import com.synclite.consolidator.oper.AddColumn;
+import com.synclite.consolidator.oper.AlterColumn;
 import com.synclite.consolidator.oper.DML;
 import com.synclite.consolidator.oper.Delete;
 import com.synclite.consolidator.oper.DeleteIfPredicate;
+import com.synclite.consolidator.oper.DropColumn;
 import com.synclite.consolidator.oper.FinishBatch;
 import com.synclite.consolidator.oper.Insert;
 import com.synclite.consolidator.oper.LoadFile;
@@ -97,6 +100,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 	private ConsolidatorSrcTable checkpointTable;	
 	private HashMap<TableID, HashMap<OperType, Long>> tableStats = new HashMap<TableID, HashMap<OperType, Long>>();
 	private boolean replicaAppenderEnabled;
+	private boolean isStoreDevice;
 	private HashSet<TableID> currentTxnDstTables = new HashSet<TableID>();
 
 	protected DeviceEventStreamer(Device device, int dstIndex) throws SyncLiteException {	
@@ -110,18 +114,9 @@ public class DeviceEventStreamer extends DeviceProcessor {
 		this.consolidatorMetadataMgr = device.getConsolidatorMetadataMgr(this.dstIndex);
 		this.applyInsertsIdempotently = ConfLoader.getInstance().getDstIdempotentDataIngestion(dstIndex);
 		this.replicaAppenderEnabled = false;
-		if (SyncLiteLoggerInfo.isAppenderDevice(device.getDeviceType())) {
-			if (ConfLoader.getInstance().getDisableReplicasForStoreAndAppenderDevices()) {
-				replicaAppenderEnabled = false;
-			} else {
-				replicaAppenderEnabled = true;
-			}
-		} else if (SyncLiteLoggerInfo.isStreamingDevice(device.getDeviceType())) {
-			if (ConfLoader.getInstance().getEnableReplicasForStreamingDevices()) {
-				replicaAppenderEnabled = true;
-			} else {
-				replicaAppenderEnabled = false;
-			}
+		this.isStoreDevice = SyncLiteLoggerInfo.isStoreDevice(device.getDeviceType());
+		if (SyncLiteLoggerInfo.isAppenderOrStoreDevice(device.getDeviceType()) || SyncLiteLoggerInfo.isDBLoggerOrStreamingDevice(device.getDeviceType())) {
+			replicaAppenderEnabled = ConfLoader.getInstance().getEnableReplicasForStoreAndStreamingDevices();
 		}
 		initCheckpointTable();
 		device.updateDeviceStatus(DeviceStatus.SYNCING, "");
@@ -232,7 +227,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 						throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+						Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 					} catch (InterruptedException e1) {
 						Thread.currentThread().interrupt();
 					}
@@ -311,7 +306,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 							}
 						}
 						try {
-							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 						} catch (InterruptedException e1) {
 							Thread.currentThread().interrupt();
 						}
@@ -395,6 +390,9 @@ public class DeviceEventStreamer extends DeviceProcessor {
 				HashMap<TableID, Insert> tblMappedInsertOpers = new HashMap<TableID, Insert>();
 				HashMap<TableID, DML> tblMappedUpdateOpers = new HashMap<TableID, DML>();
 				HashMap<TableID, Delete> tblMappedDeleteOpers = new HashMap<TableID, Delete>();
+				HashMap<TableID, Integer> tblDeleteWhereColCount = new HashMap<TableID, Integer>();
+				HashMap<TableID, Integer> tblUpdateWhereColCount = new HashMap<TableID, Integer>();
+				HashMap<TableID, Integer> tblUpdateSetColCount = new HashMap<TableID, Integer>();
 
 				ConsolidatorSrcTable srcTable = null;
 				EventLogRecord lastLog = log;
@@ -443,8 +441,8 @@ public class DeviceEventStreamer extends DeviceProcessor {
 						if ((log.commitId > this.lastConsolidatedCommitIdOnReplica) || ((log.commitId == this.lastConsolidatedCommitIdOnReplica) && (log.changeNumber > this.lastConsolidatedChangeNumberOnReplica)) || ((log.commitId == this.lastConsolidatedCommitIdOnReplica) && (log.changeNumber == this.lastConsolidatedChangeNumberOnReplica) && (log.txnChangeNumber > this.lastConsolidatedTxnChangeNumberOnReplica))) {
 							if (log.ddlInfo == null) {
 								if (this.replicaAppenderEnabled) {
-									//Execute INSERT
-									//UPDATE and DELETE not supported in appender. 
+									//Execute INSERT on replica for appender/store devices
+									//UPDATE and DELETE on replica supported only for store devices.
 									if (log.opType == OperType.INSERT) {
 										if (replicaInsertPrepStmt != null) {
 											//Check if this was on a different table, if yes then flush it out.
@@ -481,6 +479,76 @@ public class DeviceEventStreamer extends DeviceProcessor {
 											this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
 											
 										}
+									}
+								} else if (this.isStoreDevice) {
+									if (log.opType == OperType.UPDATE) {
+										//Flush any pending INSERT batch
+										if (currentInsertBatchCountOnReplica > 0) {
+											if (replicaInsertPrepStmt != null) {
+												replicaInsertPrepStmt.executeBatch();
+												replicaInsertPrepStmt.close();
+												replicaInsertPrepStmt = null;
+											}
+											currentInsertBatchCountOnReplica = 0;
+											if (lastLog != null) {
+												bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber);
+											}
+											replicaConn.commit();
+											replicaConn.setAutoCommit(false);
+											if (lastLog != null) {
+												this.lastConsolidatedCommitIdOnReplica = lastLog.commitId;
+												this.lastConsolidatedChangeNumberOnReplica = lastLog.changeNumber;
+											}
+										}
+										//Reset insert prepared statement as we are switching to UPDATE
+										if (replicaInsertPrepStmt != null) {
+											replicaInsertPrepStmt.close();
+											replicaInsertPrepStmt = null;
+										}
+										//Execute UPDATE on replica
+										try (java.sql.PreparedStatement replicaUpdatePrepStmt = replicaConn.prepareStatement(getReplicaUpdatePrepStmt(srcTable))) {
+											bindReplicaUpdatePrepStmt(srcTable, replicaUpdatePrepStmt, log.argValues, log.argCnt);
+											replicaUpdatePrepStmt.executeUpdate();
+										}
+										bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber, log.txnChangeNumber);
+										replicaConn.commit();
+										this.lastConsolidatedCommitIdOnReplica = log.commitId;
+										this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
+										replicaConn.setAutoCommit(false);
+									} else if (log.opType == OperType.DELETE) {
+										//Flush any pending INSERT batch
+										if (currentInsertBatchCountOnReplica > 0) {
+											if (replicaInsertPrepStmt != null) {
+												replicaInsertPrepStmt.executeBatch();
+												replicaInsertPrepStmt.close();
+												replicaInsertPrepStmt = null;
+											}
+											currentInsertBatchCountOnReplica = 0;
+											if (lastLog != null) {
+												bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber);
+											}
+											replicaConn.commit();
+											replicaConn.setAutoCommit(false);
+											if (lastLog != null) {
+												this.lastConsolidatedCommitIdOnReplica = lastLog.commitId;
+												this.lastConsolidatedChangeNumberOnReplica = lastLog.changeNumber;
+											}
+										}
+										//Reset insert prepared statement as we are switching to DELETE
+										if (replicaInsertPrepStmt != null) {
+											replicaInsertPrepStmt.close();
+											replicaInsertPrepStmt = null;
+										}
+										//Execute DELETE on replica
+										try (java.sql.PreparedStatement replicaDeletePrepStmt = replicaConn.prepareStatement(getReplicaDeletePrepStmt(srcTable))) {
+											bindReplicaDeletePrepStmt(srcTable, replicaDeletePrepStmt, log.argValues);
+											replicaDeletePrepStmt.executeUpdate();
+										}
+										bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber, log.txnChangeNumber);
+										replicaConn.commit();
+										this.lastConsolidatedCommitIdOnReplica = log.commitId;
+										this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
+										replicaConn.setAutoCommit(false);
 									}
 								}
 							} else if (log.ddlInfo != null) {
@@ -538,9 +606,11 @@ public class DeviceEventStreamer extends DeviceProcessor {
 						//Check if prevOper or prevTable is different than this log's oper and table..
 						//If yes then flush the existing batches
 						//
+						device.tracer.info("DIAG: cn=" + log.changeNumber + " commitId=" + log.commitId + " opType=" + log.opType + " table=" + log.tableName + " prevOp=" + (lastLog != null ? lastLog.opType : "null") + " insertCnt=" + currentInsertBatchCount + " deleteCnt=" + currentDeleteBatchCount + " argCnt=" + log.argCnt + " args=" + log.argValues);
 						if (((prevTableId != null) && (prevTableId != tableId)) || ((lastLog != null) && (lastLog.opType != log.opType))) {
 							if ((currentInsertBatchCount > 0) || (currentUpdateBatchCount > 0 ) || (currentDeleteBatchCount > 0)) {				
 								//Execute checkpoint UPDATE
+								device.tracer.info("DIAG: FLUSH BLOCK entered. insertCnt=" + currentInsertBatchCount + " deleteCnt=" + currentDeleteBatchCount + " updateCnt=" + currentUpdateBatchCount);
 								if (lastLog != null) {
 									updateDstCheckpointIfNeeded(dstExecutor, lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber, beforeValues, afterValues);
 								}
@@ -694,6 +764,91 @@ public class DeviceEventStreamer extends DeviceProcessor {
 									}
 								}
 								
+								//
+								//Resolve SET and WHERE columns from logged SQL for partial-column UPDATEs.
+								//When argCnt matches 2 * numColumns, use existing full-row split.
+								//Otherwise, use parsed SET/WHERE columns to split args properly.
+								//
+								List<Column> resolvedSetColumns = null;
+								List<Column> resolvedWhereColumns = null;
+								boolean usePartialColumns = false;
+								
+								if (log.argCnt != 2 * srcTable.columns.size() && log.setColNames != null && log.whereColNames != null) {
+									resolvedSetColumns = new ArrayList<>();
+									resolvedWhereColumns = new ArrayList<>();
+									boolean allResolved = true;
+									for (String colName : log.setColNames) {
+										Column col = srcTable.getColumnByName(colName);
+										if (col != null) {
+											resolvedSetColumns.add(col);
+										} else {
+											allResolved = false;
+											break;
+										}
+									}
+									if (allResolved) {
+										for (String colName : log.whereColNames) {
+											Column col = srcTable.getColumnByName(colName);
+											if (col != null) {
+												resolvedWhereColumns.add(col);
+											} else {
+												allResolved = false;
+												break;
+											}
+										}
+									}
+									if (allResolved && (resolvedSetColumns.size() + resolvedWhereColumns.size() == log.argCnt)) {
+										usePartialColumns = true;
+										
+										//Check if WHERE columns contain all PK columns → reduce if so
+										if (srcTable.hasPrimaryKey()) {
+											boolean coversAllPKs = true;
+											for (Column c : srcTable.columns) {
+												if (c.pkIndex > 0) {
+													boolean found = false;
+													for (Column wc : resolvedWhereColumns) {
+														if (wc.column.equals(c.column)) {
+															found = true;
+															break;
+														}
+													}
+													if (!found) {
+														coversAllPKs = false;
+														break;
+													}
+												}
+											}
+											if (coversAllPKs) {
+												List<Column> pkCols = new ArrayList<>();
+												resolvedWhereColumns = pkCols;
+												for (Column c : srcTable.columns) {
+													if (c.pkIndex > 0) {
+														pkCols.add(c);
+													}
+												}
+												resolvedWhereColumns = pkCols;
+											}
+										}
+									} else {
+										resolvedSetColumns = null;
+										resolvedWhereColumns = null;
+									}
+								}
+								
+								if (usePartialColumns) {
+									//Split args: SET values first (JDBC order), then WHERE values
+									int numSetCols = resolvedSetColumns.size();
+									for (int i = 0; i < numSetCols; ++i) {
+										Column col = resolvedSetColumns.get(i);
+										Object colAfterVal = valueMapper.mapValue(tableId, col, log.argValues.get(i));
+										afterValues.add(colAfterVal);
+									}
+									for (int i = 0; i < resolvedWhereColumns.size(); ++i) {
+										Column col = resolvedWhereColumns.get(i);
+										Object colBeforeVal = valueMapper.mapValue(tableId, col, log.argValues.get(numSetCols + i));
+										beforeValues.add(colBeforeVal);
+									}
+								} else {
 								for(int i = 1; i <= log.argCnt/2 ; ++i) {
 									Column col = srcTable.columns.get(i-1);
 									if (!ConfLoader.getInstance().isAllowedColumn(dstIndex, log.tableName, col.column)) {
@@ -706,16 +861,29 @@ public class DeviceEventStreamer extends DeviceProcessor {
 									Object colAfterVal = valueMapper.mapValue(tableId, col, log.argValues.get(afterValIndex));
 									afterValues.add(colAfterVal);
 								}
+								}
 
 								//
 								//Optimization to avoid new UPDATE operation, new mapped operation 
 								//and multiple copies of args being created here
 								//
 								DML mappedUpdate = tblMappedUpdateOpers.get(srcTable.id);
-								if (mappedUpdate== null) {
+								int curUpdateWhereColCount = (usePartialColumns && resolvedWhereColumns != null) ? resolvedWhereColumns.size() : -1;
+								int curUpdateSetColCount = (usePartialColumns && resolvedSetColumns != null) ? resolvedSetColumns.size() : -1;
+								Integer prevUpdateWhereColCount = tblUpdateWhereColCount.get(srcTable.id);
+								Integer prevUpdateSetColCount = tblUpdateSetColCount.get(srcTable.id);
+								if (mappedUpdate == null || prevUpdateWhereColCount == null || prevUpdateSetColCount == null ||
+										curUpdateWhereColCount != prevUpdateWhereColCount.intValue() ||
+										curUpdateSetColCount != prevUpdateSetColCount.intValue()) {
 									Update srcUpdate = new Update(srcTable, beforeValues, afterValues);
+									if (usePartialColumns) {
+										srcUpdate.whereColumns = resolvedWhereColumns;
+										srcUpdate.setColumns = resolvedSetColumns;
+									}
 									mappedUpdate= (DML) tableMapper.mapOper(srcUpdate).get(0);
 									tblMappedUpdateOpers.put(srcTable.id, mappedUpdate);
+									tblUpdateWhereColCount.put(srcTable.id, curUpdateWhereColCount);
+									tblUpdateSetColCount.put(srcTable.id, curUpdateSetColCount);
 								} else {
 									if (mappedUpdate.operType == OperType.DELETEINSERT) {
 										tableMapper.bindMappedInsert(mappedUpdate, afterValues);
@@ -763,8 +931,73 @@ public class DeviceEventStreamer extends DeviceProcessor {
 										hasFilterMapper = true;
 									}
 								}
+
+								//
+								//Resolve WHERE columns from the logged SQL to determine which columns
+								//the argValues correspond to. This handles cases where DELETE only
+								//specifies a subset of columns (e.g., PK only) in the WHERE clause.
+								//
+								List<Column> resolvedWhereColumns = null;
+								if (log.whereColNames != null && log.argValues.size() < srcTable.columns.size()) {
+									resolvedWhereColumns = new ArrayList<>();
+									boolean allResolved = true;
+									for (String colName : log.whereColNames) {
+										Column col = srcTable.getColumnByName(colName);
+										if (col != null) {
+											resolvedWhereColumns.add(col);
+										} else {
+											allResolved = false;
+											break;
+										}
+									}
+									if (!allResolved || resolvedWhereColumns.size() != log.argValues.size()) {
+										resolvedWhereColumns = null;
+									} else if (srcTable.hasPrimaryKey()) {
+										//Check if the WHERE columns contain all PK columns
+										boolean coversAllPKs = true;
+										for (Column c : srcTable.columns) {
+											if (c.pkIndex > 0) {
+												boolean found = false;
+												for (Column wc : resolvedWhereColumns) {
+													if (wc.column.equals(c.column)) {
+														found = true;
+														break;
+													}
+												}
+												if (!found) {
+													coversAllPKs = false;
+													break;
+												}
+											}
+										}
+										if (coversAllPKs) {
+											//Reduce to PK-only WHERE columns
+											List<Column> pkCols = new ArrayList<>();
+											List<Object> pkValues = new ArrayList<>();
+											for (int idx = 0; idx < resolvedWhereColumns.size(); idx++) {
+												if (resolvedWhereColumns.get(idx).pkIndex > 0) {
+													pkCols.add(resolvedWhereColumns.get(idx));
+													pkValues.add(log.argValues.get(idx));
+												}
+											}
+											resolvedWhereColumns = pkCols;
+											log.argValues = pkValues;
+										}
+									}
+								}
+
 								List<Object> argValues = log.argValues;
-								if (hasFilterMapper) {
+								if (hasFilterMapper && resolvedWhereColumns != null) {
+									for(int i = 0; i < argValues.size(); ++i) {
+										Column col = resolvedWhereColumns.get(i);
+										if (! ConfLoader.getInstance().isAllowedColumn(dstIndex, log.tableName, col.column)) {
+											continue;
+										}
+										Object colVal = valueMapper.mapValue(tableId, col, argValues.get(i));											
+										afterValues.add(colVal);
+									}
+									argValues = afterValues;
+								} else if (hasFilterMapper) {
 									for(int i = 0; i < argValues.size(); ++i) {
 										Column col = srcTable.columns.get(i);
 										if (! ConfLoader.getInstance().isAllowedColumn(dstIndex, log.tableName, col.column)) {
@@ -780,10 +1013,14 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								//and multiple copies of args being created here
 								//
 								Delete mappedDelete= tblMappedDeleteOpers.get(srcTable.id);
-								if (mappedDelete == null) {
+								int curDeleteWhereColCount = (resolvedWhereColumns != null) ? resolvedWhereColumns.size() : -1;
+								Integer prevDeleteWhereColCount = tblDeleteWhereColCount.get(srcTable.id);
+								if (mappedDelete == null || prevDeleteWhereColCount == null || curDeleteWhereColCount != prevDeleteWhereColCount.intValue()) {
 									Delete srcDelete = new Delete(srcTable, argValues);
+									srcDelete.whereColumns = resolvedWhereColumns;
 									mappedDelete= (Delete) tableMapper.mapOper(srcDelete).get(0);
 									tblMappedDeleteOpers.put(srcTable.id, mappedDelete);
+									tblDeleteWhereColCount.put(srcTable.id, curDeleteWhereColCount);
 								} else {
 									tableMapper.bindMappedDelete(mappedDelete, argValues);
 								}
@@ -964,9 +1201,10 @@ public class DeviceEventStreamer extends DeviceProcessor {
 							case ADDCOLUMN:
 								//executeDDLIgnoreException(log.sql);
 								newTableCols = device.schemaReader.fetchColumns(replicaPath, srcTable.id);
-								Oper addColOper= srcTable.generateAddColumnOper(newTableCols);
+								AddColumn addColOper= (AddColumn) srcTable.generateAddColumnOper(newTableCols);
 								if (addColOper != null) {
 									dstExecutor.execute(addColOper.map(tableMapper));
+									srcTable.applyAddColumn(addColOper);
 									try {
 										consolidatorMetadataMgr.upsertSchema(srcTable);
 									} catch (SQLException e) {
@@ -977,9 +1215,10 @@ public class DeviceEventStreamer extends DeviceProcessor {
 							case DROPCOLUMN:
 								//executeDDLIgnoreException(log.sql);
 								newTableCols = device.schemaReader.fetchColumns(replicaPath, srcTable.id);
-								Oper dropColOper= srcTable.generateDropColumnOper(newTableCols);
+								DropColumn dropColOper= (DropColumn) srcTable.generateDropColumnOper(newTableCols);
 								if (dropColOper != null) {
 									dstExecutor.execute(dropColOper.map(tableMapper));
+									srcTable.applyDropColumn(dropColOper);
 									try {
 										consolidatorMetadataMgr.upsertSchema(srcTable);
 									} catch (SQLException e) {
@@ -989,9 +1228,10 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								break;
 							case ALTERCOLUMN:
 								newTableCols = device.schemaReader.fetchColumns(replicaPath, srcTable.id);
-								Oper alterColOper= srcTable.generateAlterColumnOper(newTableCols);
+								AlterColumn alterColOper= (AlterColumn) srcTable.generateAlterColumnOper(newTableCols);
 								if (alterColOper != null) {
 									dstExecutor.execute(alterColOper.map(tableMapper));
+									srcTable.applyAlterColumn(alterColOper);
 									try {
 										consolidatorMetadataMgr.upsertSchema(srcTable);
 									} catch (SQLException e) {
@@ -1262,8 +1502,8 @@ public class DeviceEventStreamer extends DeviceProcessor {
 					stmt.execute(sql);
 				}
 			} catch (SQLException e) {
-				//Following check to add idempotent behavior to ADD COLUMN and DROP COLUMN sqls
-				if (e.getMessage().contains("duplicate column name") || e.getMessage().contains("no such column")) {
+				//Following check to add idempotent behavior to DDL sqls
+				if (e.getMessage().contains("duplicate column name") || e.getMessage().contains("no such column") || e.getMessage().contains("already exists")) {
 					return;
 				}
 				throw e;
@@ -1343,6 +1583,84 @@ public class DeviceEventStreamer extends DeviceProcessor {
 		}
 		prepSql.append(")");
 		return prepSql.toString();
+	}
+
+	private final String getReplicaUpdatePrepStmt(Table srcTable) {
+		StringBuilder sql = new StringBuilder();
+		sql.append("UPDATE ").append(srcTable.id.table).append(" SET ");
+		boolean first = true;
+		for (Column c : srcTable.columns) {
+			if (!first) {
+				sql.append(", ");
+			}
+			sql.append(c.column).append(" = ?");
+			first = false;
+		}
+		sql.append(" WHERE ");
+		boolean hasPK = srcTable.hasPrimaryKey();
+		first = true;
+		for (Column c : srcTable.columns) {
+			if (hasPK && c.pkIndex <= 0) {
+				continue;
+			}
+			if (!first) {
+				sql.append(" AND ");
+			}
+			sql.append(c.column).append(" IS ?");
+			first = false;
+		}
+		return sql.toString();
+	}
+
+	private final String getReplicaDeletePrepStmt(Table srcTable) {
+		StringBuilder sql = new StringBuilder();
+		sql.append("DELETE FROM ").append(srcTable.id.table).append(" WHERE ");
+		boolean hasPK = srcTable.hasPrimaryKey();
+		boolean first = true;
+		for (Column c : srcTable.columns) {
+			if (hasPK && c.pkIndex <= 0) {
+				continue;
+			}
+			if (!first) {
+				sql.append(" AND ");
+			}
+			sql.append(c.column).append(" IS ?");
+			first = false;
+		}
+		return sql.toString();
+	}
+
+	private final void bindReplicaUpdatePrepStmt(Table srcTable, java.sql.PreparedStatement pStmt, List<Object> argValues, long argCnt) throws SQLException {
+		int numCols = (int)(argCnt / 2);
+		int index = 1;
+		//Bind SET clause with after-values
+		for (int i = 0; i < numCols; i++) {
+			pStmt.setObject(index, argValues.get(numCols + i));
+			index++;
+		}
+		//Bind WHERE clause with before-values (PK columns only, or all if no PK)
+		boolean hasPK = srcTable.hasPrimaryKey();
+		for (int i = 0; i < numCols; i++) {
+			Column col = srcTable.columns.get(i);
+			if (hasPK && col.pkIndex <= 0) {
+				continue;
+			}
+			pStmt.setObject(index, argValues.get(i));
+			index++;
+		}
+	}
+
+	private final void bindReplicaDeletePrepStmt(Table srcTable, java.sql.PreparedStatement pStmt, List<Object> argValues) throws SQLException {
+		int index = 1;
+		boolean hasPK = srcTable.hasPrimaryKey();
+		for (int i = 0; i < argValues.size(); i++) {
+			Column col = srcTable.columns.get(i);
+			if (hasPK && col.pkIndex <= 0) {
+				continue;
+			}
+			pStmt.setObject(index, argValues.get(i));
+			index++;
+		}
 	}
 
 	/*

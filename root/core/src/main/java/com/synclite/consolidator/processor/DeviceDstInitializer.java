@@ -116,7 +116,7 @@ public class DeviceDstInitializer {
 							throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 						}
 						try {
-							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 						} catch (InterruptedException e1) {
 							Thread.currentThread().interrupt();
 						}
@@ -140,7 +140,7 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -316,7 +316,7 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -338,7 +338,7 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -451,7 +451,7 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -494,7 +494,7 @@ public class DeviceDstInitializer {
 					throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}

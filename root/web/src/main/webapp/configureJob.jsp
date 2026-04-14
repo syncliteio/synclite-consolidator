@@ -81,8 +81,7 @@ if (request.getParameter("dst-sync-mode") != null) {
 	properties.put("num-device-processors", request.getParameter("num-device-processors"));
 	properties.put("device-name-pattern", request.getParameter("device-name-pattern"));
 	properties.put("device-id-pattern", request.getParameter("device-id-pattern"));
-	properties.put("enable-replicas-for-streaming-devices", request.getParameter("enable-replicas-for-streaming-devices"));
-	properties.put("disable-replicas-for-store-and-appender-devices", request.getParameter("disable-replicas-for-store-and-appender-devices"));
+	properties.put("enable-replicas-for-store-and-streaming-devices", request.getParameter("enable-replicas-for-store-and-streaming-devices"));
 	properties.put("skip-bad-txn-files", request.getParameter("skip-bad-txn-files"));
 	properties.put("failed-device-retry-interval-s", request.getParameter("failed-device-retry-interval-s"));
 	properties.put("device-trace-level", request.getParameter("device-trace-level"));
@@ -118,8 +117,7 @@ if (request.getParameter("dst-sync-mode") != null) {
 	}
 	properties.put("device-name-pattern", ".*");
 	properties.put("device-id-pattern", ".*");
-	properties.put("enable-replicas-for-streaming-devices", "false");
-	properties.put("disable-replicas-for-store-and-appender-devices", "true");	
+	properties.put("enable-replicas-for-store-and-streaming-devices", "false");	
 	properties.put("skip-bad-txn-files", "false");	
 	properties.put("failed-device-retry-interval-s", 30);
 	properties.put("device-trace-level", "INFO");
@@ -259,40 +257,19 @@ if (request.getParameter("dst-sync-mode") != null) {
 					</tr>
 
 					<tr>
-						<td>Enable Replicas For Streaming/DBLogger Devices</td>
+						<td>Enable Replicas For Store And Streaming Devices</td>
 						<td>
-							<select id="enable-replicas-for-streaming-devices"
-							name="enable-replicas-for-streaming-devices"
-							value="<%=properties.get("enable-replicas-for-streaming-devices")%>" 
-							title="Specify if replicas must be enabled for streaming devices. By default, replicas are disabled for streaming devices."/>						
+							<select id="enable-replicas-for-store-and-streaming-devices"
+							name="enable-replicas-for-store-and-streaming-devices"
+							value="<%=properties.get("enable-replicas-for-store-and-streaming-devices")%>" 
+							title="Specify if replicas must be enabled for store and streaming devices. By default, replicas are disabled for efficient data consolidation."/>						
 								<%
-								if (properties.get("enable-replicas-for-streaming-devices").equals("true")) {
+								if (properties.get("enable-replicas-for-store-and-streaming-devices").equals("true")) {
 									out.println("<option value=\"true\" selected>true</option>");
 								} else {
 									out.println("<option value=\"true\">true</option>");
 								}
-								if (properties.get("enable-replicas-for-streaming-devices").equals("false")) {
-									out.println("<option value=\"false\" selected>false</option>");
-								} else {
-									out.println("<option value=\"false\">false</option>");
-								}
-								%>
-						</td>
-					</tr>
-					<tr>
-						<td>Disable Replicas For Store And Appender Devices</td>
-						<td>
-							<select id="disable-replicas-for-store-and-appender-devices"
-							name="disable-replicas-for-store-and-appender-devices"
-							value="<%=properties.get("disable-replicas-for-store-and-appender-devices")%>" 
-							title="Specify if replicas must be disabled for store and appender devices. By default, replicas are enabled for store and appender devices."/>						
-								<%
-								if (properties.get("disable-replicas-for-store-and-appender-devices").equals("true")) {
-									out.println("<option value=\"true\" selected>true</option>");
-								} else {
-									out.println("<option value=\"true\">true</option>");
-								}
-								if (properties.get("disable-replicas-for-store-and-appender-devices").equals("false")) {
+								if (properties.get("enable-replicas-for-store-and-streaming-devices").equals("false")) {
 									out.println("<option value=\"false\" selected>false</option>");
 								} else {
 									out.println("<option value=\"false\">false</option>");

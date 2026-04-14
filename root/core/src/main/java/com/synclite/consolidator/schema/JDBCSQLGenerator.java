@@ -17,6 +17,7 @@
 package com.synclite.consolidator.schema;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import com.synclite.consolidator.global.ConfLoader;
 import com.synclite.consolidator.oper.AddColumn;
@@ -84,7 +85,9 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
         boolean first = true;
         StringBuilder setListBuilder = new StringBuilder();
         StringBuilder whereListBuilder = new StringBuilder();
-        for (Column c : update.tbl.columns) {
+
+        List<Column> columnsForSet = (update.setColumns != null) ? update.setColumns : update.tbl.columns;
+        for (Column c : columnsForSet) {
             if (!first) {
                 setListBuilder.append(", ");
             }
@@ -93,6 +96,26 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
             first = false;
         }
 
+        if (update.whereColumns != null) {
+            // Use explicitly specified WHERE columns
+            first = true;
+            for (Column c : update.whereColumns) {
+                if (!first) {
+                    whereListBuilder.append(" AND ");
+                }
+                if (c.isNotNull > 0) {
+                    whereListBuilder.append(getColumnNameSQL(c));
+                    whereListBuilder.append(" = ?");
+                } else {
+                    whereListBuilder.append("((? IS NULL AND ");
+                    whereListBuilder.append(getColumnNameSQL(c));
+                    whereListBuilder.append(" IS NULL) OR (");
+                    whereListBuilder.append(getColumnNameSQL(c));
+                    whereListBuilder.append(" = ?))");
+                }
+                first = false;
+            }
+        } else {
         boolean includeAllColsInWhere = true;
         if (ConfLoader.getInstance().getDstOperPredicateOpt(dstIndex) == true) {
             if (update.tbl.hasPrimaryKey()) {
@@ -150,6 +173,7 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
                 first = false;
             }
         }
+        }
 
         builder.append(setListBuilder.toString());
         builder.append(" WHERE ");
@@ -165,6 +189,28 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
         builder.append(getTableNameSQL(delete.tbl.id));
         builder.append(" WHERE ");
 
+        boolean first = true;
+        StringBuilder whereListBuilder = new StringBuilder();
+
+        if (delete.whereColumns != null) {
+            // Use explicitly specified WHERE columns
+            for (Column c : delete.whereColumns) {
+                if (!first) {
+                    whereListBuilder.append(" AND ");
+                }
+                if (c.isNotNull > 0) {
+                    whereListBuilder.append(getColumnNameSQL(c));
+                    whereListBuilder.append(" = ?");
+                } else {
+                    whereListBuilder.append("((? IS NULL AND ");
+                    whereListBuilder.append(getColumnNameSQL(c));
+                    whereListBuilder.append(" IS NULL) OR (");
+                    whereListBuilder.append(getColumnNameSQL(c));
+                    whereListBuilder.append(" = ?))");
+                }
+                first = false;
+            }
+        } else {
         boolean includeAllColsInWhere = true;
         if (ConfLoader.getInstance().getDstOperPredicateOpt(dstIndex) == true) {
             if (delete.tbl.hasPrimaryKey()) {
@@ -172,8 +218,6 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
             }
         }
 
-        boolean first = true;
-        StringBuilder whereListBuilder = new StringBuilder();
         if (includeAllColsInWhere) {
             for (Column c : delete.tbl.columns) {
 				//Exclude system generated TS column from where list
@@ -215,6 +259,7 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
                 }
                 first = false;
             }
+        }
         }
         builder.append(whereListBuilder.toString());
         return builder.toString();
