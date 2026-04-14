@@ -609,6 +609,10 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		throw e;
 	} 
 
+	if (properties.get("dst-vector-extension-enabled-" + dstIndex) == null) {
+		properties.put("dst-vector-extension-enabled-" + dstIndex, "false");
+	}
+
 	//Read spark configuration from config file if prsent
 	if (properties.get("dst-type-" + dstIndex).equals("APACHE_ICEBERG")) {
 		Path sparkConfFile = Path.of(properties.get("device-data-root").toString(), "dst_spark_configuration_" + dstIndex + ".conf");
@@ -842,12 +846,12 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 						if (properties.get("dst-type-" + dstIndex).equals("POSTGRESQL") || properties.get("dst-type-" + dstIndex).equals("MSSQL")) {
 							out.println("<tr><td>Vector Extension Enabled</td>");
 							out.println("<td><select id=\"dst-vector-extension-enabled-" + dstIndex + "\" name=\"dst-vector-extension-enabled-" + dstIndex  +"\" value=\"" + properties.get("dst-vector-extension-enabled-" + dstIndex) + "\" title=\"Specify if vector extension is enabled on destination DB\">");
-							if (properties.get("dst-vector-extension-enabled-" + dstIndex).equals("true")) {
+							if ("true".equals(properties.get("dst-vector-extension-enabled-" + dstIndex))) {
 								out.println("<option value=\"true\" selected>true</option>");
 							} else {
 								out.println("<option value=\"true\">true</option>");
 							}
-							if (properties.get("dst-vector-extension-enabled-" + dstIndex).equals("false")) {
+							if ("false".equals(properties.get("dst-vector-extension-enabled-" + dstIndex))) {
 								out.println("<option value=\"false\" selected>false</option>");
 							} else {
 								out.println("<option value=\"false\">false</option>");

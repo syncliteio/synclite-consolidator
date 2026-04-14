@@ -70,7 +70,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -116,7 +116,7 @@ public class SFTPStageManager extends DeviceStageManager {
 						throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 					} catch (InterruptedException e1) {
 						Thread.currentThread().interrupt();
 					}					
@@ -155,7 +155,7 @@ public class SFTPStageManager extends DeviceStageManager {
 						throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 					} catch (InterruptedException e1) {
 						Thread.currentThread().interrupt();
 					}					
@@ -186,7 +186,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -213,7 +213,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -245,7 +245,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -280,7 +280,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -309,7 +309,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -342,7 +342,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -405,7 +405,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -516,7 +516,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
@@ -544,7 +544,7 @@ public class SFTPStageManager extends DeviceStageManager {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
 				}
 				try {
-					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() * (i + 1));
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}					

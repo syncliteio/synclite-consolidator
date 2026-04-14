@@ -156,14 +156,31 @@ public final class SyncLiteLoggerInfo {
     	}
 	}
 
-	public static boolean isAppenderDevice(DeviceType deviceType) {
+	public static boolean isAppenderOrStoreDevice(DeviceType deviceType) {
     	switch (deviceType) {
     	case SQLITE_APPENDER:
     	case DUCKDB_APPENDER:
     	case DERBY_APPENDER:
     	case H2_APPENDER:
     	case HYPERSQL_APPENDER:
-    	case STORE:
+    	case SQLITE_STORE:
+    	case DUCKDB_STORE:
+    	case DERBY_STORE:
+    	case H2_STORE:
+    	case HYPERSQL_STORE:
+    		return true;
+    	default:
+    		return false;
+    	}
+	}
+
+	public static boolean isStoreDevice(DeviceType deviceType) {
+    	switch (deviceType) {
+    	case SQLITE_STORE:
+    	case DUCKDB_STORE:
+    	case DERBY_STORE:
+    	case H2_STORE:
+    	case HYPERSQL_STORE:
     		return true;
     	default:
     		return false;
@@ -171,7 +188,7 @@ public final class SyncLiteLoggerInfo {
 	}
 	
 
-	public static boolean isStreamingDevice(DeviceType deviceType) {
+	public static boolean isDBLoggerOrStreamingDevice(DeviceType deviceType) {
     	switch (deviceType) {
     	case DBLOGGER:
     	case STREAMING:

@@ -53,6 +53,7 @@ import com.synclite.consolidator.oper.CopyTable;
 import com.synclite.consolidator.oper.CreateDatabase;
 import com.synclite.consolidator.oper.CreateSchema;
 import com.synclite.consolidator.oper.CreateTable;
+import com.synclite.consolidator.oper.DML;
 import com.synclite.consolidator.oper.Delete;
 import com.synclite.consolidator.oper.DeleteIfPredicate;
 import com.synclite.consolidator.oper.DeleteInsert;
@@ -297,6 +298,23 @@ public abstract class JDBCExecutor extends SQLExecutor {
 
 	protected void bindUpdateArgs(Update oper) throws SQLException {
 		int i = 1;
+
+		if (oper.setColumns != null) {
+			// Use explicitly specified SET columns
+			int colIdx = 0;
+			for (Object o : oper.afterValues) {
+				Column c = oper.setColumns.get(colIdx);
+				try {
+					bindPrepared(updatePstmt, i, o, c, false);
+				} catch (Exception e) {
+					this.tracer.error("Failed to bind update SET clause arguments with exception : " + e.getMessage(), e);
+					this.tracer.error("Failed to bind SET clause argument with value " + o + " at index " + i + " for UPDATE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+					throw new SQLException("Failed to bind SET clause argument with value " + o + " at index " + i + " for UPDATE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+				}
+				++i;
+				++colIdx;
+			}
+		} else {
 		for (Object o : oper.afterValues) {
 			try {
 				bindPrepared(updatePstmt, i, o, oper.tbl.columns.get(i-1), false);
@@ -307,7 +325,43 @@ public abstract class JDBCExecutor extends SQLExecutor {
 			}
 			++i;
 		}
+		}
 
+		if (oper.whereColumns != null) {
+			// Use explicitly specified WHERE columns
+			int colIdx = 0;
+			for (Object o : oper.beforeValues) {
+				Column c = oper.whereColumns.get(colIdx);
+				if (c.isNotNull > 0) {
+					try {
+						bindPrepared(updatePstmt, i, o, c, true);
+					} catch (Exception e) {
+						this.tracer.error("Failed to bind update WHERE clause arguments with exception : " + e.getMessage(), e);
+						this.tracer.error("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for UPDATE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+						throw new SQLException("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for UPDATE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+					}
+					++i;
+				} else {
+					try {
+						bindPrepared(updatePstmt, i, o, c, true);
+					} catch (Exception e) {
+						this.tracer.error("Failed to bind update WHERE clause arguments with exception : " + e.getMessage(), e);
+						this.tracer.error("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for UPDATE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+						throw new SQLException("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for UPDATE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+					}
+					++i;
+					try {
+						bindPrepared(updatePstmt, i, o, c, true);
+					} catch (Exception e) {
+						this.tracer.error("Failed to bind update WHERE clause arguments with exception : " + e.getMessage(), e);
+						this.tracer.error("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for UPDATE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+						throw new SQLException("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for UPDATE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+					}
+					++i;
+				}
+				++colIdx;
+			}
+		} else {
 		boolean includeAllColsInWhere = true;
 		if (ConfLoader.getInstance().getDstOperPredicateOpt(dstIndex) == true) {
 			if (oper.tbl.hasPrimaryKey()) {
@@ -391,6 +445,7 @@ public abstract class JDBCExecutor extends SQLExecutor {
 				++colIdx;
 			}
 		}
+		}
 	}
 
 	@Override
@@ -408,6 +463,41 @@ public abstract class JDBCExecutor extends SQLExecutor {
 	protected void bindDeleteArgs(Delete oper) throws SQLException {
 		int i = 1;
 
+		if (oper.whereColumns != null) {
+			// Use explicitly specified WHERE columns
+			int colIdx = 0;
+			for (Object o : oper.beforeValues) {
+				Column c = oper.whereColumns.get(colIdx);
+				if (c.isNotNull > 0) {
+					try {
+						bindPrepared(deletePstmt, i, o, c, true);
+					} catch (Exception e) {
+						this.tracer.error("Failed to bind delete WHERE clause arguments with exception : " + e.getMessage(), e);
+						this.tracer.error("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for DELETE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+						throw new SQLException("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for DELETE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+					}
+					++i;
+				} else {
+					try {
+						bindPrepared(deletePstmt, i, o, c, true);
+					} catch (Exception e) {
+						this.tracer.error("Failed to bind delete WHERE clause arguments with exception : " + e.getMessage(), e);
+						this.tracer.error("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for DELETE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+						throw new SQLException("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for DELETE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+					}
+					++i;
+					try {
+						bindPrepared(deletePstmt, i, o, c, true);
+					} catch (Exception e) {
+						this.tracer.error("Failed to bind delete WHERE clause arguments with exception : " + e.getMessage(), e);
+						this.tracer.error("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for DELETE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+						throw new SQLException("Failed to bind WHERE clause argument with value " + o + " at index " + i + " for DELETE prepared statement : " + currentSql + " for table : " + oper.tbl + " for column : " + c.column + "(" + c.type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+					}
+					++i;
+				}
+				++colIdx;
+			}
+		} else {
 		boolean includeAllColsInWhere = true;
 		if (ConfLoader.getInstance().getDstOperPredicateOpt(dstIndex) == true) {
 			if (oper.tbl.hasPrimaryKey()) {
@@ -490,6 +580,7 @@ public abstract class JDBCExecutor extends SQLExecutor {
 				}
 				++colIdx;
 			}
+		}
 		}
 	}
 
@@ -875,6 +966,10 @@ public abstract class JDBCExecutor extends SQLExecutor {
 		} else if (oper.operType != prevBatchOper.operType) {
 			flushAndResetBatch();
 			prepareBatch(oper);
+		} else if ((oper.operType == OperType.DELETE || oper.operType == OperType.UPDATE) && hasDMLWhereColumnsChanged((DML) oper, (DML) prevBatchOper)) {
+			//WHERE/SET columns changed (e.g. different WHERE columns for same table/operType)
+			flushAndResetBatch();
+			prepareBatch(oper);
 		} else if (batchOperCount == currentOperBatchSizeLimit) {
 			//If batch full then flush previous batch and do not clear the prepared statement;
 			flushBatch();
@@ -904,6 +999,22 @@ public abstract class JDBCExecutor extends SQLExecutor {
 		default:
 			return false;
 		}    	
+	}
+
+	private boolean hasDMLWhereColumnsChanged(DML current, DML previous) {
+		int curWhereColCount = (current.whereColumns != null) ? current.whereColumns.size() : -1;
+		int prevWhereColCount = (previous.whereColumns != null) ? previous.whereColumns.size() : -1;
+		if (curWhereColCount != prevWhereColCount) {
+			return true;
+		}
+		if (current.setColumns != null || previous.setColumns != null) {
+			int curSetColCount = (current.setColumns != null) ? current.setColumns.size() : -1;
+			int prevSetColCount = (previous.setColumns != null) ? previous.setColumns.size() : -1;
+			if (curSetColCount != prevSetColCount) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	protected final void prepareBatch(Oper oper) throws DstExecutionException {

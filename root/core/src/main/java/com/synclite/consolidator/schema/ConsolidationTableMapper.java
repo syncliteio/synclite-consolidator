@@ -121,7 +121,7 @@ public class ConsolidationTableMapper extends TableMapper {
                 srcColumn.cid,
                 mappedColumnName,
                 mapType(srcColumn.type),
-                ((srcColumn.pkIndex == 1) ? 1 : 0),
+                0,
                 srcColumn.defaultValue,
                 srcColumn.pkIndex,
                 0
@@ -161,8 +161,10 @@ public class ConsolidationTableMapper extends TableMapper {
         mappedOper.beforeValues.clear();
         mappedOper.beforeValues.add(dstTable.id.deviceUUID);
         mappedOper.beforeValues.add(dstTable.id.deviceName);
-        //Add null for synclite_update_timestamp
-        mappedOper.beforeValues.add(null);
+        if (mappedOper.whereColumns == null) {
+            //Add null for synclite_update_timestamp
+            mappedOper.beforeValues.add(null);
+        }
         mappedOper.beforeValues.addAll(beforeValues);
 		
 		mappedOper.afterValues.clear();
@@ -178,7 +180,9 @@ public class ConsolidationTableMapper extends TableMapper {
 		mappedOper.beforeValues.clear();
 		mappedOper.beforeValues.add(dstTable.id.deviceUUID);
 		mappedOper.beforeValues.add(dstTable.id.deviceName);
-		mappedOper.beforeValues.add(null);
+		if (mappedOper.whereColumns == null) {
+			mappedOper.beforeValues.add(null);
+		}
 		mappedOper.beforeValues.addAll(beforeValues);
 	}
 
@@ -216,12 +220,21 @@ public class ConsolidationTableMapper extends TableMapper {
     public List<Oper> mapOper(Update update) throws SyncLiteException {
         ConsolidatorDstTable dstTable = mapTable((ConsolidatorSrcTable) update.tbl);
 
-        List<Object> dstBeforeValues = new ArrayList<Object>(update.beforeValues.size() + 3);
-        dstBeforeValues.add(dstTable.id.deviceUUID);
-        dstBeforeValues.add(dstTable.id.deviceName);
-        //Add null for synclite_update_timestamp
-        dstBeforeValues.add(null);
-        dstBeforeValues.addAll(update.beforeValues);
+        List<Object> dstBeforeValues;
+        if (update.whereColumns != null) {
+            //When whereColumns is set, don't include null placeholder for TS
+            dstBeforeValues = new ArrayList<Object>(update.beforeValues.size() + 2);
+            dstBeforeValues.add(dstTable.id.deviceUUID);
+            dstBeforeValues.add(dstTable.id.deviceName);
+            dstBeforeValues.addAll(update.beforeValues);
+        } else {
+            dstBeforeValues = new ArrayList<Object>(update.beforeValues.size() + 3);
+            dstBeforeValues.add(dstTable.id.deviceUUID);
+            dstBeforeValues.add(dstTable.id.deviceName);
+            //Add null for synclite_update_timestamp
+            dstBeforeValues.add(null);
+            dstBeforeValues.addAll(update.beforeValues);
+        }
 
         List<Object> dstAfterValues = new ArrayList<Object>(update.afterValues.size() + 3);
         dstAfterValues.add(dstTable.id.deviceUUID);
@@ -230,7 +243,27 @@ public class ConsolidationTableMapper extends TableMapper {
         dstAfterValues.addAll(update.afterValues);
 
 		if (this.sqlGenerator.isUpdateAllowed()) {
-	        return Collections.singletonList(new Update(dstTable, dstBeforeValues, dstAfterValues));
+	        Update dstUpdate = new Update(dstTable, dstBeforeValues, dstAfterValues);
+	        if (update.whereColumns != null) {
+	            List<Column> dstWhereColumns = new ArrayList<>(update.whereColumns.size() + 2);
+	            dstWhereColumns.add(dstTable.columns.get(0)); //synclite_device_id
+	            dstWhereColumns.add(dstTable.columns.get(1)); //synclite_device_name
+	            for (Column srcCol : update.whereColumns) {
+	                dstWhereColumns.add(mapColumn(update.tbl.id, srcCol));
+	            }
+	            dstUpdate.whereColumns = dstWhereColumns;
+	        }
+	        if (update.setColumns != null) {
+	            List<Column> dstSetColumns = new ArrayList<>(update.setColumns.size() + 3);
+	            dstSetColumns.add(dstTable.columns.get(0)); //synclite_device_id
+	            dstSetColumns.add(dstTable.columns.get(1)); //synclite_device_name
+	            dstSetColumns.add(dstTable.columns.get(2)); //synclite_update_timestamp
+	            for (Column srcCol : update.setColumns) {
+	                dstSetColumns.add(mapColumn(update.tbl.id, srcCol));
+	            }
+	            dstUpdate.setColumns = dstSetColumns;
+	        }
+	        return Collections.singletonList(dstUpdate);
 		} else {
 			//TODO
 	        return Collections.singletonList(new DeleteInsert(dstTable, dstBeforeValues, dstAfterValues));
@@ -241,13 +274,32 @@ public class ConsolidationTableMapper extends TableMapper {
     public List<Oper> mapOper(Delete delete) throws SyncLiteException {
         ConsolidatorDstTable dstTable = mapTable((ConsolidatorSrcTable) delete.tbl);
 
-        List<Object> dstBeforeValues = new ArrayList<Object>(delete.beforeValues.size() + 2);
-        dstBeforeValues.add(dstTable.id.deviceUUID);
-        dstBeforeValues.add(dstTable.id.deviceName);
-        dstBeforeValues.add(null);
-        dstBeforeValues.addAll(delete.beforeValues);
-        
-        return Collections.singletonList(new Delete(dstTable, dstBeforeValues));
+        if (delete.whereColumns != null) {
+            //When whereColumns is set, don't include null placeholder for TS
+            List<Object> dstBeforeValues = new ArrayList<Object>(delete.beforeValues.size() + 2);
+            dstBeforeValues.add(dstTable.id.deviceUUID);
+            dstBeforeValues.add(dstTable.id.deviceName);
+            dstBeforeValues.addAll(delete.beforeValues);
+
+            List<Column> dstWhereColumns = new ArrayList<>(delete.whereColumns.size() + 2);
+            dstWhereColumns.add(dstTable.columns.get(0)); //synclite_device_id
+            dstWhereColumns.add(dstTable.columns.get(1)); //synclite_device_name
+            for (Column srcCol : delete.whereColumns) {
+                dstWhereColumns.add(mapColumn(delete.tbl.id, srcCol));
+            }
+
+            Delete dstDelete = new Delete(dstTable, dstBeforeValues);
+            dstDelete.whereColumns = dstWhereColumns;
+            return Collections.singletonList(dstDelete);
+        } else {
+            List<Object> dstBeforeValues = new ArrayList<Object>(delete.beforeValues.size() + 3);
+            dstBeforeValues.add(dstTable.id.deviceUUID);
+            dstBeforeValues.add(dstTable.id.deviceName);
+            dstBeforeValues.add(null);
+            dstBeforeValues.addAll(delete.beforeValues);
+
+            return Collections.singletonList(new Delete(dstTable, dstBeforeValues));
+        }
     }
 
     @Override

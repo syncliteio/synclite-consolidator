@@ -16,7 +16,6 @@
 
 package com.synclite.consolidator.schema;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -61,31 +60,35 @@ public class ConsolidatorSrcTable extends Table {
         //Add columns
         for (Column c : newSchemaCols) {
             if (!colMap.containsKey(c.column)) {
-                addColumn(c);
                 return new AddColumn(this, c);
             }
         }
         return null;
     }
 
+    public void applyAddColumn(AddColumn oper) {
+        addColumn(oper.columns.get(0));
+    }
+
     public Oper generateAlterColumnOper(List<Column> alteredSchemaCols) {
-        //Add columns
+        //Alter columns
         for (Column c : alteredSchemaCols) {
             if (colMap.containsKey(c.column)) {
             	Column existingCol = colMap.get(c.column);
             	if (! existingCol.type.dbNativeDataType.equals(c.type.dbNativeDataType)) {
-            		replaceColumn(c);
             		return new AlterColumn(this, c);
             	} else if (existingCol.isNotNull != c.isNotNull) {
-            		replaceColumn(c);
             		return new AlterColumn(this, c);           		
             	} else if (existingCol.pkIndex != c.pkIndex) {
-            		replaceColumn(c);
             		return new AlterColumn(this, c);
             	}
             }
         }
         return null;
+    }
+
+    public void applyAlterColumn(AlterColumn oper) {
+        replaceColumn(oper.columns.get(0));
     }
 
     public Oper generateDropColumnOper(List<Column> newSchemaCols) {
@@ -94,7 +97,6 @@ public class ConsolidatorSrcTable extends Table {
             newSchemaColSet.add(c.column);
         }
         Column colToRemove = null;
-        List<Oper> addColumns = new ArrayList<Oper>();
         for (Column c : columns) {
             if (!newSchemaColSet.contains(c.column)) {
                 colToRemove = c;
@@ -103,10 +105,13 @@ public class ConsolidatorSrcTable extends Table {
         }
         
         if (colToRemove != null) {
-	        dropColumn(colToRemove);
 	        return new DropColumn(this, colToRemove);
         }
         return null;
+    }
+
+    public void applyDropColumn(DropColumn oper) {
+        dropColumn(oper.columns.get(0));
     }
 
     public Oper generateRenameColumnOper(String oldColName, String newColName) {

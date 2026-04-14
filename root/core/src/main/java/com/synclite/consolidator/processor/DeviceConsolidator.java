@@ -40,9 +40,12 @@ import com.synclite.consolidator.global.ConsolidatorMetadataManager;
 import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
 import com.synclite.consolidator.log.CDCLogPosition;
 import com.synclite.consolidator.log.CDCLogSegment;
+import com.synclite.consolidator.oper.AddColumn;
+import com.synclite.consolidator.oper.AlterColumn;
 import com.synclite.consolidator.oper.BeginTran;
 import com.synclite.consolidator.oper.DML;
 import com.synclite.consolidator.oper.Delete;
+import com.synclite.consolidator.oper.DropColumn;
 import com.synclite.consolidator.oper.Insert;
 import com.synclite.consolidator.oper.NativeOper;
 import com.synclite.consolidator.oper.Oper;
@@ -147,7 +150,7 @@ public class DeviceConsolidator extends DeviceProcessor {
 						throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 					}
 					try {
-						Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+						Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 					} catch (InterruptedException e1) {
 						Thread.currentThread().interrupt();
 					}
@@ -256,7 +259,7 @@ public class DeviceConsolidator extends DeviceProcessor {
 							}
 						}
 						try {
-							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) * (i + 1));
+							Thread.sleep(ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex) );
 						} catch (InterruptedException e1) {
 							Thread.currentThread().interrupt();
 						}
@@ -558,9 +561,10 @@ public class DeviceConsolidator extends DeviceProcessor {
 											Column c = new Column(cid, columnName , dataType, isNotNull, defaultValue, isPrimaryKey, isAutoIncrement);
 											newTableCols.add(c);
 										}
-										Oper addColOper= srcTable.generateAddColumnOper(newTableCols);
+										AddColumn addColOper= (AddColumn) srcTable.generateAddColumnOper(newTableCols);
 										if (addColOper != null) {
 											dstExecutor.execute(addColOper.map(tableMapper));
+											srcTable.applyAddColumn(addColOper);
 											try {
 												consolidatorMetadataMgr.upsertSchema(srcTable);
 											} catch (SQLException e) {
@@ -588,9 +592,10 @@ public class DeviceConsolidator extends DeviceProcessor {
 											Column c = new Column(cid, columnName , dataType, isNotNull, defaultValue, isPrimaryKey, isAutoIncrement);
 											newTableCols.add(c);
 										}
-										Oper alterColOper = srcTable.generateAlterColumnOper(newTableCols);
+										AlterColumn alterColOper = (AlterColumn) srcTable.generateAlterColumnOper(newTableCols);
 										if (alterColOper != null) {
 											dstExecutor.execute(alterColOper.map(tableMapper));
+											srcTable.applyAlterColumn(alterColOper);
 											try {
 												consolidatorMetadataMgr.upsertSchema(srcTable);
 											} catch (SQLException e) {
@@ -618,9 +623,10 @@ public class DeviceConsolidator extends DeviceProcessor {
 											Column c = new Column(cid, columnName , dataType, isNotNull, defaultValue, isPrimaryKey, isAutoIncrement);
 											newTableCols.add(c);
 										}
-										Oper dropColOper= srcTable.generateDropColumnOper(newTableCols);
+										DropColumn dropColOper= (DropColumn) srcTable.generateDropColumnOper(newTableCols);
 										if (dropColOper != null) {
 											dstExecutor.execute(dropColOper.map(tableMapper));
+											srcTable.applyDropColumn(dropColOper);
 											try {
 												consolidatorMetadataMgr.upsertSchema(srcTable);
 											} catch (SQLException e) {

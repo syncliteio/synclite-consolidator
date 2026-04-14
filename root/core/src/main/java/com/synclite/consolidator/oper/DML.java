@@ -18,12 +18,15 @@ package com.synclite.consolidator.oper;
 
 import java.util.List;
 
+import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.Table;
 
 public abstract class DML extends Oper {
 
     public List<Object> beforeValues;
     public List<Object> afterValues;
+    public List<Column> whereColumns;
+    public List<Column> setColumns;
 
     public DML(
         Table tbl,
