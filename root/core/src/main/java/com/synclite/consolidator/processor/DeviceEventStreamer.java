@@ -1314,6 +1314,14 @@ public class DeviceEventStreamer extends DeviceProcessor {
 							default:
 								break;
 							}
+							// Invalidate DML operation caches for this table. DDL may have changed the
+							// table schema (ADDCOLUMN, DROPCOLUMN, ALTERCOLUMN, REFRESHTABLE, etc.), and
+							// any previously-cached mapped INSERT/UPDATE/DELETE would generate stale SQL
+							// with wrong columns (e.g. INSERT including a dropped column, or missing a
+							// newly added column). Removing forces rebuild from the updated srcTable schema.
+							tblMappedInsertOpers.remove(srcTable.id);
+							tblMappedUpdateOpers.remove(srcTable.id);
+							tblMappedDeleteOpers.remove(srcTable.id);
 							updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, log.txnChangeNumber, beforeValues, afterValues);
 							beforeValues.clear();
 							afterValues.clear();
