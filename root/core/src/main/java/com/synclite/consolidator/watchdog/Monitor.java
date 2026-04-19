@@ -264,6 +264,9 @@ public class Monitor {
 				statsConn = DriverManager.getConnection(url);
 
 				try (Statement stmt = statsConn.createStatement()) {
+					stmt.execute("PRAGMA busy_timeout = 5000");
+					stmt.execute("PRAGMA journal_mode = WAL");
+					stmt.execute("PRAGMA synchronous = NORMAL");
 					stmt.execute(createDashboardTableSql);
 					try (ResultSet rs = stmt.executeQuery(selectDashboardTableSql)) {
 						if (!rs.next()) {
@@ -322,6 +325,7 @@ public class Monitor {
 
 		@Override
 		protected void dump() {
+			boolean autoCommitDisabled = false;
 			try {
 				//screenDumper.dump();
 				long currentTime = System.currentTimeMillis();
@@ -332,6 +336,7 @@ public class Monitor {
 					return;
 				}				
 				statsConn.setAutoCommit(false);
+				autoCommitDisabled = true;
 				updateDashboardPstmt.setLong(1, detectedDeviceCnt.get());
 				updateDashboardPstmt.setLong(2, registeredDeviceCnt.get());
 				updateDashboardPstmt.setLong(3, initializedDeviceCnt.get());
@@ -376,10 +381,23 @@ public class Monitor {
 				}
 				statsConn.commit();
 				statsConn.setAutoCommit(true);
+				autoCommitDisabled = false;
 				lastStatFlushTime = currentTime;
 				//TODO keep doing vacuum on statistics file every periodically. 
 
 			} catch (SQLException e) {
+				if (autoCommitDisabled) {
+					try {
+						statsConn.rollback();
+					} catch (SQLException rollbackException) {
+						tracer.error("SyncLite statistics dumper rollback failed with exception : ", rollbackException);
+					}
+					try {
+						statsConn.setAutoCommit(true);
+					} catch (SQLException resetException) {
+						tracer.error("SyncLite statistics dumper failed to reset autocommit after error : ", resetException);
+					}
+				}
 				tracer.error("SyncLite statistics dumper failed with exception : ", e);
 			}
 
@@ -570,8 +588,18 @@ public class Monitor {
 		this.lastStatChangeTime = System.currentTimeMillis();
 	}
 
+	public void setRegisteredDeviceCnt(long cnt) {
+		this.registeredDeviceCnt.set(Math.max(0, cnt));
+		this.lastStatChangeTime = System.currentTimeMillis();
+	}
+
 	public void incrInitializedDeviceCnt(long cnt) {
 		this.initializedDeviceCnt.addAndGet(cnt);
+		this.lastStatChangeTime = System.currentTimeMillis();
+	}
+
+	public void setInitializedDeviceCnt(long cnt) {
+		this.initializedDeviceCnt.set(Math.max(0, cnt));
 		this.lastStatChangeTime = System.currentTimeMillis();
 	}
 
@@ -609,18 +637,48 @@ public class Monitor {
 
 	public final List<Path> getDeviceUploadRootsFromStats() {    		
 		Path statsFilePath = Path.of(ConfLoader.getInstance().getDeviceDataRoot().toString(), "synclite_consolidator_statistics.db");
+		tracer.debug("DEVICE-RELOAD-STATS: Looking for stats file at : " + statsFilePath);
 		if (!Files.exists(statsFilePath)) {
+			tracer.debug("DEVICE-RELOAD-STATS: Stats file not found, returning empty list");
 			return Collections.emptyList();
 		}
 		List<Path> deviceUploadRoots = new ArrayList<Path>();
+		Path deviceDataRoot = ConfLoader.getInstance().getDeviceDataRoot();
+		Path deviceUploadRoot = ConfLoader.getInstance().getDeviceUploadRoot();
+		tracer.debug("DEVICE-RELOAD-STATS: deviceDataRoot=" + deviceDataRoot + " deviceUploadRoot=" + deviceUploadRoot);
 		String url = "jdbc:sqlite:" + statsFilePath;
 		try (Connection conn = DriverManager.getConnection(url)) {
 			try (Statement stmt = conn.createStatement()) {
+				stmt.execute("PRAGMA busy_timeout = 5000");
+				stmt.setQueryTimeout(5);
 				try (ResultSet rs = stmt.executeQuery("SELECT path FROM device_status")) {
+					int rowCount = 0;
+					int sampledRows = 0;
 					while (rs.next()) {
-						Path deviceUploadPath = Path.of(ConfLoader.getInstance().getDeviceUploadRoot().toString(), Path.of(rs.getString(1)).getFileName().toString());
+						rowCount++;
+						String rawPath = rs.getString(1);
+						Path storedDevicePath;
+						try {
+							storedDevicePath = Path.of(rawPath);
+						} catch (RuntimeException invalidPathException) {
+							tracer.error("DEVICE-RELOAD-STATS: Invalid path in device_status row=" + rowCount + " path='" + rawPath + "', skipping row", invalidPathException);
+							continue;
+						}
+						Path relativeDevicePath;
+						try {
+							relativeDevicePath = deviceDataRoot.relativize(storedDevicePath);
+						} catch (IllegalArgumentException e) {
+							tracer.debug("DEVICE-RELOAD-STATS: Cannot relativize stored path '" + rawPath + "' against deviceDataRoot '" + deviceDataRoot + "', falling back to getFileName()");
+							relativeDevicePath = storedDevicePath.getFileName();
+						}
+						Path deviceUploadPath = deviceUploadRoot.resolve(relativeDevicePath);
+						if (rowCount <= 5 || (rowCount % 25) == 0) {
+							sampledRows++;
+							tracer.debug("DEVICE-RELOAD-STATS: row=" + rowCount + " storedPath='" + rawPath + "' relativePath='" + relativeDevicePath + "' resolvedUploadPath='" + deviceUploadPath + "'");
+						}
 						deviceUploadRoots.add(deviceUploadPath);
 					}
+					tracer.debug("DEVICE-RELOAD-STATS: Total device_status rows read=" + rowCount + ", upload paths reconstructed=" + deviceUploadRoots.size() + ", sampledRowLogs=" + sampledRows);
 				}
 			}    			
 		} catch (SQLException e) {

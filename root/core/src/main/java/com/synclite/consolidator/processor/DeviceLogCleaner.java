@@ -63,27 +63,64 @@ public class DeviceLogCleaner {
 			return;
 		}
 		if (SyncLiteLoggerInfo.isTransactionalDeviceType(device.getDeviceType())) {
-			markAndcleanUpTxnLogsUpto(device.getLastConsolidatedLogSegmentSequenceNumber());
+			markAndcleanUpTxnLogsUpto(lastConsolidatedLogNum);
 		} else {
-			markAndCleanUpTelemetryLogsUpto(device.getLastConsolidatedLogSegmentSequenceNumber());
+			markAndCleanUpTelemetryLogsUpto(lastConsolidatedLogNum);
 		}
-		this.cleanedUpto = lastConsolidatedLogNum;
 	}
 	
 	private void markAndcleanUpTxnLogsUpto(long appliedLogSegmentSeqNum) throws SyncLiteException {
 		CDCLogSegment seg = device.getCDCLogSegment(appliedLogSegmentSeqNum);
-		cleanUpTxnDeviceLogs(appliedLogSegmentSeqNum - 1);
 		if (seg != null) {
 			seg.markApplied();
-		}		
+		}
+		bestEffortCleanUpTxnDeviceLogsUpto(appliedLogSegmentSeqNum - 1);
 	}
 
 	private void markAndCleanUpTelemetryLogsUpto(long appliedLogSegmentSeqNum) throws SyncLiteException {		
 		EventLogSegment seg = device.getEventLogSegment(appliedLogSegmentSeqNum);
-		cleanUpTelemetryDeviceLogs(appliedLogSegmentSeqNum - 1);
 		if (seg != null) {
 			seg.markApplied();
 		}
+		bestEffortCleanUpTelemetryDeviceLogsUpto(appliedLogSegmentSeqNum - 1);
+	}
+
+	private void bestEffortCleanUpTxnDeviceLogsUpto(long targetSeqNum) {
+		if (targetSeqNum < 0) {
+			return;
+		}
+
+		long nextContiguousCleaned = this.cleanedUpto;
+		for (long seqNum = this.cleanedUpto + 1; seqNum <= targetSeqNum; ++seqNum) {
+			try {
+				cleanUpTxnDeviceLogs(seqNum);
+				if (seqNum == (nextContiguousCleaned + 1)) {
+					nextContiguousCleaned = seqNum;
+				}
+			} catch (Exception e) {
+				device.tracer.warn("Cleanup failed for transactional log segment : " + seqNum + ", will retry in next cleanup cycle", e);
+			}
+		}
+		this.cleanedUpto = nextContiguousCleaned;
+	}
+
+	private void bestEffortCleanUpTelemetryDeviceLogsUpto(long targetSeqNum) {
+		if (targetSeqNum < 0) {
+			return;
+		}
+
+		long nextContiguousCleaned = this.cleanedUpto;
+		for (long seqNum = this.cleanedUpto + 1; seqNum <= targetSeqNum; ++seqNum) {
+			try {
+				cleanUpTelemetryDeviceLogs(seqNum);
+				if (seqNum == (nextContiguousCleaned + 1)) {
+					nextContiguousCleaned = seqNum;
+				}
+			} catch (Exception e) {
+				device.tracer.warn("Cleanup failed for telemetry log segment : " + seqNum + ", will retry in next cleanup cycle", e);
+			}
+		}
+		this.cleanedUpto = nextContiguousCleaned;
 	}
 
 	private void cleanUpTxnDeviceLogs(long logSegmentSeqNumber) throws SyncLiteException {

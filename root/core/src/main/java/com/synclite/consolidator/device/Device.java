@@ -892,6 +892,8 @@ public class Device {
 	}
 
 	public static void remove(Device dev) {
+		devices.remove(dev.getDeviceUploadRoot());
+		devices.remove(dev.getDeviceUploadRoot().getFileName());
 		devices.remove(dev.getDeviceDataRoot());
 		nameToDeviceMap.remove(dev.getDeviceName());
 		idToDeviceMap.remove(dev.getDeviceUUID());
@@ -902,19 +904,27 @@ public class Device {
 		if (root == null) {
 			return null;
 		}
-		return devices.computeIfAbsent(upload.getFileName(), s -> {
-			try {
-				Device dev = new Device(root, upload);
-				nameToDeviceMap.put(dev.getDeviceName(), dev);
-				idToDeviceMap.put(dev.getDeviceUUID(), dev);
-				return dev;
-			} catch (SyncLiteException e) {
-				throw new RuntimeException(e);
-			}
-		});
+		Device cached = devices.get(upload);
+		if (cached != null) {
+			return cached;
+		}
+
+		Device dev = new Device(root, upload);
+		Device existing = devices.putIfAbsent(upload, dev);
+		if (existing != null) {
+			return existing;
+		}
+
+		nameToDeviceMap.put(dev.getDeviceName(), dev);
+		idToDeviceMap.put(dev.getDeviceUUID(), dev);
+		return dev;
 	}
 
 	public static Device findInstance(Path upload) {
+		Device dev = devices.get(upload);
+		if (dev != null) {
+			return dev;
+		}
 		return devices.get(upload.getFileName());
 	}
 
