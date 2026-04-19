@@ -175,6 +175,7 @@
 							<goal>single</goal>
 						</goals>
 						<configuration>
+							<attach>false</attach>
 							<appendAssemblyId>false</appendAssemblyId>
 							<finalName>consolidator</finalName>
 							<descriptors>
@@ -185,24 +186,33 @@
 				</executions>
 			</plugin>
 
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>license-maven-plugin</artifactId>
-				<version>2.0.0</version>
-				<executions>
-					<execution>
-						<id>generate-third-party-report</id>
-						<phase>prepare-package</phase>
-						<goals>
-							<goal>download-licenses</goal>
-							<goal>third-party-report</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
-
 		</plugins>
 	</build>
+
+	<profiles>
+		<profile>
+			<id>license-report</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.codehaus.mojo</groupId>
+						<artifactId>license-maven-plugin</artifactId>
+						<version>2.0.0</version>
+						<executions>
+							<execution>
+								<id>generate-third-party-report</id>
+								<phase>prepare-package</phase>
+								<goals>
+									<goal>download-licenses</goal>
+									<goal>third-party-report</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 
 	<dependencies>
 
@@ -265,28 +275,18 @@
 			<version>5.1.0</version>
 		</dependency>
 
-		<!-- Log4j 2.x with 1.x API bridge for backward compatibility -->
+		<!-- reload4j: CVE-clean drop-in replacement for log4j 1.x (no bridge chain overhead) -->
 		<dependency>
-			<groupId>org.apache.logging.log4j</groupId>
-			<artifactId>log4j-1.2-api</artifactId>
-			<version>2.24.3</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.logging.log4j</groupId>
-			<artifactId>log4j-api</artifactId>
-			<version>2.24.3</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.logging.log4j</groupId>
-			<artifactId>log4j-core</artifactId>
-			<version>2.24.3</version>
+			<groupId>ch.qos.reload4j</groupId>
+			<artifactId>reload4j</artifactId>
+			<version>1.2.25</version>
 		</dependency>
 
-		<!-- SLF4J bridge to route SLF4J calls (from HikariCP etc.) through Log4j 2.x -->
+		<!-- SLF4J bridge to route SLF4J calls (from HikariCP etc.) through reload4j -->
 		<dependency>
-			<groupId>org.apache.logging.log4j</groupId>
-			<artifactId>log4j-slf4j2-impl</artifactId>
-			<version>2.24.3</version>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-reload4j</artifactId>
+			<version>2.0.17</version>
 		</dependency>
 
 		<dependency>

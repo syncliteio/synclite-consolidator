@@ -70,19 +70,34 @@ public class DeviceLocator {
 	
 	private void buildDevices(List<Path> deviceUploadRoots, Set<Device> devices) throws SyncLiteStageException {
 		Path baseUploadRoot = ConfLoader.getInstance().getDeviceUploadRoot();
-		for (Path deviceUploadRoot : deviceUploadRoots) {			
+		tracer.debug("DEVICE-BUILD: Building devices from " + deviceUploadRoots.size() + " upload roots, current set size=" + devices.size() + ", baseUploadRoot=" + baseUploadRoot);
+		int attempted = 0, succeeded = 0, skipped = 0;
+		for (Path deviceUploadRoot : deviceUploadRoots) {
+			attempted++;
 			Path deviceRoot = Path.of(root.toString(), baseUploadRoot.relativize(deviceUploadRoot).toString());
+			tracer.debug("DEVICE-BUILD: [" + attempted + "] deviceUploadRoot='" + deviceUploadRoot + "' -> deviceRoot='" + deviceRoot + "'");
 			Device device = locateDeviceAtPath(deviceRoot, deviceUploadRoot);
 			if (device != null) {
-				devices.add(device);
-				Monitor.getInstance().setDetectedDeviceCnt(devices.size());
+				boolean added = devices.add(device);
+				if (added) {
+					succeeded++;
+					Monitor.getInstance().setDetectedDeviceCnt(devices.size());
+					tracer.debug("DEVICE-BUILD: [" + attempted + "] device ADDED: " + device.getDeviceUUID() + " status=" + device.getStatus());
+				} else {
+					skipped++;
+					tracer.debug("DEVICE-BUILD: [" + attempted + "] device ALREADY IN SET (skipped): " + device.getDeviceUUID());
+				}
 
 				if (devices.size() > ConfLoader.getInstance().getDeviceCountLimit()) {
 					tracer.error("Device count exceeded the specified limit of " + ConfLoader.getInstance().getDeviceCountLimit() + ". Please renew your license.");
 					break;
 				}
+			} else {
+				skipped++;
+				tracer.debug("DEVICE-BUILD: [" + attempted + "] locateDeviceAtPath returned null for uploadRoot='" + deviceUploadRoot + "'");
 			}
-		}   	
+		}
+		tracer.debug("DEVICE-BUILD: Done. attempted=" + attempted + " added=" + succeeded + " skipped/null=" + skipped + " total set size=" + devices.size());
 	}
 
 	public final Set<Device> listDevices(Path startFrom) throws SyncLiteException {
@@ -93,33 +108,45 @@ public class DeviceLocator {
 	}    
 
 	public final void tryReloadDevices(Set<Device> devices) throws SyncLiteException {
-		
-		List<Path> deviceUploadRoots = Monitor.getInstance().getDeviceUploadRootsFromStats();
-		buildDevices(deviceUploadRoots, devices);       	
+		tracer.debug("DEVICE-RELOAD: Starting tryReloadDevices. Current device set size=" + devices.size());
 
-		//Load devices from FS now as FS may have newly added devices.
-		deviceUploadRoots = getDeviceUploadRootsFromStage(upload);
+		//Load devices from stage first. This avoids startup stalls if stats DB is busy or slow.
+		List<Path> deviceUploadRoots = getDeviceUploadRootsFromStage(upload);
+		tracer.debug("DEVICE-RELOAD: Stage scan returned " + deviceUploadRoots.size() + " upload roots (upload=" + upload + ")");
 		buildDevices(deviceUploadRoots, devices);
+		tracer.debug("DEVICE-RELOAD: After stage-based reload, device set size=" + devices.size());
+
+		//Use stats-based reload only as a best-effort fallback if stage scan did not yield devices.
+		if (devices.isEmpty()) {
+			try {
+				deviceUploadRoots = Monitor.getInstance().getDeviceUploadRootsFromStats();
+				tracer.debug("DEVICE-RELOAD: Stats returned " + deviceUploadRoots.size() + " upload roots for reload");
+				buildDevices(deviceUploadRoots, devices);
+				tracer.debug("DEVICE-RELOAD: After stats-based fallback reload, device set size=" + devices.size());
+			} catch (RuntimeException e) {
+				tracer.error("DEVICE-RELOAD: Stats-based fallback reload failed, continuing with stage-discovered devices only", e);
+			}
+		}
 	}    
 
 	public Device locateDeviceAtPath(Path deviceRoot, Path deviceUploadRoot) throws SyncLiteStageException {
+		tracer.debug("DEVICE-LOCATE: Checking deviceRoot='" + deviceRoot + "' deviceUploadRoot='" + deviceUploadRoot + "'");
 		if (! deviceStageManager.containerExists(deviceUploadRoot,SyncLiteObjectType.DATA_CONTAINER)) {
 			//If upload root does not exist then ignore 
+			tracer.debug("DEVICE-LOCATE: SKIP — upload container does not exist: " + deviceUploadRoot);
 			return null;
 		}
 		DeviceIdentifier deviceIdentifier = Device.validateDeviceDataRoot(deviceRoot);
 		Device device = null;
 		if (deviceIdentifier != null) {
-			//Don't need to check for existence again
-			/*if (!deviceStageManager.containerExists(deviceUploadRoot)) {
-				return null;
-			}*/
+			tracer.debug("DEVICE-LOCATE: Valid device identifier found: " + deviceIdentifier + " at " + deviceRoot);
 			try {
 				if (ConfLoader.getInstance().isAllowedDevice(deviceIdentifier)) {
 					if (!Files.exists(deviceRoot)) {
 						//create directory
 						try {
 							Files.createDirectories(deviceRoot);
+							tracer.debug("DEVICE-LOCATE: Created missing deviceRoot directory: " + deviceRoot);
 						} catch (IOException e) {
 							throw new SyncLiteException("Failed to create directory " + deviceRoot + " inside " + root, e);
 						}
@@ -127,15 +154,20 @@ public class DeviceLocator {
 
 					device = Device.getInstance(deviceRoot, deviceUploadRoot);
 					if (device.getStatus() == DeviceStatus.REMOVED) {
+						tracer.debug("DEVICE-LOCATE: Device " + device.getDeviceUUID() + " is REMOVED, re-creating instance");
 						Device.remove(device);
 						device = Device.getInstance(deviceRoot, deviceUploadRoot);
 					}
 					allDeviceParents.add(device.getDeviceUploadRoot().getParent());
+					tracer.debug("DEVICE-LOCATE: SUCCESS — device=" + device.getDeviceUUID() + " name=" + device.getDeviceName() + " status=" + device.getStatus());
+				} else {
+					tracer.debug("DEVICE-LOCATE: SKIP — device is NOT allowed by filter: " + deviceIdentifier);
 				}
-			} catch(SyncLiteException e) {
-				//Ignore the device with invalid root
-				//Log somewhere
+			} catch(SyncLiteException | RuntimeException e) {
+				tracer.error("Failed to locate device at path : " + deviceRoot + ", skipping this device", e);
 			}            
+		} else {
+			tracer.debug("DEVICE-LOCATE: SKIP — validateDeviceDataRoot returned null for: " + deviceRoot);
 		}
 		return device;
 	}

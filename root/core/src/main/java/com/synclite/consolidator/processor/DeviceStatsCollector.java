@@ -68,9 +68,18 @@ public class DeviceStatsCollector {
 		this.consolidatorControlPropMgr = device.getConsolidatorMetadataMgr(this.dstIndex);
 	}
 
+	private void configureSqliteConnection(Connection conn) throws SQLException {
+		try (Statement pragmaStmt = conn.createStatement()) {
+			pragmaStmt.execute("PRAGMA busy_timeout = 5000");
+			pragmaStmt.execute("PRAGMA journal_mode = WAL");
+			pragmaStmt.execute("PRAGMA synchronous = NORMAL");
+		}
+	}
+
 	private void initStatsFile() throws SyncLiteException {
 		String url = "jdbc:sqlite:" + this.statsFilePath;
 		try (Connection statsFileConn = DriverManager.getConnection(url)) {
+			configureSqliteConnection(statsFileConn);
 			try (Statement stmt = statsFileConn.createStatement()) {
 				stmt.execute(createCheckpointTableSql);
 				try (ResultSet rs = stmt.executeQuery(selectCheckpointTableSql.replace("$", this.dstAlias))) {
@@ -117,6 +126,7 @@ public class DeviceStatsCollector {
 				PreparedStatement updateLogSegmentCheckpointTablePstmt = statsFileConn.prepareStatement(updateLogSegmentCheckpointTableSql);
 				Statement statsStmt = statsFileConn.createStatement())
 		{
+			configureSqliteConnection(statsFileConn);
 			updateLogSegmentCheckpointTablePstmt.setLong(1, logSegmentSeqNumber);
 			updateLogSegmentCheckpointTablePstmt.setLong(2, operCount);
 			updateLogSegmentCheckpointTablePstmt.setLong(3, txnCount);
@@ -145,6 +155,7 @@ public class DeviceStatsCollector {
 				PreparedStatement updateCDCLogSegmentCheckpointTablePstmt = statsFileConn.prepareStatement(updateLogSegmentCheckpointTableSql);
 				Statement statsStmt = statsFileConn.createStatement()
 				) {			
+			configureSqliteConnection(statsFileConn);
 			statsFileConn.setAutoCommit(false);
 			long totalOperCount = 0;
 			boolean hasInsertBatch = false;
@@ -251,6 +262,7 @@ public class DeviceStatsCollector {
 			updateCDCLogSegmentCheckpointTablePstmt.setString(5, this.dstAlias);
 			updateCDCLogSegmentCheckpointTablePstmt.execute();
 			statsFileConn.commit();
+			statsFileConn.setAutoCommit(true);
 			device.incrTotalProcessedLogSegmentCount(1);
 			device.incrTotalProcessedOperCount(totalOperCount);
 			device.incrTotalProcessedTxnCount(txnCount);
@@ -277,6 +289,7 @@ public class DeviceStatsCollector {
 				Statement stmt = statsFileConn.createStatement()
 				) {
 
+			configureSqliteConnection(statsFileConn);
 			statsFileConn.setAutoCommit(false);
 			boolean deleteBatchIsFilled = false;
 			boolean insertBatchIsFilled = false;
@@ -323,6 +336,7 @@ public class DeviceStatsCollector {
 			updateSql = updateSql.replace("$4", this.dstAlias);
 			stmt.execute(updateSql);
 			statsFileConn.commit();
+			statsFileConn.setAutoCommit(true);
 			device.incrTotalProcessedOperCount(totalInitializationRowCount);
 			device.incrTotalProcessedTxnCount(consolidatorControlPropMgr.getInitializedTables().entrySet().size());
 			device.incrTotalProcessedLogSize(totalInitializationSnapshotSize);
@@ -343,6 +357,7 @@ public class DeviceStatsCollector {
 		try (Connection statsFileConn = DriverManager.getConnection(url); 
 				Statement stmt = statsFileConn.createStatement()
 				) {			
+			configureSqliteConnection(statsFileConn);
 			String updateSql = updateInitializationStatsCheckpointTableSql.replace("$1", String.valueOf(operCount));
 			updateSql = updateSql.replace("$2", String.valueOf(txnCount));
 			updateSql = updateSql.replace("$3", String.valueOf(size));
@@ -361,12 +376,14 @@ public class DeviceStatsCollector {
 	public final void resetTableStats() throws SyncLiteException {
 		String url = "jdbc:sqlite:" + this.statsFilePath;
 		try (Connection statsFileConn = DriverManager.getConnection(url)) {
+			configureSqliteConnection(statsFileConn);
 			statsFileConn.setAutoCommit(false);
 			try (Statement stmt = statsFileConn.createStatement()) {
 				stmt.execute(deleteAllStatsTableSql.replace("$", this.dstAlias));
 				stmt.execute(resetInitilizationStatsCollectedSql.replace("$", this.dstAlias));
 			}
 			statsFileConn.commit();
+			statsFileConn.setAutoCommit(true);
 		} catch (SQLException e) {
 			throw new SyncLiteException("Failed to delete table stats in stats file : " + statsFilePath, e);
 		}

@@ -339,6 +339,7 @@ public class SyncDriver implements Runnable{
 	}
 
 	private final void detectNewDevices() {
+		globalTracer.info("DEVICE-DETECTOR: Thread started");
 		while (!Thread.currentThread().isInterrupted()) {
 			try {
 				if (deviceParentWatcher != null) {
@@ -349,7 +350,9 @@ public class SyncDriver implements Runnable{
 				Path deviceDataRoot = ConfLoader.getInstance().getDeviceDataRoot();
 				//Watch all device parents and also device directories individually
 
-				for (Path deviceParent : locator.getAllDeviceParents()) {
+				Set<Path> parents = locator.getAllDeviceParents();
+				globalTracer.debug("DEVICE-DETECTOR: Registering " + parents.size() + " parent directories for watching: " + parents);
+				for (Path deviceParent : parents) {
 					deviceParent.register(deviceParentWatcher, StandardWatchEventKinds.ENTRY_CREATE);	
 				}
 
@@ -362,11 +365,14 @@ public class SyncDriver implements Runnable{
 						for (WatchEvent<?> event : key.pollEvents()) {
 							String detectedDevice = event.context().toString();
 							Path detectedDevicePathInUpload = Path.of(detectedParent.toString(), detectedDevice);
+							globalTracer.debug("DEVICE-DETECTOR: FS event in parent='" + detectedParent + "' entry='" + detectedDevice + "' fullPath='" + detectedDevicePathInUpload + "'");
 							if (!detectedDevicePathInUpload.toFile().isDirectory()) {
+								globalTracer.debug("DEVICE-DETECTOR: SKIP — not a directory: " + detectedDevicePathInUpload);
 								continue;
 							}					
 							if (Device.validateDeviceDataRoot(detectedDevicePathInUpload) == null) {
 								//Watch this directory as this may be a nested parent for devices to be created in future
+								globalTracer.debug("DEVICE-DETECTOR: Not a device root, registering as potential device parent: " + detectedDevicePathInUpload);
 								detectedDevicePathInUpload.register(deviceParentWatcher, StandardWatchEventKinds.ENTRY_CREATE);
 							}
 							//Check if device exists in deviceDataRoot and if does not exists then create it
@@ -375,13 +381,16 @@ public class SyncDriver implements Runnable{
 							Files.createDirectories(detectedDevicePathInDataRoot);
 							Device device = this.locator.locateDeviceAtPath(detectedDevicePathInDataRoot, detectedDevicePathInUpload);
 							if (device != null) {
+								globalTracer.debug("DEVICE-DETECTOR: Device located: " + device.getDeviceUUID() + " (" + device.getDeviceName() + ") status=" + device.getStatus());
 								if ((devices.size() + failedDevices.size()) < ConfLoader.getInstance().getDeviceCountLimit()) {
 									if (!devices.contains(device) && !failedDevices.contains(device)) {
 										//Add the new device to devices, registerDevices will try to register it  
-										//globalLogger.info("New : " + detectedDevice);
 										this.devices.add(device);
+										globalTracer.info("DEVICE-DETECTOR: New device added to live set: " + device.getDeviceUUID() + " (" + device.getDeviceName() + "). Total devices=" + this.devices.size());
 										Monitor.getInstance().setDetectedDeviceCnt(this.devices.size() + this.failedDevices.size());
 										Monitor.getInstance().setFailedDeviceCnt(this.failedDevices.size());
+									} else {
+										globalTracer.debug("DEVICE-DETECTOR: Device already in set, skipping: " + device.getDeviceUUID());
 									}
 								} else {
 									globalTracer.error("Device count exceeded the specified limit of " + ConfLoader.getInstance().getDeviceCountLimit() + ". Please renew your license.");
@@ -394,7 +403,9 @@ public class SyncDriver implements Runnable{
 								//Register this device's parent as well for watching
 								device.getDeviceUploadRoot().register(deviceParentWatcher, StandardWatchEventKinds.ENTRY_CREATE);
 
-							}						
+							} else {
+								globalTracer.debug("DEVICE-DETECTOR: locateDeviceAtPath returned null for: " + detectedDevicePathInDataRoot);
+							}
 						}
 						poll = key.reset();				
 					} catch (Exception e) {
@@ -486,7 +497,9 @@ public class SyncDriver implements Runnable{
 
 	private final void locateNewDevices() {
 		try {
+			globalTracer.debug("LOCATE-NEW: Scanning for new devices from uploadRoot=" + ConfLoader.getInstance().getDeviceUploadRoot() + ". Current devices=" + devices.size() + " failed=" + failedDevices.size());
 			Set<Device> allDevices = locator.listDevices(ConfLoader.getInstance().getDeviceUploadRoot());
+			globalTracer.debug("LOCATE-NEW: Stage scan found " + allDevices.size() + " total devices");
 			Set<Device> newDevices = new HashSet<Device>();
 			long latestDeviceCount = allDevices.size();
 			if (latestDeviceCount > ConfLoader.getInstance().getDeviceCountLimit()) {
@@ -497,6 +510,7 @@ public class SyncDriver implements Runnable{
 					if (!devices.contains(device) && !failedDevices.contains(device)) {
 						++latestDeviceCount;
 						newDevices.add(device);
+						globalTracer.debug("LOCATE-NEW: New device found: " + device.getDeviceUUID() + " (" + device.getDeviceName() + ") status=" + device.getStatus());
 						if (latestDeviceCount > ConfLoader.getInstance().getDeviceCountLimit()) {
 							globalTracer.error("Device count exceeded the specified limit of " + ConfLoader.getInstance().getDeviceCountLimit() + ". Please renew your license.");
 							break;
@@ -505,9 +519,11 @@ public class SyncDriver implements Runnable{
 				}
 				if (newDevices.size() > 0) {
 					devices.addAll(newDevices);
+					globalTracer.info("LOCATE-NEW: Added " + newDevices.size() + " new devices. Total devices now=" + devices.size());
+				} else {
+					globalTracer.debug("LOCATE-NEW: No new devices found. Total unchanged=" + devices.size());
 				}
-				Monitor.getInstance().setDetectedDeviceCnt(this.devices.size() + this.failedDevices.size());
-				Monitor.getInstance().setFailedDeviceCnt(this.failedDevices.size());
+				refreshMonitorDeviceCounts();
 				if (latestDeviceCount > ConfLoader.getInstance().getDeviceCountLimit()) {
 					globalTracer.error("Device count exceeded the specified limit of " + ConfLoader.getInstance().getDeviceCountLimit() + ". Please renew your license.");
 					deviceLocator.shutdown();
@@ -589,11 +605,42 @@ public class SyncDriver implements Runnable{
 					}
 				}
 			}
-			Monitor.getInstance().setDetectedDeviceCnt(this.devices.size() + this.failedDevices.size());
-			Monitor.getInstance().setFailedDeviceCnt(this.failedDevices.size());
+			refreshMonitorDeviceCounts();
 		} catch (Exception e) {
 			globalTracer.error("Failed device scheduler failed with exception : ", e);
 		}
+	}
+
+	private void refreshMonitorDeviceCounts() {
+		long detectedCnt = this.devices.size() + this.failedDevices.size();
+		long failedCnt = this.failedDevices.size();
+		long registeredCnt = 0;
+		long initializedCnt = 0;
+
+		Set<Device> allKnownDevices = new HashSet<Device>(this.devices);
+		allKnownDevices.addAll(this.failedDevices);
+		for (Device device : allKnownDevices) {
+			if (device.getStatus() != DeviceStatus.UNREGISTERED) {
+				registeredCnt += 1;
+			}
+
+			boolean initialized = false;
+			for (int dstIndex : device.getAllDstIndexes()) {
+				if (device.getConsolidatorMetadataMgr(dstIndex).getInitializationStatus() == 1) {
+					initialized = true;
+					break;
+				}
+			}
+			if (initialized) {
+				initializedCnt += 1;
+			}
+		}
+
+		globalTracer.debug("MONITOR-COUNTS: detected=" + detectedCnt + " registered=" + registeredCnt + " initialized=" + initializedCnt + " failed=" + failedCnt + " (devices=" + this.devices.size() + " failedDevices=" + this.failedDevices.size() + ")");
+		Monitor.getInstance().setDetectedDeviceCnt(detectedCnt);
+		Monitor.getInstance().setFailedDeviceCnt(failedCnt);
+		Monitor.getInstance().setRegisteredDeviceCnt(registeredCnt);
+		Monitor.getInstance().setInitializedDeviceCnt(initializedCnt);
 	}
 
 	private final void doSyncContinuous() {
@@ -787,23 +834,30 @@ public class SyncDriver implements Runnable{
 
 
 	private final Void locateDevicesAndStartScheduler() throws SyncLiteException {
+		globalTracer.info("STARTUP: locateDevicesAndStartScheduler() invoked. Beginning device reload.");
+		globalTracer.debug("STARTUP: deviceUploadRoot=" + ConfLoader.getInstance().getDeviceUploadRoot() + " deviceDataRoot=" + ConfLoader.getInstance().getDeviceDataRoot());
 		locator.tryReloadDevices(devices);
+		globalTracer.info("STARTUP: tryReloadDevices() complete. Total devices loaded=" + devices.size() + " failedDevices=" + failedDevices.size());
+		refreshMonitorDeviceCounts();
 
 		//Add devices to task queue 
 		if ((ConfLoader.getInstance().getDeviceSchedulerType() == DeviceSchedulerType.POLLING) || (ConfLoader.getInstance().getDeviceSchedulerType() == DeviceSchedulerType.EVENT_BASED)) {
+			int queued = 0;
 			for (Device device : devices) {
-				globalTracer.debug("Device " + device.getDeviceUUID() + " status : " + device.getStatus());
+				globalTracer.debug("STARTUP: device " + device.getDeviceUUID() + " (" + device.getDeviceName() + ") status=" + device.getStatus());
 				if ((device.getStatus() == DeviceStatus.SYNCING) ||
 						(device.getStatus() == DeviceStatus.SYNCING_FAILED) ||
 						(device.getStatus() == DeviceStatus.REGISTERED))
 				{
 					try {
 						addDeviceTask(device);
+						queued++;
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 					}
 				} 
-			}			
+			}
+			globalTracer.info("STARTUP: Queued " + queued + " devices for immediate work out of " + devices.size() + " total.");
 		}
 
 		//registerDevices();
