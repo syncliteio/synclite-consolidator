@@ -1,0 +1,16 @@
+device-data-root = /home/ubuntu/sqlite/data
+device-command-root = /home/ubuntu/sqlite/data
+include-device-ids = c8ebb6f7-5c0d-43f1-84d5-375261d75fd1
+#device-root = /var/uploads/synclite
+#device-tracing = true
+num-device-processors = 8
+failed-device-retry-interval = 5
+dst-batch-size = 5000
+dst-connection-string = jdbc:postgresql://localhost:5435/io?user=dbwrap&password=dbwrap&ssl=false
+dst-database = io
+dst-schema = public
+dst-type = POSTGRESQL
+dst-sync-mode = CONSOLIDATION
+syncer-role = ALL
+#dst-txn-retry-count
+#map-src-integer-to-dst=integer

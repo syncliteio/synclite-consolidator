@@ -138,8 +138,25 @@ public class EventLogSegment extends LogSegment {
 
 						try {
 							txnDBHandle = DriverManager.getConnection("jdbc:sqlite:" + txnFilePath);
-							txnLogReaderStmt = txnDBHandle.prepareStatement(commandLogSegmentReaderSql);
-							txnLogReaderStmtRS = txnLogReaderStmt.executeQuery();                        
+							// Dynamically determine arg columns in txn file
+							List<String> argColumns = new ArrayList<>();
+							try (Statement pragmaStmt = txnDBHandle.createStatement();
+								 ResultSet pragmaRS = pragmaStmt.executeQuery("PRAGMA table_info('commandlog')")) {
+								int colIdx = 0;
+								while (pragmaRS.next()) {
+									++colIdx;
+									if (colIdx > 4) { // skip change_number, commit_id, sql, arg_cnt
+										argColumns.add(pragmaRS.getString("name"));
+									}
+								}
+							}
+							StringBuilder selectSql = new StringBuilder("SELECT change_number, commit_id, sql, arg_cnt");
+							for (String col : argColumns) {
+								selectSql.append(", ").append(col);
+							}
+							selectSql.append(" FROM commandlog ORDER BY change_number");
+							txnLogReaderStmt = txnDBHandle.prepareStatement(selectSql.toString());
+							txnLogReaderStmtRS = txnLogReaderStmt.executeQuery();
 
 							this.hasNextLog = txnLogReaderStmtRS.next();
 							if (this.hasNextLog == true) {
@@ -149,8 +166,7 @@ public class EventLogSegment extends LogSegment {
 								sql = txnLogReaderStmtRS.getString("sql");
 								argCnt = txnLogReaderStmtRS.getLong("arg_cnt");
 								args.clear();
-								for (int i = 1; i <= argCnt; i++) {
-									//Bind all arguments
+								for (int i = 1; i <= argCnt && i <= argColumns.size(); i++) {
 									args.add(txnLogReaderStmtRS.getObject(i+4));
 								}
 								if (sql == null) {

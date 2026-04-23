@@ -1,0 +1,17 @@
+device-data-root = E:\database
+#device-command-root = E:\database
+#device-tracing = true
+syncer-role = REPLICATOR
+num-device-processors = 8
+failed-device-retry-interval = 5
+dst-type = POSTGRESQL
+dst-connection-string = jdbc:postgresql://localhost:5435/io?user=dbwrap&password=dbwrap&ssl=false
+dst-database = io
+dst-schema = public
+dst-sync-mode = CONSOLIDATION
+dst-batch-size = 5000
+dst-data-type-mapping = ALL_TEXT
+syncer-role = ALL
+#dst-txn-retry-count=10
+#dst-oper-predicate-optimization=true
+#map-src-integer-to-dst=integer

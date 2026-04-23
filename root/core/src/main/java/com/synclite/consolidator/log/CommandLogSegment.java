@@ -143,8 +143,26 @@ public class CommandLogSegment extends LogSegment {
 
 						try {
 							txnDBHandle = new DB(txnFilePath);
-							txnLogReaderStmt = txnDBHandle.prepare(txnLogSegmentReaderSql);
-							this.hasNextLog = txnLogReaderStmt.stepQuery();                    
+							// Dynamically determine arg columns in txn file
+							List<String> argColumns = new ArrayList<>();
+							try (java.sql.Connection pragmaConn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + txnFilePath.toString());
+								 java.sql.Statement pragmaStmt = pragmaConn.createStatement();
+								 java.sql.ResultSet pragmaRS = pragmaStmt.executeQuery("PRAGMA table_info('commandlog')")) {
+								int colIdx = 0;
+								while (pragmaRS.next()) {
+									++colIdx;
+									if (colIdx > 4) { // skip change_number, commit_id, sql, arg_cnt
+										argColumns.add(pragmaRS.getString("name"));
+									}
+								}
+							}
+							StringBuilder selectSql = new StringBuilder("SELECT change_number, commit_id, sql, arg_cnt");
+							for (String col : argColumns) {
+								selectSql.append(", ").append(col);
+							}
+							selectSql.append(" FROM commandlog ORDER BY change_number");
+							txnLogReaderStmt = txnDBHandle.prepare(selectSql.toString());
+							this.hasNextLog = txnLogReaderStmt.stepQuery();
 							if (this.hasNextLog != 0) {
 								changeNumber = prevMainLogRecord.changeNumber;
 								commitId = prevMainLogRecord.commitId;
@@ -152,8 +170,7 @@ public class CommandLogSegment extends LogSegment {
 								sql = txnLogReaderStmt.getString(2);
 								argCnt = txnLogReaderStmt.getLong(3);
 								args.clear();
-								for (int i = 1; i <= argCnt; i++) {
-									//Bind all arguments
+								for (int i = 1; i <= argCnt && i <= argColumns.size(); i++) {
 									args.add(txnLogReaderStmt.getNativeValue(i+3));
 								}
 								if (sql == null) {
@@ -168,11 +185,10 @@ public class CommandLogSegment extends LogSegment {
 								this.txnDBHandle.close();
 								this.txnLogReaderStmt = null;
 								this.txnDBHandle = null;
-
 								//Return an empty log record since nothing found here in this txn file.
 								commandLogRecord = new CommandLogRecord(changeNumber, -1, commitId, "", 0, args);
 								prevLogRecord = commandLogRecord;
-								return commandLogRecord;                        	
+								return commandLogRecord;
 							}
 						} catch (Exception e) {
 							if (ConfLoader.getInstance().getSkipBadTxnFiles()) {
