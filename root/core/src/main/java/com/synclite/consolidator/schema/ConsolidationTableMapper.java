@@ -46,6 +46,7 @@ import com.synclite.consolidator.oper.RenameColumn;
 import com.synclite.consolidator.oper.RenameTable;
 import com.synclite.consolidator.oper.TruncateTable;
 import com.synclite.consolidator.oper.Update;
+import com.synclite.consolidator.oper.UpdateIfPredicate;
 
 public class ConsolidationTableMapper extends TableMapper {
 
@@ -386,6 +387,13 @@ public class ConsolidationTableMapper extends TableMapper {
 		String mappedPredicate = sqlStmt.predicate + " AND synclite_device_name = '" + tbl.id.deviceName + "' AND synclite_device_id = '" + tbl.id.deviceUUID + "'";
 		
 		return Collections.singletonList(new DeleteIfPredicate(tbl, sqlStmt.sql, mappedPredicate));
+	}
+
+	@Override
+	public List<Oper> mapOper(UpdateIfPredicate sqlStmt) {
+		ConsolidatorDstTable tbl = mapTable((ConsolidatorSrcTable) sqlStmt.tbl);
+		String mappedPredicate = sqlStmt.predicate + " AND synclite_device_name = '" + tbl.id.deviceName + "' AND synclite_device_id = '" + tbl.id.deviceUUID + "'";
+		return Collections.singletonList(new UpdateIfPredicate(tbl, sqlStmt.sql, sqlStmt.setClause, mappedPredicate));
 	}
    
     public List<Oper> mapOper(AlterColumn alterColumn) {

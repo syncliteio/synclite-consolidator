@@ -55,18 +55,33 @@ public class CDCLogSegment extends LogSegment {
 
 		public void beginTran() throws SyncLiteException {
 			try {
+				CDCLogSegment.this.device.tracer.debug("CDCWRITER: beginTran on " + CDCLogSegment.this.path);
 				logTableConn.beginTran();
 				CDCLogSegment.this.currentBatchLogCount = 0;
+				CDCLogSegment.this.device.tracer.debug("CDCWRITER: beginTran OK");
 			} catch (SQLException e) {
-				throw new SyncLiteException("Failed to begin a transaction on cdc log segment : " + CDCLogSegment.this);
+				CDCLogSegment.this.device.tracer.debug("CDCWRITER: beginTran FAILED: " + e.getMessage());
+				throw new SyncLiteException("Failed to begin a transaction on cdc log segment : " + CDCLogSegment.this + " : " + e.getMessage(), e);
 			}
 		}
 
 		public void commitTran() throws SyncLiteException {
 			try {
+				CDCLogSegment.this.device.tracer.debug("CDCWRITER: commitTran on " + CDCLogSegment.this.path);
 				logTableConn.commitTran();
+				CDCLogSegment.this.device.tracer.debug("CDCWRITER: commitTran OK");
 			} catch (SQLException e) {
-				throw new SyncLiteException("Failed to commit a transaction on cdc log segment : " + CDCLogSegment.this);
+				CDCLogSegment.this.device.tracer.debug("CDCWRITER: commitTran FAILED: " + e.getMessage());
+				throw new SyncLiteException("Failed to commit a transaction on cdc log segment : " + CDCLogSegment.this + " : " + e.getMessage(), e);
+			}
+		}
+
+		public void rollbackTran() throws SyncLiteException {
+			try {
+				logTableConn.rollbackTran();
+				CDCLogSegment.this.currentBatchLogCount = 0;
+			} catch (SQLException e) {
+				throw new SyncLiteException("Failed to rollback a transaction on cdc log segment : " + CDCLogSegment.this);
 			}
 		}
 
@@ -136,7 +151,9 @@ public class CDCLogSegment extends LogSegment {
 					}
 				}
 
+				CDCLogSegment.this.device.tracer.debug("CDCWRITER: step INSERT opType=" + record.opType + " commitId=" + record.commitId);
 				insertLogTablePstmt.step();
+				CDCLogSegment.this.device.tracer.debug("CDCWRITER: step INSERT OK");
 
 				if (record.colSchemas != null) {
 					for (Column c : record.colSchemas.columns) {
@@ -246,6 +263,9 @@ public class CDCLogSegment extends LogSegment {
 		super(device, sequenceNumber, path);
 	}
 
+	public long getPublishTime() {
+		return path.toFile().lastModified();
+	}
 
 	public CDCLogSegmentWriter getWriter() throws SyncLiteException {
 		return new CDCLogSegmentWriter();
@@ -336,20 +356,14 @@ public class CDCLogSegment extends LogSegment {
 
 
 	private final void initialize() throws SyncLiteException {
-		String url = "jdbc:sqlite:" + this.path;
+		// Use native DB so the file format matches what CDCLogSegmentWriter uses for writes.
 		String argList = prepareArgList(DEFAULT_MAX_INLINED_ARGS);
-		try (Connection conn = DriverManager.getConnection(url)) {
-			try (Statement stmt = conn.createStatement()) {
-				stmt.execute("pragma journal_mode = normal;");
-				stmt.execute("pragma synchronous = normal;");
-				stmt.execute("pragma temp_store = memory;");
-				stmt.execute("pragma mmap_size = 30000000000;");
-				//stmt.execute("pragma page_size = 32768;");
-				stmt.execute("pragma page_size = 512;");
-				stmt.execute(createLogTableSqlTemplate.replace("$1", argList));
-				stmt.execute(createLogSchemasTableSql);
-				stmt.execute(createMetadataTableSql);
-			}
+		try (DB conn = new DB(this.path)) {
+			conn.exec("pragma journal_mode = normal;");
+			conn.exec("pragma synchronous = normal;");
+			conn.exec(createLogTableSqlTemplate.replace("$1", argList));
+			conn.exec(createLogSchemasTableSql);
+			conn.exec(createMetadataTableSql);
 		} catch(SQLException e) {
 			throw new SyncLiteException("Failed to initialize log segment : " + this + " with exception : ", e);
 		}

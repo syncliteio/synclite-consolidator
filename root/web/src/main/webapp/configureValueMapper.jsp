@@ -116,17 +116,11 @@ if (request.getParameter("dst-enable-value-mapper-" + dstIndex) == null) {
 	}
 }
 
-String valueMapperPlaceHolderText = "{\n" + "  \"tables\": [\n" + "    {\n" + "      \"src_table_name\": \"tab1\",\n"
-		+ "      \"columns\": [\n" + "        {\n" + "          \"src_column_name\": \"col1\",\n"
-		+ "          \"value_mappings\": {\n" + "            \"src_value_1\": \"dst_value_1\",\n"
-		+ "            \"src_value_2\": \"dst_value_2\"\n" + "          }\n" + "        },\n" + "        {\n"
-		+ "          \"src_column_name\": \"col2\",\n" + "          \"value_mappings\": {\n"
-		+ "            \"src_value_3\": \"dst_value_3\",\n" + "            \"src_value_4\": \"dst_value_4\"\n"
-		+ "          }\n" + "        }\n" + "      ]\n" + "    },\n" + "    {\n" + "      \"src_table_name\": \"tab2\",\n"
-		+ "      \"columns\": [\n" + "        {\n" + "          \"src_column_name\": \"col1\",\n"
-		+ "          \"value_mappings\": {\n" + "            \"src_value_a\": \"dst_value_a\",\n"
-		+ "            \"src_value_b\": \"dst_value_b\"\n" + "          }\n" + "        }\n" + "      ]\n" + "    }\n"
-		+ "  ]\n" + "}";
+String valueMapperPlaceHolderText = "{\n"
+		+ "  \"<src_table1>.<src_col1>\": { \"src_value_1\": \"dst_value_1\", \"src_value_2\": \"dst_value_2\" },\n"
+		+ "  \"<src_table1>.<src_col2>\": { \"src_value_3\": \"dst_value_3\", \"src_value_4\": \"dst_value_4\" },\n"
+		+ "  \"<src_table2>.<src_col1>\": { \"src_value_a\": \"dst_value_a\", \"src_value_b\": \"dst_value_b\" }\n"
+		+ "}";
 
 valueMapperPlaceHolderText = valueMapperPlaceHolderText.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 		.replace("\"", "&quot;").replace("'", "&#39;");
@@ -192,7 +186,7 @@ function resetFields() {
 					<tr>
 						<td>Value Mappings</td>
 						<td><textarea name="dst-value-mappings-<%=dstIndex%>" id="dst-value-mappings-<%=dstIndex%>" value="<%=properties.get("dst-value-mappings-" + dstIndex)%>" 
-						rows="27" cols="80" placeholder="<%=valueMapperPlaceHolderText%>"  title="Specify value mappings in JSON format" <%=disabledStr%>><%=properties.get("dst-value-mappings-" + dstIndex)%></textarea></td>
+					rows="27" cols="120" placeholder="<%=valueMapperPlaceHolderText%>"  title="Specify value mappings in JSON format" <%=disabledStr%>><%=properties.get("dst-value-mappings-" + dstIndex)%></textarea></td>
 					</tr>					
 				</tbody>
 			</table>

@@ -48,17 +48,23 @@ public class DB implements AutoCloseable{
 
     public void beginTran() throws SQLException {
         int result = exec(this.dbHandle, "BEGIN TRANSACTION", hasDBCallback);
-        //handle exceptions later
+        if (result != 0) {
+            throw new SQLException("BEGIN TRANSACTION failed with result code: " + result);
+        }
     }
 
     public void commitTran() throws SQLException {
         int result = exec(this.dbHandle, "COMMIT", hasDBCallback);
-        //handle exceptions later
+        if (result != 0) {
+            throw new SQLException("COMMIT failed with result code: " + result);
+        }
     }
 
     public void rollbackTran() throws SQLException {
         int result = exec(this.dbHandle, "ROLLBACK", hasDBCallback);
-        //handle exceptions later
+        if (result != 0) {
+            throw new SQLException("ROLLBACK failed with result code: " + result);
+        }
     }
 
 

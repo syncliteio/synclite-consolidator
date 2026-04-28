@@ -75,6 +75,7 @@ import com.synclite.consolidator.oper.RenameTable;
 import com.synclite.consolidator.oper.Replace;
 import com.synclite.consolidator.oper.TruncateTable;
 import com.synclite.consolidator.oper.Update;
+import com.synclite.consolidator.oper.UpdateIfPredicate;
 import com.synclite.consolidator.oper.Upsert;
 import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorDstTable;
@@ -380,7 +381,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 
 	@Override
 	public boolean tableExists(Table tbl) throws DstExecutionException {
-		return (db.getCollection(tbl.id.table) != null);
+		return db.listCollectionNames().into(new ArrayList<>()).contains(tbl.id.table);
 	}
 
 	@Override
@@ -462,6 +463,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	@Override
 	public void beginTran() throws DstExecutionException {
 		try {
+			closeConn(); // close any pre-existing session opened by non-transactional operations
 			ClientSessionOptions options = ClientSessionOptions.builder().causallyConsistent(true).build();
 			this.session = this.client.startSession(options);
 			if (ConfLoader.getInstance().getDstMongoDBUseTransactions(dstIndex)) {
@@ -505,7 +507,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	protected void doCommit() throws DstExecutionException {
 		try {
 			if (this.session != null) {
-				if (ConfLoader.getInstance().getDstMongoDBUseTransactions(dstIndex)) {
+				if (ConfLoader.getInstance().getDstMongoDBUseTransactions(dstIndex) && this.session.hasActiveTransaction()) {
 					this.session.commitTransaction();
 				}
 			}
@@ -526,7 +528,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	public void rollbackTran() throws DstExecutionException {
 		try {
 			if (this.session != null) {
-				if (ConfLoader.getInstance().getDstMongoDBUseTransactions(dstIndex)) {
+				if (ConfLoader.getInstance().getDstMongoDBUseTransactions(dstIndex) && this.session.hasActiveTransaction()) {
 					tracer.debug("Rollback Transaction");
 					this.session.abortTransaction();
 				}
@@ -591,7 +593,7 @@ public class MongoDBExecutor extends JDBCExecutor {
 	public void executeSQL(DeleteIfPredicate sqlStmt) throws DstExecutionException {
 		try {
 			
-			String[] tokens = sqlStmt.predicate.split("=");
+			String[] tokens = sqlStmt.predicate.split("=", 2);
 			String colName = tokens[0].strip();
 			String colVal = tokens[1].strip();
 			//Remove quotes from the value if present
@@ -611,6 +613,11 @@ public class MongoDBExecutor extends JDBCExecutor {
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to execute deleteIfPredicate dst oper : " + e.getMessage(), e);
 		}
+	}
+
+	@Override
+	public void executeSQL(UpdateIfPredicate sqlStmt) throws DstExecutionException {
+		// MongoDB does not support SQL UPDATE predicates — no-op
 	}
 
 	@Override
@@ -760,11 +767,13 @@ public class MongoDBExecutor extends JDBCExecutor {
 	@Override
 	public void renameTable(RenameTable oper) throws DstExecutionException {
 		try {
-            if (db.listCollectionNames().into(new ArrayList<>()).contains(oper.tbl.id.table)) {
-                // Rename the collection
-                db.runCommand(getSession(), new Document("renameCollection", oper.oldTable.id.table)
-                                         .append("to", oper.newTable.id.table));
-                }
+            if (db.listCollectionNames().into(new ArrayList<>()).contains(oper.oldTable.id.table)) {
+                // renameCollection must be run on the admin database with fully qualified namespace
+                String dbName = ConfLoader.getInstance().getDstDatabase(dstIndex);
+                client.getDatabase("admin").runCommand(getSession(),
+                    new Document("renameCollection", dbName + "." + oper.oldTable.id.table)
+                                         .append("to", dbName + "." + oper.newTable.id.table));
+            }
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to execute renameTable dst oper : " + e.getMessage(), e);
 		}

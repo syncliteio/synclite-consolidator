@@ -39,6 +39,7 @@ import com.synclite.consolidator.oper.RenameTable;
 import com.synclite.consolidator.oper.Replace;
 import com.synclite.consolidator.oper.TruncateTable;
 import com.synclite.consolidator.oper.Update;
+import com.synclite.consolidator.oper.UpdateIfPredicate;
 import com.synclite.consolidator.oper.Upsert;
 
 public abstract class JDBCSQLGenerator extends SQLGenerator {
@@ -270,6 +271,11 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
 		return "DELETE FROM " + getTableNameSQL(deleteIfPredicate.tbl.id) + " WHERE " + deleteIfPredicate.predicate;
 	}
 
+	@Override
+	public String getUpdateIfPredicateSQL(UpdateIfPredicate updateIfPredicate) {
+		return "UPDATE " + getTableNameSQL(updateIfPredicate.tbl.id) + " SET " + updateIfPredicate.setClause + " WHERE " + updateIfPredicate.predicate;
+	}
+
     @Override
     public String getCreateTableSQL(CreateTable createTable) {
         StringBuilder builder = new StringBuilder();
@@ -405,11 +411,13 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
 
     @Override
     public String getRenameColumnSQL(RenameColumn renameColumn) {
-        return "ALTER TABLE " + getTableNameSQL(renameColumn.tbl.id) + " RENAME COLUMN " + getColumnNameSQL(renameColumn.columns.get(0)) + " TO " + quoteColumnNameIfNeeded(renameColumn.newName);
+        return "ALTER TABLE " + getTableNameSQL(renameColumn.tbl.id) + " RENAME COLUMN " + quoteColumnNameIfNeeded(renameColumn.oldName) + " TO " + quoteColumnNameIfNeeded(renameColumn.newName);
     }
 
     protected String getColumnTypeSQLNoConstraint(Column c) {
-    	return c.type.dbNativeDataType;
+    	// SQLite allows typeless columns; default to VARCHAR for any SQL destination.
+    	return (c.type.dbNativeDataType != null && !c.type.dbNativeDataType.isBlank())
+    			? c.type.dbNativeDataType : "VARCHAR";
     }
 
     protected String getColumnDefaultConstraint(Column c) {
@@ -421,7 +429,10 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
 
     protected String getColumnTypeSQL(Column c) {
         StringBuilder builder = new StringBuilder();
-    	builder.append(c.type.dbNativeDataType);
+    	// SQLite allows typeless columns; default to VARCHAR for any SQL destination.
+    	String typeName = (c.type.dbNativeDataType != null && !c.type.dbNativeDataType.isBlank())
+    			? c.type.dbNativeDataType : "VARCHAR";
+    	builder.append(typeName);
         builder.append(" ");
         if (c.isNotNull == 0) {
             builder.append(" NULL ");

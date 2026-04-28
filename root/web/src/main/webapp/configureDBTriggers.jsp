@@ -117,21 +117,13 @@ if (request.getParameter("dst-triggers-" + dstIndex) == null) {
 }
 
 String triggerPlaceHolderText = "{\n" +
-"  \"tables\": [\n" +
-"    {\n" +
-"      \"dst_table_name\": \"dst_tab1\",\n" +
-"      \"trigger_statements\": [\n" +
-"        \"UPDATE dst_tab1 SET col1 = 'dst_value_1' WHERE col2 = 'src_value_3';\",\n" +
-"        \"UPDATE dst_tab1 SET col2 = 'dst_value_3' WHERE col1 = 'src_value_1';\"\n" +
-"      ]\n" +
-"    },\n" +
-"    {\n" +
-"      \"dst_table_name\": \"dst_tab2\",\n" +
-"      \"trigger_statements\": [\n" +
-"        \"DELETE FROM dst_tab2 WHERE col1 = 'src_value_a';\",\n" +
-"        \"INSERT INTO dst_tab3 (col1) SELECT col1 FROM dst_tab2 WHERE col1 = 'src_value_b';\"\n" +
-"      ]\n" +
-"    }\n" +
+"  \"<dst_table1>\": [\n" +
+"    \"UPDATE <dst_table1> SET col1 = 'dst_value_1' WHERE col2 = 'src_value_3';\",\n" +
+"    \"UPDATE <dst_table1> SET col2 = 'dst_value_3' WHERE col1 = 'src_value_1';\"\n" +
+"  ],\n" +
+"  \"<dst_table2>\": [\n" +
+"    \"DELETE FROM <dst_table2> WHERE col1 = 'src_value_a';\",\n" +
+"    \"INSERT INTO <dst_table3> (col1) SELECT col1 FROM <dst_table2> WHERE col1 = 'src_value_b';\"\n" +
 "  ]\n" +
 "}";
 
@@ -201,7 +193,7 @@ function resetFields() {
 					<tr>
 						<td>Triggers</td>
 						<td><textarea name="dst-triggers-<%=dstIndex%>" id="dst-triggers-<%=dstIndex%>" value="<%=properties.get("dst-triggers-" + dstIndex)%>" 
-						rows="27" cols="80" placeholder="<%=triggerPlaceHolderText%>"  title="Specify trigger statements per destination table in JSON format. SyncLite Consolidator will invoke trigger statements on each table as part of the same database transaction which is used to consolidate data into a destination database." <%=disabledStr%>><%=properties.get("dst-triggers-" + dstIndex)%></textarea></td>
+					rows="27" cols="120" placeholder="<%=triggerPlaceHolderText%>"  title="Specify trigger statements per destination table in JSON format. SyncLite Consolidator will invoke trigger statements on each table as part of the same database transaction which is used to consolidate data into a destination database." <%=disabledStr%>><%=properties.get("dst-triggers-" + dstIndex)%></textarea></td>
 					</tr>					
 				</tbody>
 			</table>

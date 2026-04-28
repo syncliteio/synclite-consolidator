@@ -162,7 +162,7 @@ if (request.getParameter("update-statistics-interval-s") != null) {
 						<td>Prometheus Push Gateway URL</td>
 						<td><input type="text" size=30 id="prometheus-push-gateway-url"
 							name="prometheus-push-gateway-url"
-							value="<%=properties.get("prometheus-push-gateway-url")%>" readonly
+							value="<%=properties.get("prometheus-push-gateway-url")%>"
 							title="Prometheus push gateway URL to publish the statistics"/>
 						</td>
 					</tr>

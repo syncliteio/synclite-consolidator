@@ -190,7 +190,7 @@ String saveStatusDetails = request.getParameter("saveStatusDetails");
 						<b>Device Encryption Enabled</b>          	 : <% out.print(session.getAttribute("device-encryption-enabled").toString()); %><br>
 						<% 
 						if (session.getAttribute("device-decryption-key-file") != null) {
-							out.print("<b>Device Decryption Key File</b> : " + session.getAttribute("device-decryption-key-file").toString() + "<br>");
+							out.print("<b>Device Decryption Key File</b> : (configured)<br>");
 						}	
 						%>
 						<b>Device Scheduler Type</b>          : <% out.print(session.getAttribute("device-scheduler-type").toString()); %><br>
@@ -465,7 +465,7 @@ String saveStatusDetails = request.getParameter("saveStatusDetails");
 					out.print("<b>Quote Column Names</b> : " + session.getAttribute("dst-quote-column-names-" + dstIndex).toString() + "<br>");
 					out.print("<b>Use Catalog Scope Resolution</b> : " + session.getAttribute("dst-use-catalog-scope-resolution-" + dstIndex).toString() + "<br>");
 					out.print("<b>Use Schema Scope Resolution</b> : " + session.getAttribute("dst-use-schema-scope-resolution-" + dstIndex).toString() + "<br>");
-					out.print("<b>Disable SyncLite Metadata on Destination DB</b> : " + session.getAttribute("dst-disable-metadata-table-" + dstIndex).toString() + "<br>");
+					out.print("<b>Metadata Store</b> : " + (session.getAttribute("metadata-store-" + dstIndex) != null ? session.getAttribute("metadata-store-" + dstIndex).toString() : "DESTINATION") + "<br>");
 					out.print("<b>Skip Failed Log Files</b> : " + session.getAttribute("dst-skip-failed-log-files-" + dstIndex).toString() + "<br>");
 					
 					if (session.getAttribute("dst-clickhouse-engine-" + dstIndex) != null) {

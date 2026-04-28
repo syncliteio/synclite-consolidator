@@ -33,6 +33,7 @@ public class RenameColumn extends DDL {
     public RenameColumn(Table tbl, Column column, String oldName, String newName) {
         super(tbl, Collections.singletonList(column));
         this.operType = OperType.RENAMECOLUMN;
+        this.oldName = oldName;
         this.newName = newName;
     }
 

@@ -136,8 +136,11 @@ public class Monitor {
 		private Gauge totalProcessedLogSize;
 		private Gauge totalProcessedOperCnt;
 		private Gauge totalProcessedTxnCnt;
+		private Gauge totalInitializationCnt;
+		private Gauge totalResynchronizationCnt;
 		private Gauge latency;
 		private Gauge lastHeardbeatTime;
+		private Gauge lastJobStartTime;
 		private ScheduledExecutorService excutionService;
 
 		@Override
@@ -147,14 +150,16 @@ public class Monitor {
 				this.registeredDeviceCnt.set(Monitor.this.registeredDeviceCnt.longValue());
 				this.initializedDeviceCnt.set(Monitor.this.initializedDeviceCnt.longValue());
 				this.failedDeviceCnt.set(Monitor.this.failedDeviceCnt.longValue());
-				this.failedDeviceCnt.set(Monitor.this.failedDeviceCnt.longValue());
 				this.totalConsolidatedTableCnt.set(ConsolidatorSrcTable.getCount());
 				this.totalLogSegmentsCnt.set(Monitor.this.totalCDCLogSegmentCnt.get());
 				this.totalProcessedOperCnt.set(Monitor.this.totalProcessedOperCount.get());
 				this.totalProcessedTxnCnt.set(Monitor.this.totalDstTxnCnt.get());
 				this.totalProcessedLogSize.set(Monitor.this.totalProcessedLogSize.get());
+				this.totalInitializationCnt.set(Monitor.this.totalInitializationCnt.get());
+				this.totalResynchronizationCnt.set(Monitor.this.totalResyncronizationCnt.get());
 				this.latency.set(getGlobalLatency());
 				this.lastHeardbeatTime.set(System.currentTimeMillis());
+				this.lastJobStartTime.set(Main.jobStartTime);
 
 				// Push the metrics to the PushGateway
 				URL pushGatewayURL = ConfLoader.getInstance().getPrometheusPushGatewayURL();				 
@@ -214,6 +219,16 @@ public class Monitor {
 						.help("Total_Processed_Log_Size")
 						.register();
 				
+				totalInitializationCnt = Gauge.build()
+						.name("Total_Device_Initializations")
+						.help("Total_Device_Initializations")
+						.register();
+
+				totalResynchronizationCnt = Gauge.build()
+						.name("Total_Device_Resynchronizations")
+						.help("Total_Device_Resynchronizations")
+						.register();
+
 				latency = Gauge.build()
 						.name("Latency")
 						.help("Latency")
@@ -222,6 +237,11 @@ public class Monitor {
 				lastHeardbeatTime = Gauge.build()
 						.name("Job_Last_Heartbeat_Time")
 						.help("Job_Last_Hearthbeat_Time")
+						.register();
+
+				lastJobStartTime = Gauge.build()
+						.name("Job_Last_Start_Time")
+						.help("Job_Last_Start_Time")
 						.register();
 
 				excutionService = Executors.newScheduledThreadPool(1);

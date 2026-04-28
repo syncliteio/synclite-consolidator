@@ -48,6 +48,7 @@ import com.synclite.consolidator.oper.RenameTable;
 import com.synclite.consolidator.oper.Replace;
 import com.synclite.consolidator.oper.TruncateTable;
 import com.synclite.consolidator.oper.Update;
+import com.synclite.consolidator.oper.UpdateIfPredicate;
 import com.synclite.consolidator.oper.Upsert;
 
 public abstract class TableMapper {
@@ -219,7 +220,9 @@ public abstract class TableMapper {
 
     public List<Oper> mapOper(RenameTable renameTableOper) {
         ConsolidatorDstTable dstTable = mapTable((ConsolidatorSrcTable) renameTableOper.tbl);
-        return Collections.singletonList(new RenameTable(dstTable, renameTableOper.oldTable, renameTableOper.newTable));
+        ConsolidatorDstTable dstOldTable = mapTable((ConsolidatorSrcTable) renameTableOper.oldTable);
+        ConsolidatorDstTable dstNewTable = mapTable((ConsolidatorSrcTable) renameTableOper.newTable);
+        return Collections.singletonList(new RenameTable(dstTable, dstOldTable, dstNewTable));
     }
 
     public List<Oper> mapOper(CreateDatabase createDatabase) {
@@ -327,6 +330,14 @@ public abstract class TableMapper {
 			tbl = mapTable((ConsolidatorSrcTable) sqlStmt.tbl);
 		}
 		return Collections.singletonList(new DeleteIfPredicate(tbl, sqlStmt.sql));
+	}
+
+	public List<Oper> mapOper(UpdateIfPredicate sqlStmt) {
+		ConsolidatorDstTable tbl = null;
+		if (sqlStmt.tbl != null) {
+			tbl = mapTable((ConsolidatorSrcTable) sqlStmt.tbl);
+		}
+		return Collections.singletonList(new UpdateIfPredicate(tbl, sqlStmt.sql, sqlStmt.setClause, sqlStmt.predicate));
 	}
 
 	public List<Oper> mapOper(Minus minus) {

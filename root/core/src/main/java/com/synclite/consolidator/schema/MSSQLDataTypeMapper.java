@@ -77,7 +77,7 @@ public class MSSQLDataTypeMapper extends DataTypeMapper {
 
 	@Override
 	protected DataType getBestEffortRealDataType() {
-		return new DataType("float", JDBCType.FLOAT, StorageClass.NUMERIC);
+		return new DataType("float", JDBCType.FLOAT, StorageClass.REAL);
 	}
 	
 	@Override

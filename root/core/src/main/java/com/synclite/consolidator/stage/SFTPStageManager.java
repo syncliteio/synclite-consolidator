@@ -100,9 +100,9 @@ public class SFTPStageManager extends DeviceStageManager {
 				long publishTime = entry.getMTime() * 1000L; 
 
 				// Download the file
-				OutputStream outputStream = new FileOutputStream(outputFile.toString());
-				c.get(remoteStageDirectory + "/" + objectPath.toString().replace("\\", "/"), outputStream);
-				outputStream.close();
+				try (OutputStream outputStream = new FileOutputStream(outputFile.toString())) {
+					c.get(remoteStageDirectory + "/" + objectPath.toString().replace("\\", "/"), outputStream);
+				}
 
 				return publishTime;			
 			} catch (Exception e) {
@@ -110,16 +110,15 @@ public class SFTPStageManager extends DeviceStageManager {
 					if (((SftpException) e).id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
 						return 0;
 					}
-				} else {
-					tracer.error("Exception while downloading object from device stage, object : " + objectPath, e);				
-					if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
-						throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
-					}
-					try {
-						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
-					} catch (InterruptedException e1) {
-						Thread.currentThread().interrupt();
-					}					
+				}
+				tracer.error("Exception while downloading object from device stage, object : " + objectPath, e);				
+				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
+					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
+				}
+				try {
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
+				} catch (InterruptedException e1) {
+					Thread.currentThread().interrupt();
 				}
 			} 
 		}
@@ -137,8 +136,9 @@ public class SFTPStageManager extends DeviceStageManager {
 
 				ChannelSftp c = containerChannels.get(container);
 
-				InputStream fis = c.get(remoteStageDirectory + "/" + objectPath.toString().replace("\\", "/"));      
-				fileDownloader.decryptAndWriteFile(fis, outputFile);
+				try (InputStream fis = c.get(remoteStageDirectory + "/" + objectPath.toString().replace("\\", "/"))) {
+					fileDownloader.decryptAndWriteFile(fis, outputFile);
+				}
 				// Use lstat() to get file attributes
 				SftpATTRS entry = c.lstat(remoteStageDirectory + "/" + objectPath.toString().replace("\\", "/"));
 				// Get modification time (mtime) and access time (atime)
@@ -149,17 +149,16 @@ public class SFTPStageManager extends DeviceStageManager {
 					if (((SftpException) e).id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
 						return 0;
 					}
-				} else {
-					tracer.error("Exception while downloading object from device stage, object : " + objectPath, e);				
-					if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
-						throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
-					}
-					try {
-						Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
-					} catch (InterruptedException e1) {
-						Thread.currentThread().interrupt();
-					}					
 				}
+				tracer.error("Exception while downloading object from device stage, object : " + objectPath, e);				
+				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
+					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
+				}
+				try {
+					Thread.sleep(ConfLoader.getInstance().getStageOperRetryIntervalMs() );
+				} catch (InterruptedException e1) {
+					Thread.currentThread().interrupt();
+				}					
 			} 
 		}
 		return 0;
@@ -238,7 +237,8 @@ public class SFTPStageManager extends DeviceStageManager {
 					if (file.getFilename().startsWith(prefix)) {
 						objects.add(Path.of(container.toString(), file.getFilename()));
 					}
-				}	            
+				}
+				return objects;
 			} catch (Exception e) {
 				tracer.error("Exception while finding object with prefix : " + prefix  + " and suffix : " + suffix + " from device stage in container : " + container, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
@@ -251,7 +251,7 @@ public class SFTPStageManager extends DeviceStageManager {
 				}
 			}
 		}
-		return null;        
+		return objects;
 	}
 
 	@Override
@@ -357,7 +357,7 @@ public class SFTPStageManager extends DeviceStageManager {
 			this.port = ConfLoader.getInstance().getStageSFTPPort();
 			this.user = ConfLoader.getInstance().getStageSFTPUser();
 			this.password = ConfLoader.getInstance().getStageSFTPPassword();
-			this.remoteStageDirectory = ConfLoader.getInstance().getStageSFTPDataDirectory();
+			this.remoteStageDirectory = remotePath;
 			connect();
 
 			//Check if the specified remote data stage dir exists.
@@ -413,7 +413,7 @@ public class SFTPStageManager extends DeviceStageManager {
 		}
 	}
 
-	private final void connect() {
+	private final void connect() throws SyncLiteStageException {
 		try {
 			java.util.Properties config = new java.util.Properties();
 			config.put("StrictHostKeyChecking", "no");
@@ -429,10 +429,11 @@ public class SFTPStageManager extends DeviceStageManager {
 			masterChannel.connect(Integer.MAX_VALUE);
 		} catch (Exception e) {
 			tracer.error("SFTP Connection failed with exception : ", e);
+			throw new SyncLiteStageException("Failed to connect to SFTP server", e);
 		}
 	}
 
-	private final void connectContainer(String container) {
+	private final void connectContainer(String container) throws SyncLiteStageException {
 		try {
 			java.util.Properties config = new java.util.Properties();
 			config.put("StrictHostKeyChecking", "no");
@@ -450,6 +451,7 @@ public class SFTPStageManager extends DeviceStageManager {
 			containerChannels.put(container, c);            
 		} catch (Exception e) {
 			tracer.error("SFTP Connection failed with exception while connecting for container : " + container, e);
+			throw new SyncLiteStageException("Failed to connect to SFTP server for container: " + container, e);
 		}
 	}
 

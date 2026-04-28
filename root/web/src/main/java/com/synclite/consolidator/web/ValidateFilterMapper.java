@@ -114,6 +114,7 @@ public class ValidateFilterMapper extends HttpServlet {
 			} else {
 				request.getSession().removeAttribute("dst-allow-unspecified-tables-" + dstIndex);
 				request.getSession().removeAttribute("dst-allow-unspecified-columns-" + dstIndex);
+				request.getSession().removeAttribute("dst-filter-mapper-rules-file-" + dstIndex);
 			}
 			request.getSession().setAttribute("dst-enable-filter-mapper-rules-" + dstIndex, dstEnableFilterMapperRulesStr);
 

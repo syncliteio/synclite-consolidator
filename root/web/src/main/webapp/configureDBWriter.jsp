@@ -60,7 +60,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 	properties.put("dst-txn-retry-interval-ms-" + dstIndex, request.getParameter("dst-txn-retry-interval-ms-" + dstIndex));
 	properties.put("dst-idempotent-data-ingestion-" + dstIndex, request.getParameter("dst-idempotent-data-ingestion-" + dstIndex));
 	properties.put("dst-idempotent-data-ingestion-method-" + dstIndex, request.getParameter("dst-idempotent-data-ingestion-method-" + dstIndex));
-	properties.put("dst-disable-metadata-table-" + dstIndex, request.getParameter("dst-disable-metadata-table-" + dstIndex));
+	properties.put("metadata-store-" + dstIndex, request.getParameter("metadata-store-" + dstIndex));
 	properties.put("dst-skip-failed-log-files-" + dstIndex, request.getParameter("dst-skip-failed-log-files-" + dstIndex));
 	properties.put("dst-set-unparsable-values-to-null-" + dstIndex, request.getParameter("dst-set-unparsable-values-to-null-" + dstIndex));
 	properties.put("dst-quote-object-names-" + dstIndex, request.getParameter("dst-quote-object-names-" + dstIndex));
@@ -178,7 +178,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 		break;
 	}
 
-	properties.put("dst-disable-metadata-table-" + dstIndex, "false");
+	properties.put("metadata-store-" + dstIndex, "DESTINATION");
 	properties.put("dst-skip-failed-log-files-" + dstIndex, "false");
 	properties.put("dst-set-unparsable-values-to-null-" + dstIndex, "false");
 	properties.put("dst-quote-object-names-" + dstIndex, "false");
@@ -655,19 +655,19 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 					</tr>					
 
 					<tr>
-						<td>Disable SyncLite Metadata on Destination DB</td>
-						<td><select id="dst-disable-metadata-table-<%=dstIndex%>"
-							name="dst-disable-metadata-table-<%=dstIndex%>" title="Specify if SyncLite metadata table should not be created on destination DB. If this is set to true then metadata table is created locally by SyncLite Consolidator inside workDir. If this option is set to true then idempotent data ingestion must be set to true to ensure exactly once delivery of INSERT operations.">
+						<td>Metadata Store</td>
+						<td><select id="metadata-store-<%=dstIndex%>"
+							name="metadata-store-<%=dstIndex%>" title="Specify where SyncLite consolidator metadata (checkpoint, table schemas, device status) should be stored. DESTINATION stores all metadata on the destination DB enabling recovery after a host failure without any local state. LOCAL stores metadata in the local workDir (legacy behaviour).">
 								<%
-								if (properties.get("dst-disable-metadata-table-" + dstIndex).equals("true")) {
-									out.println("<option value=\"true\" selected>true</option>");
+								if (properties.get("metadata-store-" + dstIndex).equals("DESTINATION")) {
+									out.println("<option value=\"DESTINATION\" selected>DESTINATION</option>");
 								} else {
-									out.println("<option value=\"true\">true</option>");
+									out.println("<option value=\"DESTINATION\">DESTINATION</option>");
 								}
-								if (properties.get("dst-disable-metadata-table-" + dstIndex).equals("false")) {
-									out.println("<option value=\"false\" selected>false</option>");
+								if (properties.get("metadata-store-" + dstIndex).equals("LOCAL")) {
+									out.println("<option value=\"LOCAL\" selected>LOCAL</option>");
 								} else {
-									out.println("<option value=\"false\">false</option>");
+									out.println("<option value=\"LOCAL\">LOCAL</option>");
 								}
 								%>
 						</select></td>
@@ -685,7 +685,7 @@ if (request.getParameter("dst-type-" + dstIndex) != null) {
 							out.println("<tr>");
 							out.println("<td>Use MongoDB Transactions</td>");
 							out.println("<td>");
-							out.println("<select id=\"dst-mongodb-use-transactions-\"" + dstIndex + "\" name=\"dst-mongodb-use-transactions-\""  + dstIndex + "\" title=\"Specify if consolidator should peform all MongoDB writes under trasnactions. Set this to true only if the destination MongoDB version supports and is enabled to process transactions.\">");
+							out.println("<select id=\"dst-mongodb-use-transactions-" + dstIndex + "\" name=\"dst-mongodb-use-transactions-" + dstIndex + "\" title=\"Specify if consolidator should peform all MongoDB writes under transactions. Set this to true only if the destination MongoDB version supports and is enabled to process transactions.\">");
 							if (properties.get("dst-mongodb-use-transactions-" + dstIndex).equals("true")) {
 								out.println("<option value=\"true\" selected>true</option>");
 							} else {
