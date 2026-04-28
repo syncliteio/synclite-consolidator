@@ -167,19 +167,9 @@ public class ValidateDBWriterConfiguration extends HttpServlet {
 				throw new ServletException("Please specify a valid boolean value for \"Skip Failed Log Files\"");
 			}
 
-			String dstDisableMetadataTableStr = request.getParameter("dst-disable-metadata-table-" + dstIndex);
-			try {
-				Boolean val = Boolean.valueOf(dstDisableMetadataTableStr); 
-				if (val == null) {
-					throw new ServletException("Please specify a valid boolean value for \"Disable SyncLite Metadata on Destination DB\"");
-				}
-				if (val == true) {
-					if (dstIdempotentDataIngestionStr.equals("false")) {
-						throw new ServletException("\"Idempotent Data Ingestion\" must be enabled when SyncLite Metadata is disabed on Destination DB");
-					}
-				}
-			} catch(NumberFormatException e) {
-				throw new ServletException("Please specify a valid boolean value for \"Disable SyncLite Metadata on Destination DB\"");
+			String metadataStoreStr = request.getParameter("metadata-store-" + dstIndex);
+			if (metadataStoreStr == null || (!metadataStoreStr.equalsIgnoreCase("DESTINATION") && !metadataStoreStr.equalsIgnoreCase("LOCAL"))) {
+				throw new ServletException("Please specify a valid value for \"Metadata Store\": must be DESTINATION or LOCAL");
 			}
 
 			String dstSetUnparsableValuesToNullStr = request.getParameter("dst-set-unparsable-values-to-null-" + dstIndex);
@@ -249,12 +239,12 @@ public class ValidateDBWriterConfiguration extends HttpServlet {
 			}
 
 			String dstMongoDBUseTransactionsStr= request.getParameter("dst-mongodb-use-transactions-" + dstIndex);
-			try {
-				if (Boolean.valueOf(dstMongoDBUseTransactionsStr) == null) {
+			String dstType = request.getSession().getAttribute("dst-type-" + dstIndex).toString();
+			if (dstType.equals("MONGODB") || dstType.equals("FERRETDB") || dstType.equals("COSMOSDB_MONGODB")) {
+				if (dstMongoDBUseTransactionsStr == null
+						|| (!dstMongoDBUseTransactionsStr.equalsIgnoreCase("true") && !dstMongoDBUseTransactionsStr.equalsIgnoreCase("false"))) {
 					throw new ServletException("Please specify a valid boolean value for \"Use MongoDB Transactions\"");
 				}
-			} catch(NumberFormatException e) {
-				throw new ServletException("Please specify a valid boolean value for \"Use MongoDB Transactions\"");
 			}
 
 			if (request.getSession().getAttribute("dst-type-" + dstIndex).toString().equals("CSV")) {
@@ -307,7 +297,7 @@ public class ValidateDBWriterConfiguration extends HttpServlet {
 			request.getSession().setAttribute("dst-txn-retry-interval-ms-" + dstIndex, dstTxnRetryIntervalMsStr);
 			request.getSession().setAttribute("dst-idempotent-data-ingestion-" + dstIndex, dstIdempotentDataIngestionStr);
 			request.getSession().setAttribute("dst-idempotent-data-ingestion-method-" + dstIndex, dstIdempotentDataIngestionMethodStr);
-			request.getSession().setAttribute("dst-disable-metadata-table-" + dstIndex, dstDisableMetadataTableStr);			
+			request.getSession().setAttribute("metadata-store-" + dstIndex, metadataStoreStr);			
 			request.getSession().setAttribute("dst-skip-failed-log-files-" + dstIndex, dstSkipFailedLogFilesStr);			
 			request.getSession().setAttribute("dst-set-unparsable-values-to-null-" + dstIndex, dstSetUnparsableValuesToNullStr);			
 			request.getSession().setAttribute("dst-quote-object-names-" + dstIndex, dstQuoteObjectNamesStr);

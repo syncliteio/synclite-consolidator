@@ -60,7 +60,7 @@ public class SQLiteDataTypeMapper extends DataTypeMapper {
 
 	@Override
 	protected DataType getBestEffortTextDataType() {
-		return new DataType("text", JDBCType.CLOB, StorageClass.CLOB);	
+		return new DataType("text", JDBCType.CLOB, StorageClass.TEXT);	
 	}
 
 	@Override

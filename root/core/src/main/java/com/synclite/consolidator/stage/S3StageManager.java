@@ -438,7 +438,7 @@ public class S3StageManager extends DeviceStageManager {
 		String containerName = container.getFileName().toString();
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-	       		s3Client.putObject(writeBucketName, containerName + "/", new ByteArrayInputStream(new byte[0]), new ObjectMetadata());
+	       		s3Client.putObject(bucketName, containerName + "/", new ByteArrayInputStream(new byte[0]), new ObjectMetadata());
 				return;
 			} catch (AmazonClientException e) {
 				tracer.error("Exception while creating container in device stage : " + containerName, e);				

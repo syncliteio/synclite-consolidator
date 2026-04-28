@@ -40,6 +40,7 @@ import com.synclite.consolidator.exception.DstExecutionException;
 import com.synclite.consolidator.exception.SyncLiteException;
 import com.synclite.consolidator.global.ConfLoader;
 import com.synclite.consolidator.global.ConsolidatorMetadataManager;
+import com.synclite.consolidator.global.DstSyncMode;
 import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
 import com.synclite.consolidator.global.SyncLiteLoggerInfo;
 import com.synclite.consolidator.log.CDCLogPosition;
@@ -61,6 +62,7 @@ import com.synclite.consolidator.oper.NativeOper;
 import com.synclite.consolidator.oper.Oper;
 import com.synclite.consolidator.oper.OperType;
 import com.synclite.consolidator.oper.Update;
+import com.synclite.consolidator.oper.UpdateIfPredicate;
 import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorDstTable;
 import com.synclite.consolidator.schema.ConsolidatorSrcTable;
@@ -70,49 +72,23 @@ import com.synclite.consolidator.schema.TableMapper;
 import com.synclite.consolidator.schema.ValueMapper;
 import com.synclite.consolidator.watchdog.Monitor;
 
-public class DeviceEventStreamer extends DeviceProcessor {
+public class DeviceEventStreamer extends DeviceSyncProcessor {
 
-	private static final String createTxnTableSql = "CREATE TABLE IF NOT EXISTS synclite_metadata(commit_id LONG NOT NULL PRIMARY KEY, change_number LONG NOT NULL, txn_change_number LONG NOT NULL, command_log_segment_sequence_number LONG NOT NULL, cdc_change_number LONG NOT NULL, cdc_txn_change_number LONG NOT NULL, cdc_log_segment_sequence_number LONG NOT NULL, txn_count LONG NOT NULL)";
-	private static final String selectTxnTableSql = "SELECT commit_id, change_number, txn_change_number, command_log_segment_sequence_number, cdc_change_number, cdc_txn_change_number, cdc_log_segment_sequence_number, txn_count FROM synclite_metadata";
-	private static final String insertTxnTableSql = "INSERT INTO synclite_metadata VALUES($1, -1, -1, 0, -1, -1, 0, 0);";
-	private static final String updateTxnTableSql = "UPDATE synclite_metadata SET commit_id = ?, cdc_change_number = ?, cdc_txn_change_number = ?, cdc_log_segment_Sequence_number = ?, txn_count = ?";
 	private static final String firstCommitIDSql = "SELECT commit_id FROM synclite_txn";
 
-	private boolean hasProcessedAllSegments = false;
 	private Path replicaPath;
 	private EventLogSegment currentEventLogSegment;
-	private boolean applyInsertsIdempotently;
-	private long lastConsolidatedCommitId;
-	private long lastConsolidatedChangeNumber;
-	private long lastConsolidatedTxnChangeNumber;
-
 	private long lastConsolidatedCommitIdOnReplica;
 	private long lastConsolidatedChangeNumberOnReplica;
 	private long lastConsolidatedTxnChangeNumberOnReplica;
-
-	private long consolidatedTxnCount;
-	private TableMapper userTableMapper;
-	private TableMapper systemTableMapper;
-	private DeviceDstInitializer dstInitializer;
-	private DeviceStatsCollector statsCollector;
-	private final ConsolidatorMetadataManager consolidatorMetadataMgr;
 	private CDCLogPosition restartEventLogPosition;
-	private ConsolidatorSrcTable checkpointTable;	
-	private HashMap<TableID, HashMap<OperType, Long>> tableStats = new HashMap<TableID, HashMap<OperType, Long>>();
 	private boolean replicaAppenderEnabled;
 	private boolean isStoreDevice;
-	private HashSet<TableID> currentTxnDstTables = new HashSet<TableID>();
 
-	protected DeviceEventStreamer(Device device, int dstIndex) throws SyncLiteException {	
-		super(device, dstIndex);
+	protected DeviceEventStreamer(Device device, int dstIndex) throws SyncLiteException {
+		super(device, dstIndex); // DeviceSyncProcessor sets up shared infrastructure + ensureWorkDirExists + initInMemoryReplica
 		this.restartEventLogPosition = null;
 		this.replicaPath = device.getReplica(this.dstIndex);
-		this.userTableMapper = TableMapper.getUserTableMapperInstance(this.dstIndex);
-		this.systemTableMapper = TableMapper.getSystemTableMapperInstance(this.dstIndex);
-		this.statsCollector = device.getDeviceStatsCollector(this.dstIndex);
-		this.dstInitializer = new DeviceDstInitializer(device, userTableMapper, systemTableMapper, statsCollector, dstIndex);
-		this.consolidatorMetadataMgr = device.getConsolidatorMetadataMgr(this.dstIndex);
-		this.applyInsertsIdempotently = ConfLoader.getInstance().getDstIdempotentDataIngestion(dstIndex);
 		this.replicaAppenderEnabled = false;
 		this.isStoreDevice = SyncLiteLoggerInfo.isStoreDevice(device.getDeviceType());
 		if (SyncLiteLoggerInfo.isAppenderOrStoreDevice(device.getDeviceType()) || SyncLiteLoggerInfo.isDBLoggerOrStreamingDevice(device.getDeviceType())) {
@@ -122,47 +98,61 @@ public class DeviceEventStreamer extends DeviceProcessor {
 		device.updateDeviceStatus(DeviceStatus.SYNCING, "");
 	}
 
-	private final void initCheckpointTable() throws SyncLiteException {
-		String url = "jdbc:sqlite:" + this.replicaPath;
-		try (Connection conn = DriverManager.getConnection(url)) {
-			try (Statement stmt = conn.createStatement()) {
-				stmt.execute(createTxnTableSql);
-				try (ResultSet rs = stmt.executeQuery(selectTxnTableSql)) {
-					if (!rs.next()) {
-						device.tracer.debug("Initializing checkpoint table");
-						try (ResultSet rsFirstCommitID = stmt.executeQuery(firstCommitIDSql)) {
-							this.lastConsolidatedCommitId = rsFirstCommitID.getLong("commit_id");
-							this.lastConsolidatedCommitIdOnReplica = rsFirstCommitID.getLong("commit_id");
-						} catch (SQLException e) {
-							throw new SyncLiteException("Failed to read initial commit id from replica : " + replicaPath + " with exception : ", e);
-						}
-						//
-						//Set change numbers to Long.MAX_VALUE as all the changes corresponding to 
-						//transaction with firstCommitID commit id are reflected in replica and destination
-						//as part of snapshot application.
-						//Hence we need to skip all changes recorded in the first log file for firstCommitID 
-						//Setting changeNumber to MAX_VALUE will make it skip all the logs for this first txn.
-						//
-						this.lastConsolidatedChangeNumber = Long.MAX_VALUE;
-						this.lastConsolidatedTxnChangeNumber = Long.MAX_VALUE;
-						this.lastConsolidatedChangeNumberOnReplica = Long.MAX_VALUE;
-						this.lastConsolidatedTxnChangeNumberOnReplica = Long.MAX_VALUE;
-						
-						this.currentEventLogSegment = device.getEventLogSegment(0);
-						this.consolidatedTxnCount = 0;
+	@Override
+	protected long getCurrentLogSegmentSequenceNumber() {
+		return this.currentEventLogSegment != null ? this.currentEventLogSegment.sequenceNumber : 0;
+	}
 
-						String insertSql = insertTxnTableSql.replace("$1", String.valueOf(this.lastConsolidatedCommitId));
-						stmt.execute(insertSql);
-					} else {
-						this.lastConsolidatedCommitIdOnReplica = rs.getLong("commit_id");
-						this.lastConsolidatedChangeNumberOnReplica = rs.getLong("cdc_change_number");
-						this.lastConsolidatedTxnChangeNumberOnReplica = rs.getLong("cdc_txn_change_number");
+	private final void initCheckpointTable() throws SyncLiteException {
+		if (Files.exists(this.replicaPath)) {
+			String url = "jdbc:sqlite:" + this.replicaPath;
+			try (Connection conn = DriverManager.getConnection(url)) {
+				try (Statement stmt = conn.createStatement()) {
+					stmt.execute(createTxnTableSql);
+					try (ResultSet rs = stmt.executeQuery(selectTxnTableSql)) {
+						if (!rs.next()) {
+							device.tracer.debug("Initializing checkpoint table");
+							try (ResultSet rsFirstCommitID = stmt.executeQuery(firstCommitIDSql)) {
+								this.lastConsolidatedCommitId = rsFirstCommitID.getLong("commit_id");
+								this.lastConsolidatedCommitIdOnReplica = rsFirstCommitID.getLong("commit_id");
+							} catch (SQLException e) {
+								throw new SyncLiteException("Failed to read initial commit id from replica : " + replicaPath + " with exception : ", e);
+							}
+							//
+							//Set change numbers to Long.MAX_VALUE as all the changes corresponding to 
+							//transaction with firstCommitID commit id are reflected in replica and destination
+							//as part of snapshot application.
+							//Hence we need to skip all changes recorded in the first log file for firstCommitID 
+							//Setting changeNumber to MAX_VALUE will make it skip all the logs for this first txn.
+							//
+							this.lastConsolidatedChangeNumber = Long.MAX_VALUE;
+							this.lastConsolidatedTxnChangeNumber = Long.MAX_VALUE;
+							this.lastConsolidatedChangeNumberOnReplica = Long.MAX_VALUE;
+							this.lastConsolidatedTxnChangeNumberOnReplica = Long.MAX_VALUE;
+							
+							this.currentEventLogSegment = device.getEventLogSegment(0);
+							this.consolidatedTxnCount = 0;
+
+							String insertSql = insertTxnTableSql.replace("$1", String.valueOf(this.lastConsolidatedCommitId));
+							stmt.execute(insertSql);
+						} else {
+							this.lastConsolidatedCommitIdOnReplica = rs.getLong("commit_id");
+							this.lastConsolidatedChangeNumberOnReplica = rs.getLong("cdc_change_number");
+							this.lastConsolidatedTxnChangeNumberOnReplica = rs.getLong("cdc_txn_change_number");
+						}
 					}
 				}
+			} catch (SQLException e) {
+				throw new SyncLiteException("Failed to initialize the synclite dblogger checkpoint table in replica : " + replicaPath, e);
 			}
-			//            this.updateTxnTablePstmt = targetReplicaDB.prepare(updateTxnTableSql);
-		} catch (SQLException e) {
-			throw new SyncLiteException("Failed to initialize the synclite dblogger checkpoint table in replica : " + replicaPath, e);
+		} else {
+			//Replica file does not exist (recovery on a new machine).
+			//Checkpoint position will be read from destination in reloadCheckpointInfo().
+			//In-memory replica will be seeded from stored schemas in reloadCheckpointInfo().
+			device.tracer.info("Replica file not found at : " + replicaPath + ". Will recover checkpoint and schema from destination and metadata store.");
+			this.lastConsolidatedCommitIdOnReplica = 0;
+			this.lastConsolidatedChangeNumberOnReplica = -1;
+			this.lastConsolidatedTxnChangeNumberOnReplica = -1;
 		}
 		
 		if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
@@ -190,23 +180,71 @@ public class DeviceEventStreamer extends DeviceProcessor {
 	@Override
 	public long syncDevice() throws SyncLiteException {
 		long consolidatedOperCount = 0;
+		// On a fresh host (workDir was re-created), local initializationStatus is 0.
+		// In DESTINATION mode, recover from what was already persisted on the destination.
+		if (consolidatorMetadataMgr.getInitializationStatus() != 1 && metadataStore == MetadataStore.DESTINATION) {
+			try (SQLExecutor dstExecutorForStatus = SQLExecutor.getInstance(device, this.dstIndex, device.tracer)) {
+				loadInitializationStatusFromDestination(dstExecutorForStatus);
+			} catch (Exception e) {
+				throw new SyncLiteException("Failed to load initialization status from destination : ", e);
+			}
+		}
 		if (consolidatorMetadataMgr.getInitializationStatus() == 1) {
 			//Already initialized
 			return doSync();
 		} else if (device.getStatus() == DeviceStatus.SYNCING){
-			this.dstInitializer.trySnapshotConsolidation(this.replicaPath);	
+			this.dstInitializer.trySnapshotConsolidation(this.replicaPath);
+			// If initialization just completed, persist status to destination so it survives host failure
+			if (consolidatorMetadataMgr.getInitializationStatus() == 1 && metadataStore == MetadataStore.DESTINATION) {
+				try (SQLExecutor dstExecutorForStatus = SQLExecutor.getInstance(device, this.dstIndex, device.tracer)) {
+					persistInitializationStatusToDst(dstExecutorForStatus, 1);
+					dstExecutorForStatus.commitTran();
+				} catch (Exception e) {
+					throw new SyncLiteException("Failed to persist initialization status to destination : ", e);
+				}
+			}
 		}
 		return consolidatedOperCount;
 	}
 
 	private final void reloadCheckpointInfo() throws SyncLiteException {
-		try {
-			consolidatorMetadataMgr.loadSchemas(device);			
-		} catch (SQLException e) {
-			throw new SyncLiteException("Failed to load consolidation src tables from metadata file : ", e);
+		if (metadataStore == MetadataStore.DESTINATION) {
+			try (SQLExecutor dstExecutorForSchema = SQLExecutor.getInstance(device, this.dstIndex, device.tracer)) {
+				ensureDstSchemaTableExists(dstExecutorForSchema);
+				loadSchemasFromDestination(dstExecutorForSchema);
+			} catch (Exception e) {
+				throw new SyncLiteException("Failed to load schemas from destination : ", e);
+			}
+		} else {
+			try {
+				consolidatorMetadataMgr.loadSchemas(device);			
+			} catch (SQLException e) {
+				throw new SyncLiteException("Failed to load consolidation src tables from metadata file : ", e);
+			}
 		}
+		//Seed the in-memory replica with table schemas loaded from metadata so that DDL operations
+		//can use PRAGMA table_info against it instead of the on-disk replica file.
+		seedInMemoryReplicaFromSchemas();
 		this.checkpointTable = ConsolidatorSrcTable.from(SyncLiteConsolidatorInfo.getCheckpointTableID(device.getDeviceUUID(), device.getDeviceName(), this.dstIndex));
 		this.checkpointTable.setIsSystemTable();
+		// Populate checkpointTable.columns from in-memory replica so that mapTable()
+		// can build dstTable.columns for bindUpdateArgs/bindInsertArgs on fresh-host path.
+		if (this.checkpointTable.columns.isEmpty()) {
+			try (Statement _stmt = inMemoryReplicaConn.createStatement()) {
+				_stmt.execute(createTxnTableSql);
+			} catch (SQLException _e) {
+				// Already exists — fine
+			}
+			try {
+				List<Column> _cols = device.schemaReader.fetchColumns(inMemoryReplicaConn, this.checkpointTable.id);
+				this.checkpointTable.clearColumns();
+				for (Column _c : _cols) {
+					this.checkpointTable.addColumn(_c);
+				}
+			} catch (SyncLiteException _e) {
+				throw new SyncLiteException("Failed to populate checkpoint table columns from in-memory replica", _e);
+			}
+		}
 		if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
 			//Read from consolidator metadata file.
 			HashMap<String, Object> checkpointInfo = consolidatorMetadataMgr.readCheckpointRecord(selectTxnTableSql);
@@ -288,11 +326,14 @@ public class DeviceEventStreamer extends DeviceProcessor {
 				for (long i = 0; i < ConfLoader.getInstance().getDstOperRetryCount(dstIndex); ++i) {
 					try {
 						consolidatedOperCount = doApply();
+						if (metadataStore == MetadataStore.LOCAL) {
+							device.uploadConsolidatorMetadata(this.dstIndex);
+						}
 						device.updateLastConsolidatedCommitID(this.lastConsolidatedCommitId);
 						break;					
 					} catch (SyncLiteException e) {
 						if (e instanceof DstDuplicateKeyException) {
-							this.applyInsertsIdempotently = true;
+							this.applyInsertIdempotently = true;
 							device.tracer.error("Insert failed with duplicate key exception, retrying transaction with insert converted to delete+insert");
 						}
 						if (i == (ConfLoader.getInstance().getDstOperRetryCount(dstIndex)-1)) {
@@ -378,11 +419,26 @@ public class DeviceEventStreamer extends DeviceProcessor {
 			long deleteBatchSize = ConfLoader.getInstance().getDstDeleteBatchSize(dstIndex);			
 
 			tableStats.clear();
+			Connection replicaConn = null;
+			PreparedStatement replicaCheckpointUpdatePrepStmt = null;
 			try (EventLogSegmentReader reader = currentEventLogSegment.open();
-					SQLExecutor dstExecutor = SQLExecutor.getInstance(device, this.dstIndex, device.tracer);
-					Connection replicaConn = DriverManager.getConnection("jdbc:sqlite:" + this.replicaPath);
-					) {
-				replicaConn.setAutoCommit(false);
+					SQLExecutor dstExecutor = SQLExecutor.getInstance(device, this.dstIndex, device.tracer)) {
+				if (replicaAppenderEnabled || isStoreDevice) {
+					replicaConn = DriverManager.getConnection("jdbc:sqlite:" + this.replicaPath);
+					replicaConn.setAutoCommit(false);
+					try (Statement replicaInitStmt = replicaConn.createStatement()) {
+						replicaInitStmt.execute(createTxnTableSql);
+						try (ResultSet rsChk = replicaInitStmt.executeQuery(selectTxnTableSql)) {
+							if (!rsChk.next()) {
+								replicaInitStmt.execute(insertTxnTableSql.replace("$1", String.valueOf(lastConsolidatedCommitIdOnReplica)));
+							}
+						}
+					}
+					replicaCheckpointUpdatePrepStmt = replicaConn.prepareStatement(updateTxnTableSql);
+				}
+				if (metadataStore == MetadataStore.DESTINATION) {
+					ensureDstSchemaTableExists(dstExecutor);
+				}
 				dstExecutor.beginTran();
 				EventLogRecord log = reader.readNextRecord();
 				List<Object> afterValues = new ArrayList<Object>();
@@ -398,7 +454,6 @@ public class DeviceEventStreamer extends DeviceProcessor {
 				EventLogRecord lastLog = log;
 				TableID prevTableId = null;
 				PreparedStatement replicaInsertPrepStmt = null;
-				PreparedStatement replicaCheckpointUpdatePrepStmt = replicaConn.prepareStatement(this.updateTxnTableSql);
 				while (log != null) {
 					emptyTxn = false;
 					if (log.tableName == null) {
@@ -417,16 +472,25 @@ public class DeviceEventStreamer extends DeviceProcessor {
 					srcTable = ConsolidatorSrcTable.from(tableId);
 					TableMapper tableMapper = srcTable.getIsSystemTable() ? this.systemTableMapper : this.userTableMapper;
 					ValueMapper valueMapper = tableMapper.getValueMapper();
-					HashMap<OperType, Long> opStats = tableStats.get(tableId);										
+					HashMap<OperType, Long> opStats = tableStats.get(tableId);
 					if (opStats == null) {
 						opStats = new HashMap<OperType, Long>();
 						tableStats.put(tableId, opStats);
-					}										
-					Long opCnt = opStats.get(log.opType);
-					if (opCnt == null) {
-						opStats.put(log.opType, 1L);
+					}
+					// In consolidation mode, DROP COLUMN and DROP TABLE are intentionally ignored
+					// (other devices may still use the column/table). Skip stats and log INFO.
+					boolean ddlIgnoredInConsolidation = false;
+					if (ConfLoader.getInstance().getDstSyncMode() == DstSyncMode.CONSOLIDATION
+							&& (log.opType == OperType.DROPCOLUMN || log.opType == OperType.DROPTABLE)) {
+						ddlIgnoredInConsolidation = true;
+						device.tracer.info("Ignoring " + log.opType + " on table " + log.tableName + " in consolidation mode - other devices may still use this column/table");
 					} else {
-						opStats.put(log.opType, opCnt + 1L);
+						Long opCnt = opStats.get(log.opType);
+						if (opCnt == null) {
+							opStats.put(log.opType, 1L);
+						} else {
+							opStats.put(log.opType, opCnt + 1L);
+						}
 					}
 					//
 					//Replicate the log on replica first if populateReplica option is ON
@@ -576,13 +640,21 @@ public class DeviceEventStreamer extends DeviceProcessor {
 									replicaInsertPrepStmt = null;
 								}
 
-								//Handle all DDLs
+//Always apply DDL on in-memory replica (for fetchColumns in DDL switch below)
+							try {
+								executeDDLOnReplica(inMemoryReplicaConn, srcTable, log.opType, log.sql, log.ddlInfo);
+							} catch (SQLException memEx) {
+								//In-memory DDL may be idempotent; ignore
+							}
+							//Apply on on-disk replica only when enabled
+							if (replicaConn != null) {
 								executeDDLOnReplica(replicaConn, srcTable, log.opType, log.sql, log.ddlInfo);
 								bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber, log.txnChangeNumber);
 								replicaConn.commit();
 								this.lastConsolidatedCommitIdOnReplica = log.commitId;
 								this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
 								replicaConn.setAutoCommit(false);
+							}
 							} else {
 								//throw new SyncLiteException("Invalid event log received : " + log.sql);
 								//Ignore invalid event logs
@@ -717,7 +789,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								//
 								Insert mappedInsert = tblMappedInsertOpers.get(srcTable.id);
 								if (mappedInsert == null) {
-									Insert srcInsert = new Insert(srcTable, argValues, applyInsertsIdempotently);
+									Insert srcInsert = new Insert(srcTable, argValues, applyInsertIdempotently);
 									mappedInsert = tableMapper.mapInsert(srcInsert);
 									tblMappedInsertOpers.put(srcTable.id, mappedInsert);
 								} else {
@@ -754,9 +826,26 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								}
 							} else if (log.opType == OperType.UPDATE) {
 								//
-								//Check if column filters are specified then iterate on columns and
-								//Filter out log.args for columns which are not allowed.
+								// When argCnt == 0 the log carries a raw SQL UPDATE (no bound args).
+								// Handle it like DELETE_IF_PREDICATE: scope to this device and execute natively.
 								//
+								if (log.argCnt == 0 && log.sql != null && !log.sql.isBlank()) {
+									UpdateIfPredicate sqlStmt = new UpdateIfPredicate(srcTable, log.sql);
+									dstExecutor.execute(sqlStmt.map(tableMapper));
+									updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, log.txnChangeNumber, beforeValues, afterValues);
+									beforeValues.clear();
+									afterValues.clear();
+									commitDstTran(dstExecutor);
+									updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
+									emptyTxn = true;
+									++currentEventLogSegmentTxnCnt;
+									++consolidatedTxnCount;
+									this.lastConsolidatedCommitId = log.commitId;
+									this.lastConsolidatedChangeNumber = log.changeNumber;
+									this.lastConsolidatedTxnChangeNumber = log.txnChangeNumber;
+									dstExecutor.beginTran();
+									++currentEventLogSegmentOperCnt;
+								} else {
 								boolean hasFilterMapper = false;
 								if (ConfLoader.getInstance().getDstEnableFilterMapperRules(dstIndex) || ConfLoader.getInstance().getDstEnableValueMapper(dstIndex)) {
 									if (ConfLoader.getInstance().tableHasFilterMapperRules(dstIndex, log.tableName) || ConfLoader.getInstance().tableHasValueMappings(dstIndex, log.tableName)) {
@@ -920,6 +1009,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 									dstExecutor.beginTran();
 									currentUpdateBatchCount = 0;
 								}
+								} // end else (argCnt != 0)
 							} else if (log.opType == OperType.DELETE) {
 								//
 								//Check if column filters are specified then iterate on columns and
@@ -1143,7 +1233,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								}
 								//Bump up INSERT stats								
 								Long insertOpCnt = opStats.get(OperType.INSERT);
-								if (opCnt == null) {
+								if (insertOpCnt == null) {
 									opStats.put(OperType.INSERT, loadedRecordCount);
 								} else {
 									opStats.put(OperType.INSERT, insertOpCnt + loadedRecordCount);
@@ -1166,12 +1256,13 @@ public class DeviceEventStreamer extends DeviceProcessor {
 							}
 						} else if (log.ddlInfo != null) {
 							//Handle all DDLs
-							//Apply the DDL on replica and get the schema back from replica db to construct DDL Oper for dst.
+							//Get schema from in-memory replica (already updated by executeDDLOnReplica above)
+							//to construct DDL Oper for dst. No on-disk replica file needed.
 
 							switch(log.ddlInfo.ddlType) {
 							case CREATETABLE:
 								//executeDDLIgnoreException(log.sql);
-								List<Column> newTableCols = device.schemaReader.fetchColumns(replicaPath, srcTable.id);
+								List<Column> newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
 								Oper createTableOper= srcTable.generateCreateTableOper(tableMapper, newTableCols);
 								if (createTableOper != null) {
 									dstExecutor.execute(createTableOper.map(tableMapper));
@@ -1180,6 +1271,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 									} catch (SQLException e) {
 										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
 									}
+									persistSchemaAfterDDL(dstExecutor, srcTable);
 								}
 								break;
 							case DROPTABLE:
@@ -1192,6 +1284,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 									} catch (SQLException e) {
 										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
 									}
+									deleteSchemaAfterDrop(dstExecutor, srcTable);
 								}
 								//Remove src and dst tables
 								ConsolidatorDstTable dstTable = tableMapper.mapTable(srcTable);
@@ -1200,43 +1293,57 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								break;
 							case ADDCOLUMN:
 								//executeDDLIgnoreException(log.sql);
-								newTableCols = device.schemaReader.fetchColumns(replicaPath, srcTable.id);
+								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
 								AddColumn addColOper= (AddColumn) srcTable.generateAddColumnOper(newTableCols);
 								if (addColOper != null) {
 									dstExecutor.execute(addColOper.map(tableMapper));
 									srcTable.applyAddColumn(addColOper);
+									tblMappedInsertOpers.remove(srcTable.id);
+									tblMappedUpdateOpers.remove(srcTable.id);
+									tblMappedDeleteOpers.remove(srcTable.id);
 									try {
 										consolidatorMetadataMgr.upsertSchema(srcTable);
 									} catch (SQLException e) {
 										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
 									}
+									persistSchemaAfterDDL(dstExecutor, srcTable);
 								}
 								break;
 							case DROPCOLUMN:
 								//executeDDLIgnoreException(log.sql);
-								newTableCols = device.schemaReader.fetchColumns(replicaPath, srcTable.id);
+								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
 								DropColumn dropColOper= (DropColumn) srcTable.generateDropColumnOper(newTableCols);
 								if (dropColOper != null) {
 									dstExecutor.execute(dropColOper.map(tableMapper));
 									srcTable.applyDropColumn(dropColOper);
-									try {
-										consolidatorMetadataMgr.upsertSchema(srcTable);
-									} catch (SQLException e) {
-										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
-									}						
-								}
-								break;
-							case ALTERCOLUMN:
-								newTableCols = device.schemaReader.fetchColumns(replicaPath, srcTable.id);
-								AlterColumn alterColOper= (AlterColumn) srcTable.generateAlterColumnOper(newTableCols);
-								if (alterColOper != null) {
-									dstExecutor.execute(alterColOper.map(tableMapper));
-									srcTable.applyAlterColumn(alterColOper);
+									tableMapper.remove(srcTable);
+									tblMappedInsertOpers.remove(srcTable.id);
+									tblMappedUpdateOpers.remove(srcTable.id);
+									tblMappedDeleteOpers.remove(srcTable.id);
 									try {
 										consolidatorMetadataMgr.upsertSchema(srcTable);
 									} catch (SQLException e) {
 										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
 									}
+									persistSchemaAfterDDL(dstExecutor, srcTable);
+								}
+								break;
+							case ALTERCOLUMN:
+								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
+								AlterColumn alterColOper= (AlterColumn) srcTable.generateAlterColumnOper(newTableCols);
+								if (alterColOper != null) {
+									dstExecutor.execute(alterColOper.map(tableMapper));
+									srcTable.applyAlterColumn(alterColOper);
+									tableMapper.remove(srcTable);
+									tblMappedInsertOpers.remove(srcTable.id);
+									tblMappedUpdateOpers.remove(srcTable.id);
+									tblMappedDeleteOpers.remove(srcTable.id);
+									try {
+										consolidatorMetadataMgr.upsertSchema(srcTable);
+									} catch (SQLException e) {
+										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
+									}
+									persistSchemaAfterDDL(dstExecutor, srcTable);
 								}
 								break;
 							case RENAMECOLUMN:
@@ -1244,11 +1351,16 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								Oper renameColOper= srcTable.generateRenameColumnOper(log.ddlInfo.oldColumnName, log.ddlInfo.columnName);
 								if (renameColOper != null) {
 									dstExecutor.execute(renameColOper.map(tableMapper));
+									tableMapper.remove(srcTable);
+									tblMappedInsertOpers.remove(srcTable.id);
+									tblMappedUpdateOpers.remove(srcTable.id);
+									tblMappedDeleteOpers.remove(srcTable.id);
 									try {
 										consolidatorMetadataMgr.upsertSchema(srcTable);
 									} catch (SQLException e) {
 										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
 									}
+									persistSchemaAfterDDL(dstExecutor, srcTable);
 								}
 								break;
 							case RENAMETABLE:
@@ -1260,17 +1372,16 @@ public class DeviceEventStreamer extends DeviceProcessor {
 									} catch (SQLException e) {
 										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
 									}
+									persistSchemaAfterDDL(dstExecutor, srcTable);
 								}
 								break;
 							case REFRESHTABLE:
 								//Remove dst tables
 								dstTable = tableMapper.mapTable(srcTable);
 								ConsolidatorDstTable.remove(dstTable.id);								
-								newTableCols = device.schemaReader.fetchColumns(replicaPath, srcTable.id);
-								
+								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
 								//refresh schema for srcTable
 								srcTable.refreshColumns(tableMapper, newTableCols);
-								
 								//Reload dst table
 								dstTable = tableMapper.mapTable(srcTable);
 								
@@ -1280,6 +1391,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								} catch (SQLException e) {
 									throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
 								}
+								persistSchemaAfterDDL(dstExecutor, srcTable);
 								break;								
 							case PUBLISHCOLUMNLIST:
 								dstTable = tableMapper.mapTable(srcTable);
@@ -1309,6 +1421,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 								} catch (SQLException e) {
 									throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
 								}
+								persistSchemaAfterDDL(dstExecutor, srcTable);
 								break;
 								
 							default:
@@ -1328,16 +1441,18 @@ public class DeviceEventStreamer extends DeviceProcessor {
 							commitDstTran(dstExecutor);
 							updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
 							emptyTxn = true;
-							++currentEventLogSegmentTxnCnt;
-							++consolidatedTxnCount;
+							if (!ddlIgnoredInConsolidation) {
+								++currentEventLogSegmentTxnCnt;
+								++consolidatedTxnCount;
+								++currentEventLogSegmentOperCnt;
+							}
 							
 							this.lastConsolidatedCommitId = log.commitId;
 							this.lastConsolidatedChangeNumber = log.changeNumber;
 							this.lastConsolidatedTxnChangeNumber = log.txnChangeNumber;
 							
 							dstExecutor.beginTran();
-							++currentEventLogSegmentOperCnt;
-						} else {
+							} else {
 							//throw new SyncLiteException("Invalid event log received : " + log.sql);
 							//Ignore invalid event logs
 						}						
@@ -1349,7 +1464,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 
 				if (!emptyTxn) {
 					//execute and commit the last non empty transaction on replica
-					if (currentInsertBatchCountOnReplica > 0) {
+					if (replicaConn != null && currentInsertBatchCountOnReplica > 0) {
 						if (replicaInsertPrepStmt != null) {
 							replicaInsertPrepStmt.executeBatch();
 							replicaInsertPrepStmt.close();
@@ -1391,6 +1506,10 @@ public class DeviceEventStreamer extends DeviceProcessor {
 						}
 					}
 				}							
+			} finally {
+				if (replicaConn != null) {
+					try { replicaConn.close(); } catch (Exception ignore) {}
+				}
 			}
 
 			
@@ -1416,54 +1535,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 		}
 	}
 
-	private void commitDstTran(SQLExecutor dstExecutor) throws DstExecutionException {		
-		//
-		//Check if trigger statements are set on tables involved in this transaction
-		//If yes then execute
-		//		
-		if (ConfLoader.getInstance().triggersEnabled(dstIndex)) {
-			for (TableID dstTableID : currentTxnDstTables) {
-				if (ConfLoader.getInstance().tableHasTriggers(dstIndex, dstTableID.table)) {
-					List<String> triggers = ConfLoader.getInstance().getTriggers(dstIndex, dstTableID.table);
-					if (triggers != null) {
-						for (String triggerStmt : triggers) {
-							dstExecutor.execute(new NativeOper(null, triggerStmt));
-						}
-					}
-				}
-			}
-		}
-		dstExecutor.commitTran();
-		currentTxnDstTables.clear();
-		resetApplyInsertIdempotently();
-	}
-
-	private final void resetApplyInsertIdempotently() {
-		if (! ConfLoader.getInstance().getDstIdempotentDataIngestion(dstIndex)) {
-			this.applyInsertsIdempotently = false;
-		}
-	}
-
-	private void updateDstCheckpointIfNeeded(SQLExecutor dstExecutor, long commitId, long changeNumber, long txnChangeNumber, List<Object> beforeValues,
-			List<Object> afterValues) throws DstExecutionException, SyncLiteException {
-		if (!ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
-			dstExecutor.execute(prepareCheckpointUpdate(commitId, changeNumber, txnChangeNumber, beforeValues, afterValues));
-		}
-	}
-
-	private void updateLocalCheckpointIfNeeded(long commitId, long changeNumber, long txnChangeNumber) throws DstExecutionException, SyncLiteException {
-		if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
-			ArrayList<Object> args = new ArrayList<Object>();
-			args.add(commitId);
-			args.add(changeNumber);
-			args.add(txnChangeNumber);
-			args.add(this.currentEventLogSegment.sequenceNumber);
-			args.add(this.consolidatedTxnCount + 1);			
-			consolidatorMetadataMgr.executeCheckpointTablePreparedStmt(updateTxnTableSql, args);
-		}
-	}
-	
-	private final void executeDDLOnReplica(Connection replicaConn, ConsolidatorSrcTable srcTable, OperType opType, String sql, DDLInfo ddlInfo) throws SQLException {
+	private final void executeDDLOnReplica(Connection replicaConn, Table srcTable, OperType opType, String sql, DDLInfo ddlInfo) throws SQLException {
 		//
 		//If sql is REFRESH table then translate it to DROP TABLE followed by CREATE TABLE
 		//
@@ -1562,7 +1634,7 @@ public class DeviceEventStreamer extends DeviceProcessor {
 	private final String getReplicaInsertPrepStmt(Table srcTable, int size) {
 		StringBuilder prepSql = new StringBuilder();
 		boolean idempotentInsert = false;
-		if (this.applyInsertsIdempotently) {
+		if (this.applyInsertIdempotently) {
 			if (srcTable.hasPrimaryKey()) {
 				idempotentInsert = true;
 			}
@@ -1683,39 +1755,6 @@ public class DeviceEventStreamer extends DeviceProcessor {
 		}        
 	}
 	 */
-
-	private final List<Oper> prepareCheckpointUpdate(long commitIDToCheckpoint, long changeNumberToCheckpoint, long txnChangeNumberToCheckpoint, List<Object> beforeValues, List<Object> afterValues) throws SyncLiteException {
-		beforeValues.add(this.lastConsolidatedCommitId);		
-		beforeValues.add(0);
-		beforeValues.add(0);
-		beforeValues.add(0);
-		beforeValues.add(lastConsolidatedChangeNumber);
-		beforeValues.add(lastConsolidatedTxnChangeNumber);
-		beforeValues.add(this.currentEventLogSegment.sequenceNumber);
-		beforeValues.add(consolidatedTxnCount);
-
-		afterValues.add(commitIDToCheckpoint);
-		afterValues.add(0);
-		afterValues.add(0);
-		afterValues.add(0);
-		afterValues.add(changeNumberToCheckpoint);
-		afterValues.add(txnChangeNumberToCheckpoint);
-		afterValues.add(this.currentEventLogSegment.sequenceNumber);						
-		afterValues.add(consolidatedTxnCount+1);
-
-		return systemTableMapper.mapOper(new Update(checkpointTable, beforeValues, afterValues));
-	}
-
-	private final List<Oper> prepareCheckpointInsert() throws SyncLiteException {
-		List<Object> afterValues = new ArrayList<Object>();
-		afterValues.add(this.lastConsolidatedCommitId);
-		afterValues.add(0);
-		afterValues.add(0);
-		afterValues.add(this.currentEventLogSegment.sequenceNumber);
-		afterValues.add(this.lastConsolidatedChangeNumber);
-		afterValues.add(this.consolidatedTxnCount);
-		return systemTableMapper.mapOper(new Insert(checkpointTable, afterValues, false));
-	}
 
 	@Override
 	public long consolidateDevice() throws SyncLiteException {

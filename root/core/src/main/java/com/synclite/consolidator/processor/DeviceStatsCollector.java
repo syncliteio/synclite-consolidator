@@ -219,7 +219,7 @@ public class DeviceStatsCollector {
 						} else if (opType == OperType.UPDATE) {
 							updateStatsTablePstmt.setLong(2, opCount);
 							totalOperCount += opCount;
-						} else if (opType == OperType.DELETE) {
+						} else if (opType == OperType.DELETE || opType == OperType.DELETE_IF_PREDICATE || opType == OperType.MINUS) {
 							updateStatsTablePstmt.setLong(3, opCount);
 							totalOperCount += opCount;
 						} else if (opType == OperType.ADDCOLUMN) {

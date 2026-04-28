@@ -28,7 +28,9 @@ import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.spec.InvalidKeySpecException;
+import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
+import javax.crypto.spec.PSource;
 import java.util.List;
 
 import javax.crypto.BadPaddingException;
@@ -36,6 +38,7 @@ import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.OAEPParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.apache.log4j.Logger;
@@ -65,6 +68,7 @@ public abstract class DeviceStageManager {
 
 	protected class EncryptedFileDownloader extends FileDownloader{
 		private static final int ENCRYPTION_BLOCK_SIZE = 2048;
+		private volatile PrivateKey cachedPrivateKey;
 
 		@Override
 		protected long downloadObject(Path objectPath, Path outputFile, SyncLiteObjectType objType) throws SyncLiteStageException {
@@ -86,9 +90,12 @@ public abstract class DeviceStageManager {
 
 			PrivateKey privateKey;
 			try {
-				PKCS8EncodedKeySpec privateKeySpec = new PKCS8EncodedKeySpec(Files.readAllBytes(ConfLoader.getInstance().getDeviceDecryptionKeyFile()));
-				KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-				privateKey = keyFactory.generatePrivate(privateKeySpec);
+				if (cachedPrivateKey == null) {
+					PKCS8EncodedKeySpec privateKeySpec = new PKCS8EncodedKeySpec(Files.readAllBytes(ConfLoader.getInstance().getDeviceDecryptionKeyFile()));
+					KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+					cachedPrivateKey = keyFactory.generatePrivate(privateKeySpec);
+				}
+				privateKey = cachedPrivateKey;
 			} catch (IOException | InvalidKeySpecException | NoSuchAlgorithmException e) {
 				throw new SyncLiteStageException("Failed to load device decryption key from the specified file", e);
 			}
@@ -99,10 +106,11 @@ public abstract class DeviceStageManager {
 
 				byte[] decryptedKey;
 				try {
-					Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-					cipher.init(Cipher.DECRYPT_MODE, privateKey);
+					Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+					OAEPParameterSpec oaepParams = new OAEPParameterSpec("SHA-256", "MGF1", new MGF1ParameterSpec("SHA-256"), PSource.PSpecified.DEFAULT);
+					cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParams);
 					decryptedKey = cipher.doFinal(encryptedKey);
-				} catch (NoSuchPaddingException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException | NoSuchAlgorithmException e) {
+				} catch (NoSuchPaddingException | InvalidKeyException | InvalidAlgorithmParameterException | IllegalBlockSizeException | BadPaddingException | NoSuchAlgorithmException e) {
 					throw new SyncLiteStageException("Failed to decrypt the encrypted key read from the object", e);
 				}
 
@@ -140,7 +148,7 @@ public abstract class DeviceStageManager {
 		}
 	}
 
-	protected Logger tracer;
+	protected Logger tracer = Logger.getLogger(DeviceStageManager.class);
 	protected FileDownloader fileDownloader; 
 
 	protected DeviceStageManager() {

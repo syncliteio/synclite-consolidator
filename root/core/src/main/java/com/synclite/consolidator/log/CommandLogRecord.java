@@ -178,7 +178,7 @@ public class CommandLogRecord {
             	String[] fullTableName = getFullTableName(tokens[2]);
             	ddlInfo = new DDLInfo(OperType.REFRESHTABLE, fullTableName[0], fullTableName[1], null, null, null, null);
             } else if (tokens[0].equalsIgnoreCase("PUBLISH") && tokens[1].equalsIgnoreCase("COLUMN") && tokens[2].equalsIgnoreCase("LIST")) {
-            	String[] fullTableName = getFullTableName(tokens[2]);
+            	String[] fullTableName = getFullTableName(tokens[3]);
             	ddlInfo = new DDLInfo(OperType.PUBLISHCOLUMNLIST, fullTableName[0], fullTableName[1], null, tokens[4], null, null);
             }
         } catch (NullPointerException e) {

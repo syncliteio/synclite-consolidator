@@ -32,6 +32,7 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -71,6 +72,7 @@ import com.synclite.consolidator.oper.RenameTable;
 import com.synclite.consolidator.oper.Replace;
 import com.synclite.consolidator.oper.TruncateTable;
 import com.synclite.consolidator.oper.Update;
+import com.synclite.consolidator.oper.UpdateIfPredicate;
 import com.synclite.consolidator.oper.Upsert;
 import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorDstTable;
@@ -598,6 +600,11 @@ public abstract class JDBCExecutor extends SQLExecutor {
 
 	@Override
 	public void executeSQL(DeleteIfPredicate sqlStmt) throws DstExecutionException {
+		executeUnbatchedOper(sqlStmt);
+	}
+
+	@Override
+	public void executeSQL(UpdateIfPredicate sqlStmt) throws DstExecutionException {
 		executeUnbatchedOper(sqlStmt);
 	}
 
@@ -1386,9 +1393,12 @@ public abstract class JDBCExecutor extends SQLExecutor {
 	@Override
 	public void renameColumn(RenameColumn oper) throws DstExecutionException {
 		try {
-			//If old column exists then rename
+			//If old column exists then rename (check by old name, not new name)
 			//This is an idempotent way to execute rename
-			if (columnExists(oper.tbl, oper.columns.get(0))) {
+			Column oldCol = new Column(oper.columns.get(0).cid, oper.oldName, oper.columns.get(0).type,
+					oper.columns.get(0).isNotNull, oper.columns.get(0).defaultValue,
+					oper.columns.get(0).pkIndex, oper.columns.get(0).isAutoIncrement);
+			if (columnExists(oper.tbl, oldCol)) {
 				executeUnbatchedOper(oper);
 			}
 		} catch (DstExecutionException e) {
@@ -1528,6 +1538,40 @@ public abstract class JDBCExecutor extends SQLExecutor {
 			}
 		} catch (SQLException e) {
 			throw new DstExecutionException("Failed to read checkpoint log position from destination : " + e.getMessage(), e);
+		}
+	}
+
+	@Override
+	public List<String[]> readTableSchemas(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
+		List<String[]> schemas = new ArrayList<>();
+		String sql = "SELECT table_name, create_sql FROM synclite_table_schema WHERE device_uuid = '"
+				+ deviceUUID.replace("'", "''") + "' AND device_name = '"
+				+ deviceName.replace("'", "''") + "' AND dst_index = " + dstIdx;
+		try (Statement stmt = conn.createStatement();
+				ResultSet rs = stmt.executeQuery(sql)) {
+			while (rs.next()) {
+				schemas.add(new String[]{rs.getString(1), rs.getString(2)});
+			}
+		} catch (SQLException e) {
+			// Table may not exist yet on a completely fresh device — return empty
+		}
+		return schemas;
+	}
+
+	@Override
+	public long readInitializationStatus(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
+		String sql = "SELECT initialization_status FROM synclite_device_status WHERE device_uuid = '"
+				+ deviceUUID.replace("'", "''") + "' AND device_name = '"
+				+ deviceName.replace("'", "''") + "' AND dst_index = " + dstIdx;
+		try (Statement stmt = conn.createStatement();
+				ResultSet rs = stmt.executeQuery(sql)) {
+			if (rs.next()) {
+				return rs.getLong(1);
+			}
+			return -1;
+		} catch (SQLException e) {
+			// Table may not exist yet on a fresh host
+			return -1;
 		}
 	}
 

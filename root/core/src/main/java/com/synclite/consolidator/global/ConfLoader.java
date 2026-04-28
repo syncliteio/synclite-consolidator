@@ -38,7 +38,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import com.synclite.consolidator.device.DeviceIdentifier;
@@ -170,6 +169,7 @@ public class ConfLoader {
 	private Boolean[] dstUseCatalogScopeResolution;
 	private Boolean[] dstUseSchemaScopeResolution;
 	private Boolean[] dstDisableMetadataTable;
+	private String[] metadataStore;
 	private String [] dstCreateTableSuffix;
 	private String [] dstClickHouseEngine;
 	private Boolean[] dstMongoDBUseTransactions;
@@ -483,6 +483,10 @@ public class ConfLoader {
 
 	public boolean getDstDisableMetadataTable(int dstIndex) {
 		return this.dstDisableMetadataTable[dstIndex];
+	}
+
+	public String getMetadataStore(int dstIndex) {
+		return this.metadataStore[dstIndex];
 	}
 
 	public String getDstCreateTableSuffix(int dstIndex) {
@@ -1173,6 +1177,7 @@ public class ConfLoader {
 		this.dstUseCatalogScopeResolution = new Boolean[numDestinations + 1];
 		this.dstUseSchemaScopeResolution = new Boolean[numDestinations + 1];
 		this.dstDisableMetadataTable = new Boolean[numDestinations + 1];
+		this.metadataStore = new String[numDestinations + 1];
 		this.dstCreateTableSuffix = new String[numDestinations + 1];
 		this.dstClickHouseEngine = new String[numDestinations + 1];
 		this.dstMongoDBUseTransactions = new Boolean[numDestinations + 1];
@@ -1571,22 +1576,18 @@ public class ConfLoader {
 				this.dstIdempotentDataIngestionMethod[dstIndex] = DstIdempotentDataIngestionMethod.NATIVE_UPSERT;
 			}
 
-			propValue = properties.get("dst-disable-metadata-table-" + dstIndex);
+			propValue = properties.get("metadata-store-" + dstIndex);
 			if (propValue != null) {
-				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
-					this.dstDisableMetadataTable[dstIndex] = Boolean.valueOf(propValue);
+				if (propValue.equalsIgnoreCase("DESTINATION") || propValue.equalsIgnoreCase("LOCAL")) {
+					this.metadataStore[dstIndex] = propValue.toUpperCase();
 				} else {
-					throw new SyncLitePropsException("Invalid value specified for dst-disable-metadata-table-" + dstIndex + " in configuration file : " + propValue);
+					throw new SyncLitePropsException("Invalid value for metadata-store-" + dstIndex + ": must be DESTINATION or LOCAL");
 				}
 			} else {
-				this.dstDisableMetadataTable[dstIndex] = false;
+				this.metadataStore[dstIndex] = "DESTINATION";
 			}
-			
-			if (this.dstDisableMetadataTable[dstIndex] == true) {
-				if (this.dstIdempotentDataIngestion[dstIndex] == false) {
-					throw new SyncLitePropsException("dst-idempotent-data-ingestion-" + dstIndex + " must be set to true while dst-disable-metadata-table-" + dstIndex + " is set to true in configuration file : " + propValue);
-				}
-			}
+			// Derive dstDisableMetadataTable from metadataStore: LOCAL mode keeps metadata off the destination
+			this.dstDisableMetadataTable[dstIndex] = "LOCAL".equals(this.metadataStore[dstIndex]);
 
 			propValue = properties.get("dst-skip-failed-log-files-" + dstIndex);
 			if (propValue != null) {
@@ -1654,16 +1655,18 @@ public class ConfLoader {
 				this.dstUseSchemaScopeResolution[dstIndex] = true;
 			}
 
-			propValue = properties.get("dst-disable-metadata-table-" + dstIndex);
+			propValue = properties.get("metadata-store-" + dstIndex);
 			if (propValue != null) {
-				if (propValue.equalsIgnoreCase("true") || propValue.equalsIgnoreCase("false")) {
-					this.dstDisableMetadataTable[dstIndex] = Boolean.valueOf(propValue);
+				if (propValue.equalsIgnoreCase("DESTINATION") || propValue.equalsIgnoreCase("LOCAL")) {
+					this.metadataStore[dstIndex] = propValue.toUpperCase();
 				} else {
-					throw new SyncLitePropsException("Invalid value specified for dst-disable-metadata-table-" + dstIndex + " in configuration file : " + propValue);
+					throw new SyncLitePropsException("Invalid value for metadata-store-" + dstIndex + ": must be DESTINATION or LOCAL");
 				}
 			} else {
-				this.dstDisableMetadataTable[dstIndex] = false;
+				this.metadataStore[dstIndex] = "DESTINATION";
 			}
+			// Derive dstDisableMetadataTable from metadataStore: LOCAL mode keeps metadata off the destination
+			this.dstDisableMetadataTable[dstIndex] = "LOCAL".equals(this.metadataStore[dstIndex]);
 
 			propValue = properties.get("dst-create-table-suffix-" + dstIndex);
 			if (propValue != null) {
@@ -2677,36 +2680,36 @@ public class ConfLoader {
 
 		try {
 			String valueMappingsStr = Files.readString(valueMappingsFile);
-			// Parse and populate the HashMap
+			// Parse flat format: { "table.column": { "src_value": "dst_value" }, ... }
 			JSONObject jsonObject = new JSONObject(valueMappingsStr);
-			JSONArray tablesArray = jsonObject.getJSONArray("tables");
 
-			for (int i = 0; i < tablesArray.length(); i++) {
-				JSONObject tableObject = tablesArray.getJSONObject(i);
-				String srcTableName = tableObject.getString("src_table_name");
+			for (String tableColumnKey : jsonObject.keySet()) {
+				String[] parts = tableColumnKey.split("\\.", 2);
+				if (parts.length != 2) {
+					throw new SyncLitePropsException("Invalid key in value mappings file (expected \"table.column\" format): " + tableColumnKey);
+				}
+				String srcTableName = parts[0].trim();
+				String srcColumnName = parts[1].trim();
+
 				if (!isAllowedTable(dstIndex, srcTableName)) {
 					continue;
 				}
-				HashMap<String, HashMap<String, String>> tableData = new HashMap<>();
-				JSONArray columnsArray = tableObject.getJSONArray("columns");
-
-				for (int j = 0; j < columnsArray.length(); j++) {
-					JSONObject columnObject = columnsArray.getJSONObject(j);
-					String srcColumnName = columnObject.getString("src_column_name");
-					if (!isAllowedColumn(dstIndex, srcTableName, srcColumnName)) {
-						continue;
-					}
-					HashMap<String, String> valueMappings = new HashMap<>();
-					JSONObject valueMappingsObject = columnObject.getJSONObject("value_mappings");
-
-					for (String key : valueMappingsObject.keySet()) {
-						valueMappings.put(key, valueMappingsObject.getString(key));
-					}
-
-					tableData.put(srcColumnName.toUpperCase(), valueMappings);
+				if (!isAllowedColumn(dstIndex, srcTableName, srcColumnName)) {
+					continue;
 				}
-				dstValueMappings[dstIndex].put(srcTableName.toUpperCase(), tableData);
+
+				JSONObject valueMappingsObject = jsonObject.getJSONObject(tableColumnKey);
+				HashMap<String, String> valueMappings = new HashMap<>();
+				for (String srcValue : valueMappingsObject.keySet()) {
+					valueMappings.put(srcValue, valueMappingsObject.getString(srcValue));
+				}
+
+				String tableKey = srcTableName.toUpperCase();
+				dstValueMappings[dstIndex].computeIfAbsent(tableKey, k -> new HashMap<>())
+						.put(srcColumnName.toUpperCase(), valueMappings);
 			}
+		} catch (SyncLitePropsException e) {
+			throw e;
 		} catch (Exception e) {
 			throw new SyncLitePropsException("Failed to parse value mappings JSON file: " + valueMappingsFile, e);
 		}
@@ -2717,22 +2720,21 @@ public class ConfLoader {
 
 		try {
 			String triggersStr = Files.readString(triggersFile);
-			// Parse and populate the HashMap
 			JSONObject jsonObject = new JSONObject(triggersStr);
-			JSONArray tablesArray = jsonObject.getJSONArray("tables");
 
-			for (int i = 0; i < tablesArray.length(); i++) {
-				JSONObject tableObject = tablesArray.getJSONObject(i);
-				String dstTableName = tableObject.getString("dst_table_name");
+			for (String dstTableName : jsonObject.keySet()) {
+				if (dstTableName.isBlank()) {
+					throw new SyncLitePropsException("Invalid empty table name key in triggers file: " + triggersFile);
+				}
 				List<String> tableData = new ArrayList<>();
-				JSONArray triggersArray = tableObject.getJSONArray("trigger_statements");
-
-				for (int j = 0; j < triggersArray.length(); j++) {
-					String triggerStmt = triggersArray.getString(j);
-					tableData.add(triggerStmt);
+				org.json.JSONArray stmtsArray = jsonObject.getJSONArray(dstTableName);
+				for (int j = 0; j < stmtsArray.length(); j++) {
+					tableData.add(stmtsArray.getString(j));
 				}
 				this.dstTriggers[dstIndex].put(dstTableName.toUpperCase(), tableData);
 			}
+		} catch (SyncLitePropsException e) {
+			throw e;
 		} catch (Exception e) {
 			throw new SyncLitePropsException("Failed to parse triggers JSON file: " + triggersFile, e);
 		}

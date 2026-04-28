@@ -16,6 +16,7 @@
 
 package com.synclite.consolidator.processor;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.log4j.Logger;
@@ -48,6 +49,7 @@ import com.synclite.consolidator.oper.RenameTable;
 import com.synclite.consolidator.oper.Replace;
 import com.synclite.consolidator.oper.TruncateTable;
 import com.synclite.consolidator.oper.Update;
+import com.synclite.consolidator.oper.UpdateIfPredicate;
 import com.synclite.consolidator.oper.Upsert;
 import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorDstTable;
@@ -99,6 +101,7 @@ public abstract class SQLExecutor implements AutoCloseable{
     public abstract void createDatabase(CreateDatabase oper) throws DstExecutionException;
     public abstract void createSchema(CreateSchema createSchema) throws DstExecutionException;
 	public abstract void executeSQL(DeleteIfPredicate sqlStmt) throws DstExecutionException;
+	public abstract void executeSQL(UpdateIfPredicate sqlStmt) throws DstExecutionException;
 	public abstract void executeSQL(Minus minusStmt) throws DstExecutionException;
 	public abstract void executeSQL(FinishBatch finishBatch) throws DstExecutionException;
 	public abstract void executeSQL(NativeOper nativeOper) throws DstExecutionException;	
@@ -126,6 +129,23 @@ public abstract class SQLExecutor implements AutoCloseable{
     }
 
     protected abstract CDCLogPosition readCDCLogPosition(String deviceUUID, String deviceName, ConsolidatorDstTable dstCheckpointTable) throws DstExecutionException;
+
+    /**
+     * Read per-table CREATE SQL strings from the destination's synclite_table_schema system table.
+     * Returns a list of two-element arrays: [table_name, create_sql].
+     * Default: returns empty list (non-JDBC / unsupported destinations fall back gracefully).
+     */
+    public List<String[]> readTableSchemas(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
+        return new ArrayList<>();
+    }
+
+    /**
+     * Read the initialization status stored in synclite_device_status on the destination.
+     * Returns 1 if initialized, 0 if not, -1 if not supported / table does not exist yet.
+     */
+    public long readInitializationStatus(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
+        return -1;
+    }
 
 
     @Override

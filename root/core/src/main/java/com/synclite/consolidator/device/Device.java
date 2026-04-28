@@ -186,6 +186,28 @@ public class Device {
 			return cols;
 		}
 
+		public List<Column> fetchColumns(Connection conn, TableID tblID) throws SyncLiteException {
+			List<Column> cols = new ArrayList<Column>();
+			try (Statement stmt = conn.createStatement()) {
+				try (ResultSet rs = stmt.executeQuery("pragma table_info(" + tblID.table + ")")) {
+					while (rs.next()) {
+						long cid = rs.getLong("cid");
+						String colName = rs.getString("name").toLowerCase();
+						String colType = rs.getString("type");
+						int isNotNull = rs.getInt("notnull");
+						String defaultValue = rs.getString("dflt_value");
+						int pkIndex = rs.getInt("pk");
+						DataType dataType = new DataType(colType, schemaReader.getJavaSqlType(colType), schemaReader.getStorageClass(colType));
+						Column c = new Column(cid, colName, dataType, isNotNull, defaultValue, pkIndex, 0);
+						cols.add(c);
+					}
+				}
+			} catch (SQLException e) {
+				throw new SyncLiteException("Failed to fetch schema for table : " + tblID, e);
+			}
+			return cols;
+		}
+
 		public void fetchAndAddColumns(Path dbPath, Table tbl) throws SyncLiteException {
 			for (Column col : fetchColumns(dbPath, tbl.id)) {
 				tbl.addColumn(col);
@@ -539,7 +561,14 @@ public class Device {
 	private Path currentDataLakeObject;
 	private Path backupSnapshot;
 	private HashMap<Integer, Path> replicaPaths = new HashMap<Integer, Path>();
-	private static DeviceStageManager deviceStageManager = DeviceStageManager.getDataStageManagerInstance();
+	private static DeviceStageManager deviceStageManager;
+
+	private static DeviceStageManager getStageManager() {
+		if (deviceStageManager == null) {
+			deviceStageManager = DeviceStageManager.getDataStageManagerInstance();
+		}
+		return deviceStageManager;
+	}
 	private List<Integer> allDstIndexes = new ArrayList<Integer>();
 	private List<String> dstDBAliases = new ArrayList<String>() ;
 	private String dstDBAliasStr = "";
@@ -938,8 +967,8 @@ public class Device {
 				throw new SyncLiteException("Failed to create local command path : " + this.localCommandPath);
 			}
 			this.remoteCommandPath = ConfLoader.getInstance().getDeviceCommandRoot().resolve(uploadPath.getFileName());
-			if (! deviceStageManager.containerExists(remoteCommandPath, SyncLiteObjectType.COMMAND_CONTAINER)) {
-				deviceStageManager.createContainer(remoteCommandPath, SyncLiteObjectType.COMMAND_CONTAINER);
+			if (! getStageManager().containerExists(remoteCommandPath, SyncLiteObjectType.COMMAND_CONTAINER)) {
+				getStageManager().createContainer(remoteCommandPath, SyncLiteObjectType.COMMAND_CONTAINER);
 			}
 		}
 	}
@@ -1022,6 +1051,15 @@ public class Device {
 		
 		for (int dstIndex : allDstIndexes) {
 			Path consolidatorMetadataFile = Path.of(rootPath.toString(), SyncLiteConsolidatorInfo.getMetadataFileName(dstIndex));
+			if (!Files.exists(consolidatorMetadataFile)) {
+				//Try to recover consolidator metadata from stage (enables stateless EventStreamer recovery on a new machine)
+				try {
+					Path consolidatorMetadataInUpload = uploadPath.resolve(SyncLiteConsolidatorInfo.getMetadataFileName(dstIndex));
+					getStageManager().downloadObject(consolidatorMetadataInUpload, consolidatorMetadataFile, SyncLiteObjectType.METADATA);
+				} catch (SyncLiteStageException e) {
+					//Ignore - file may not exist on stage yet
+				}
+			}
 			ConsolidatorMetadataManager mgr = null;
 			try {
 				mgr = ConsolidatorMetadataManager.getInstance(consolidatorMetadataFile, this, dstIndex);
@@ -1030,6 +1068,16 @@ public class Device {
 			} catch (SQLException e) {
 				throw new SyncLiteException("Bad device. Failed to open consolidator metadata file : " + consolidatorMetadataFile, e);
 			}
+		}
+	}
+
+
+	public final void uploadConsolidatorMetadata(int dstIndex) {
+		Path consolidatorMetadataFile = Path.of(rootPath.toString(), SyncLiteConsolidatorInfo.getMetadataFileName(dstIndex));
+		try {
+			getStageManager().uploadObject(uploadPath, consolidatorMetadataFile, SyncLiteObjectType.METADATA);
+		} catch (SyncLiteStageException e) {
+			tracer.warn("Failed to upload consolidator metadata file to stage : " + consolidatorMetadataFile + " : " + e.getMessage());
 		}
 	}
 
@@ -1266,7 +1314,7 @@ public class Device {
 		Path replicaInRoot = SyncLiteLoggerInfo.getDataBackupPath(rootPath, dbName);
 		Path replicaInUpload = SyncLiteLoggerInfo.getDataBackupPath(uploadPath, dbName);
 		try {
-			long publishTime = deviceStageManager.downloadObject(replicaInUpload, replicaInRoot, SyncLiteObjectType.DATA);
+			long publishTime = getStageManager().downloadObject(replicaInUpload, replicaInRoot, SyncLiteObjectType.DATA);
 			if(publishTime == 0) {
 				throw new SyncLiteException("Device replica missing in device stage");
 			}
@@ -1299,11 +1347,11 @@ public class Device {
 	}
 
 	private final Path findLoggerMetadataFile() throws SyncLiteStageException {
-		Path loggerMetadataFilePath = deviceStageManager.findObjectWithSuffix(uploadPath, SyncLiteLoggerInfo.getMetadataFileSuffix(), SyncLiteObjectType.METADATA);
+		Path loggerMetadataFilePath = getStageManager().findObjectWithSuffix(uploadPath, SyncLiteLoggerInfo.getMetadataFileSuffix(), SyncLiteObjectType.METADATA);
 		if (loggerMetadataFilePath != null) {
 			String metadataFileName = loggerMetadataFilePath.getFileName().toString();
 			Path loggerMetadataFileInRoot = Path.of(rootPath.toString(), metadataFileName);
-			deviceStageManager.downloadObject(loggerMetadataFilePath, loggerMetadataFileInRoot, SyncLiteObjectType.METADATA);
+			getStageManager().downloadObject(loggerMetadataFilePath, loggerMetadataFileInRoot, SyncLiteObjectType.METADATA);
 			return loggerMetadataFileInRoot;
 		}
 		return null;
@@ -1424,7 +1472,7 @@ public class Device {
 		Path logSegmentPathInRoot = getCommandLogSegmentPath(commandLogSegmentSequenceNumber);
 		Path logSegmentPathInUpload = getCommandLogSegmentPathInUploadDir(commandLogSegmentSequenceNumber);
 		try {
-			long publishTime = deviceStageManager.downloadObject(logSegmentPathInUpload, logSegmentPathInRoot, SyncLiteObjectType.LOG);
+			long publishTime = getStageManager().downloadObject(logSegmentPathInUpload, logSegmentPathInRoot, SyncLiteObjectType.LOG);
 			if (publishTime > 0) {
 				CommandLogSegment segment = new CommandLogSegment(this, commandLogSegmentSequenceNumber, logSegmentPathInRoot, publishTime);
 				//Check if the segment is ready to apply
@@ -1432,12 +1480,12 @@ public class Device {
 					
 					//Now download the associated txn Files if needed
 					if (allowsConcurrentWriters == 1) {
-						List<Path> txnFiles = deviceStageManager.findObjectsWithSuffixPrefix(uploadPath, segment.path.getFileName().toString(), SyncLiteLoggerInfo.getCommandLogTxnFileSuffix(), SyncLiteObjectType.LOG);
+						List<Path> txnFiles = getStageManager().findObjectsWithSuffixPrefix(uploadPath, segment.path.getFileName().toString(), SyncLiteLoggerInfo.getCommandLogTxnFileSuffix(), SyncLiteObjectType.LOG);
 						if ((txnFiles != null) && !txnFiles.isEmpty()) {
 							for (Path f : txnFiles) {
 								Path txnFilePathInRoot = rootPath.resolve(f.getFileName().toString());
 								Path txnFilePathInUpload = uploadPath.resolve(f.getFileName().toString());								
-								long t = deviceStageManager.downloadObject(txnFilePathInUpload, txnFilePathInRoot, SyncLiteObjectType.LOG);
+								long t = getStageManager().downloadObject(txnFilePathInUpload, txnFilePathInRoot, SyncLiteObjectType.LOG);
 								if (t == 0) {
 									//Download failed.
 									tracer.error("Failed to download txn file : " + txnFilePathInUpload + " for command log segment : " + segment);
@@ -1481,7 +1529,7 @@ public class Device {
 		Path logSegmentPathInRoot = getEventLogSegmentPath(eventLogSegmentSequenceNumber);
 		Path logSegmentPathInUpload = getEventLogSegmentPathInUploadDir(eventLogSegmentSequenceNumber);
 		try {
-			long publishTime = deviceStageManager.downloadObject(logSegmentPathInUpload, logSegmentPathInRoot, SyncLiteObjectType.LOG);
+			long publishTime = getStageManager().downloadObject(logSegmentPathInUpload, logSegmentPathInRoot, SyncLiteObjectType.LOG);
 			if (publishTime > 0) {
 				EventLogSegment segment = new EventLogSegment(this, eventLogSegmentSequenceNumber, logSegmentPathInRoot, publishTime);
 				//Check if this log segment is ready
@@ -1489,12 +1537,12 @@ public class Device {
 					
 					//Now download the associated txn Files if needed
 					if (allowsConcurrentWriters == 1) {
-						List<Path> txnFiles = deviceStageManager.findObjectsWithSuffixPrefix(uploadPath, segment.path.getFileName().toString(), SyncLiteLoggerInfo.getEventLogTxnFileSuffix(), SyncLiteObjectType.LOG);
+						List<Path> txnFiles = getStageManager().findObjectsWithSuffixPrefix(uploadPath, segment.path.getFileName().toString(), SyncLiteLoggerInfo.getEventLogTxnFileSuffix(), SyncLiteObjectType.LOG);
 						if ((txnFiles != null) && !txnFiles.isEmpty()) {
 							for (Path f : txnFiles) {
 								Path txnFilePathInRoot = rootPath.resolve(f.getFileName().toString());
 								Path txnFilePathInUpload = uploadPath.resolve(f.getFileName().toString());								
-								long t = deviceStageManager.downloadObject(txnFilePathInUpload, txnFilePathInRoot, SyncLiteObjectType.LOG);
+								long t = getStageManager().downloadObject(txnFilePathInUpload, txnFilePathInRoot, SyncLiteObjectType.LOG);
 								if (t == 0) {
 									//Download failed.
 									tracer.error("Failed to download txn file : " + txnFilePathInUpload + " for event log segment : " + segment);
@@ -1610,7 +1658,7 @@ public class Device {
 
 			Files.writeString(commandFilePath, commandDetails);
 
-			deviceStageManager.uploadObject(this.remoteCommandPath, commandFilePath, SyncLiteObjectType.COMMAND);
+			getStageManager().uploadObject(this.remoteCommandPath, commandFilePath, SyncLiteObjectType.COMMAND);
 
 			//Files.delete(commandFilePath);
 			tracer.info("Successfully dispatched command : " + command);	
@@ -1622,7 +1670,7 @@ public class Device {
 	private final void deleteDeviceCommand(Path localCommandPath) throws SyncLiteException {
 		Path remoteCommandToDelete = this.remoteCommandPath.resolve(localCommandPath.getFileName());
 		try  {			 
-			deviceStageManager.deleteObject(remoteCommandToDelete, SyncLiteObjectType.COMMAND);
+			getStageManager().deleteObject(remoteCommandToDelete, SyncLiteObjectType.COMMAND);
 			Files.delete(localCommandPath);
 		} catch (IOException | SyncLiteStageException e) {
 			throw new SyncLiteException("Failed to delete command : " + remoteCommandToDelete + " from stage :" + this, e);

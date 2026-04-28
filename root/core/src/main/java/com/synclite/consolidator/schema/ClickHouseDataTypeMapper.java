@@ -13,7 +13,7 @@ public class ClickHouseDataTypeMapper extends DataTypeMapper {
 	protected DataType doMapTypeConservative(DataType type) {
         if (type.dbNativeDataType.equalsIgnoreCase("blob")) {
             return new DataType("Blob", JDBCType.BLOB, getStorageClass("Blob"));
-        } if (type.dbNativeDataType.equalsIgnoreCase("clob")) {
+        } else if (type.dbNativeDataType.equalsIgnoreCase("clob")) {
             return new DataType("Clob", JDBCType.CLOB, getStorageClass("Clob"));
         } else {
         	String dt = "String";

@@ -116,13 +116,13 @@ public class ApacheIcebergExecutor extends JDBCExecutor {
 		}	
 
 		int j = 1;
-		for (Object o : oper.beforeValues) {
+		for (Object o : oper.afterValues) {
 			try {
 				Object icebergVal = getIcebergValue(o, oper.tbl.columns.get(j-1).type);
 				icebergVals[i-1] = icebergVal;
 			} catch (Exception e) {
-				this.tracer.error("Failed to bind after argument with value " + o + " at index " + j + " for UPDATE operation for table : " + oper.tbl + " for column : " + oper.tbl.columns.get(i-1).column + "(" + oper.tbl.columns.get(i-1).type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
-				throw new SQLException("Failed to bind after argument with value " + o + " at index " + j + " for UPDATE operation for table : " + oper.tbl + " for column : " + oper.tbl.columns.get(i-1).column + "(" + oper.tbl.columns.get(i-1).type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+				this.tracer.error("Failed to bind after argument with value " + o + " at index " + j + " for UPDATE operation for table : " + oper.tbl + " for column : " + oper.tbl.columns.get(j-1).column + "(" + oper.tbl.columns.get(j-1).type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
+				throw new SQLException("Failed to bind after argument with value " + o + " at index " + j + " for UPDATE operation for table : " + oper.tbl + " for column : " + oper.tbl.columns.get(j-1).column + "(" + oper.tbl.columns.get(j-1).type + "). Failed record dump : " + getRecordDump(oper.beforeValues, oper.afterValues), e);
 			}
 			++j;
 			++i;
@@ -237,7 +237,7 @@ public class ApacheIcebergExecutor extends JDBCExecutor {
 		case REPLACE:
 			return (!insertRows.isEmpty());
 		case DELETEINSERT:
-			return ((!deleteRows.isEmpty()) && (!insertRows.isEmpty()));			
+			return (!insertRows.isEmpty());			
 		default:
 			return false;
 		}
@@ -257,7 +257,7 @@ public class ApacheIcebergExecutor extends JDBCExecutor {
 	protected void executeInsertBatch() throws DstExecutionException {
 		try {
 			Dataset<Row> insertDataSet = spark.createDataFrame(insertRows, currentTableSchema);
-			insertDataSet.write().format("iceberg").mode("append").insertInto(sqlGenerator.getTableNameSQL(currentTable.id));
+			insertDataSet.writeTo(sqlGenerator.getTableNameSQL(currentTable.id)).append();
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to execute insert batch : " + e.getMessage(), e);
 		}
@@ -266,24 +266,23 @@ public class ApacheIcebergExecutor extends JDBCExecutor {
 	@Override
 	protected void executeDeleteInsertBatch() throws DstExecutionException {
 		try {
+			Dataset<Row> dataSet = spark.createDataFrame(insertRows, currentTableSchema);
+			TableID tempTableID = TableID.from(currentTable.id.deviceUUID, currentTable.id.deviceName, dstIndex, null, null, currentTable.id.table + "_tmp");
+			dataSet.createOrReplaceTempView(tempTableID.table);
 			try {
-				Dataset<Row> insertDataSet = spark.createDataFrame(insertRows, currentTableSchema);
-				TableID tempTableID = TableID.from(currentTable.id.deviceUUID, currentTable.id.deviceName, dstIndex, null, null, currentTable.id.table + "_tmp");
-				insertDataSet.createOrReplaceTempView(tempTableID.table);
-				insertDataSet.write().format("iceberg").mode("append").insertInto(sqlGenerator.getTableNameSQL(tempTableID));
 				String deleteQuery = sqlGenerator.getDeleteFromTempTableSql(currentTable, tempTableID);
 				tracer.debug(currentTable + " SQL : " + deleteQuery);
-			    spark.sql(deleteQuery);
+				spark.sql(deleteQuery);
 			} catch (Exception e) {
 				throw new DstExecutionException("Failed to execute delete subbatch of deleteinsert batch : " + e.getMessage(), e);
 			}
-
 			try {
-				Dataset<Row> insertDataSet = spark.createDataFrame(insertRows, currentTableSchema);
-				insertDataSet.write().format("iceberg").mode("append").insertInto(sqlGenerator.getTableNameSQL(currentTable.id));
+				dataSet.writeTo(sqlGenerator.getTableNameSQL(currentTable.id)).append();
 			} catch (Exception e) {
-				throw new DstExecutionException("Failed to bulk write insert subbatch of deleteinsert batch : " + e.getMessage(), e);
+				throw new DstExecutionException("Failed to execute insert subbatch of deleteinsert batch : " + e.getMessage(), e);
 			}
+		} catch (DstExecutionException e) {
+			throw e;
 		} catch (Exception e) {
 			throw new DstExecutionException("Failed to execute deleteinsert batch : " + e.getMessage(), e);
 		}
@@ -295,7 +294,6 @@ public class ApacheIcebergExecutor extends JDBCExecutor {
 			Dataset<Row> insertDataSet = spark.createDataFrame(insertRows, currentTableSchema);
 			TableID tempTableID = TableID.from(currentTable.id.deviceUUID, currentTable.id.deviceName, dstIndex, null, null, currentTable.id.table + "_tmp");
 			insertDataSet.createOrReplaceTempView(tempTableID.table);
-			//insertDataSet.write().format("iceberg").mode("append").insertInto(sqlGenerator.getTableNameSQL(tempTableID));
 			String mergeQuery = sqlGenerator.getMergeFromTempTableSql(currentTable, tempTableID);
 			tracer.debug(currentTable + " SQL : " + mergeQuery);
 			spark.sql(mergeQuery);
@@ -407,10 +405,15 @@ public class ApacheIcebergExecutor extends JDBCExecutor {
 		case VARBINARY:
 		case LONGVARBINARY:
 		case BLOB:
-			if (o instanceof Byte[]) {
-				return 0;
+			if (o instanceof byte[]) {
+				return (byte[]) o;
+			} else if (o instanceof Byte[]) {
+				Byte[] boxed = (Byte[]) o;
+				byte[] unboxed = new byte[boxed.length];
+				for (int k = 0; k < boxed.length; k++) { unboxed[k] = boxed[k]; }
+				return unboxed;
 			} else {
-				return o.toString().getBytes();
+				return o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
 			}
 		case BIT:
 		case BOOLEAN:
@@ -514,13 +517,10 @@ public class ApacheIcebergExecutor extends JDBCExecutor {
 	@Override
 	public boolean tableExists(Table tbl) throws DstExecutionException {
 		try {
-			spark.sql("DESCRIBE TABLE " + sqlGenerator.getTableNameSQL(tbl.id));
-		} catch (Exception e) {	
-			if (e.getMessage().contains("Table or view not found")) {
-				return false;
-			}
+			return spark.catalog().tableExists(sqlGenerator.getTableNameSQL(tbl.id));
+		} catch (Exception e) {
+			throw new DstExecutionException("Failed to check if table exists : " + tbl.id + " : " + e.getMessage(), e);
 		}
-		return true;
 	}
 
 	@Override

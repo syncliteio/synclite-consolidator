@@ -117,7 +117,7 @@ public class KafkaStageManager extends DeviceStageManager {
 				Path encryptedObjPath = Path.of(objectPath + ".enc");
 				if (Files.exists(encryptedObjPath)) {
 					try (InputStream fis = new FileInputStream(encryptedObjPath.toString())) {
-						fileDownloader.decryptAndWriteFile(null, outputFile);
+						fileDownloader.decryptAndWriteFile(fis, outputFile);
 					}					
 					try {
 						Files.delete(encryptedObjPath);

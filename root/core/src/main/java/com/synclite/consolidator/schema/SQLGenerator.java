@@ -38,6 +38,7 @@ import com.synclite.consolidator.oper.RenameTable;
 import com.synclite.consolidator.oper.Replace;
 import com.synclite.consolidator.oper.TruncateTable;
 import com.synclite.consolidator.oper.Update;
+import com.synclite.consolidator.oper.UpdateIfPredicate;
 import com.synclite.consolidator.oper.Upsert;
 
 public abstract class SQLGenerator {
@@ -108,6 +109,7 @@ public abstract class SQLGenerator {
     public abstract String getDeleteSQL(Delete delete);
     public abstract String getLoadFileSQL(LoadFile load);
 	public abstract String getDeleteIfPredicateSQL(DeleteIfPredicate deleteIfPredicate);
+	public abstract String getUpdateIfPredicateSQL(UpdateIfPredicate updateIfPredicate);
     
     public abstract String getFileLoaderInsertSQL(Insert insert, Path csvFilePath);
     public abstract String getFileLoaderUpsertSQL(Upsert upsert, Path csvFilePath);

@@ -88,6 +88,24 @@ public class DuckDBSQLGenerator extends JDBCSQLGenerator {
 	}
 
 	@Override
+	protected String getColumnTypeSQL(Column c) {
+		// DuckDB does not accept the NULL keyword (e.g. in ALTER TABLE ADD COLUMN).
+		// Nullable columns are the default — just omit the NULL keyword.
+		StringBuilder builder = new StringBuilder();
+		builder.append(getColumnTypeSQLNoConstraint(c)); // handles null/blank type via base method
+		builder.append(" ");
+		if (c.isNotNull != 0) {
+			builder.append(" NOT NULL ");
+		}
+		if (c.defaultValue != null) {
+			builder.append(" DEFAULT '");
+			builder.append(c.defaultValue);
+			builder.append("'");
+		}
+		return builder.toString();
+	}
+
+	@Override
 	public String getFileLoaderInsertSQL(Insert insert, Path csvFilePath) {
 		return "COPY " + getTableNameSQL(insert.tbl.id) + " FROM '" + csvFilePath + "' WITH (HEADER 1, DELIMITER ',')";
 		//return "INSERT INTO 
@@ -119,7 +137,7 @@ public class DuckDBSQLGenerator extends JDBCSQLGenerator {
                 setListBuilder.append(", ");
             }
             setListBuilder.append(getColumnNameSQL(c));
-            setListBuilder.append(" = stg." + getColumnNameSQL(c) + "b");
+            setListBuilder.append(" = stg." + getColumnNameSQL(c) + "a");
             first = false;
             ++idx;
         }

@@ -156,20 +156,11 @@ public abstract class FileLoaderExecutor extends JDBCExecutor {
 	@Override
 	protected void executeInsertBatch() throws DstExecutionException {
 		try {
-			//Optimization
-			//If the batch size is 1 then better to bind and execute prepared statement itself instead of file write and file based load
-			//			
-			if (enableSingleRecBatchOptimization && (batchOperCount == 1)) {
-				//prevBatchOper has the oper. 
-				bindAndExecutePreparedInsert((Insert) prevBatchOper);
-				resetCSVPrinter();
-			} else {				
-				csvPrinter.flush();
-				resetCSVPrinter();
-				putFile();
-				executeFileLoaderInsertSql();
-				prepareInsertStatement((Insert) prevBatchOper);
-		}
+			csvPrinter.flush();
+			resetCSVPrinter();
+			putFile();
+			executeFileLoaderInsertSql();
+			prepareInsertStatement((Insert) prevBatchOper);
 		} catch (DstExecutionException | IOException e) {
 			throw new DstExecutionException("Failed to flush CSV batch and execute insert batch", e);
 		}
@@ -178,23 +169,13 @@ public abstract class FileLoaderExecutor extends JDBCExecutor {
 	@Override
 	protected void executeDeleteInsertBatch() throws DstExecutionException {
 		try {
-			//Optimization
-			//If the batch size is 1 then better to bind and execute prepared statement itself instead of file write and file based load
-			//
-			if (enableSingleRecBatchOptimization && (batchOperCount == 1)) {
-				//prevBatchOper has the oper. 
-				bindAndExecutePreparedDelete(((DeleteInsert) prevBatchOper).getDeleteOper());				
-				bindAndExecutePreparedInsert(((DeleteInsert) prevBatchOper).getInsertOper());
-				resetCSVPrinter();
-			} else {				
-				csvPrinter.flush();
-				resetCSVPrinter();
-				putFile();
-				executeFileLoaderDeleteSql();
-				executeFileLoaderInsertSql();
-				prepareDeleteStatement(((DeleteInsert) prevBatchOper).getDeleteOper());
-				prepareInsertStatement(((DeleteInsert) prevBatchOper).getInsertOper());
-		}
+			csvPrinter.flush();
+			resetCSVPrinter();
+			putFile();
+			executeFileLoaderDeleteSql();
+			executeFileLoaderInsertSql();
+			prepareDeleteStatement(((DeleteInsert) prevBatchOper).getDeleteOper());
+			prepareInsertStatement(((DeleteInsert) prevBatchOper).getInsertOper());
 		} catch (DstExecutionException | IOException e) {
 			throw new DstExecutionException("Failed to flush CSV batch and execute deleteinsert batch", e);
 		}
@@ -217,20 +198,11 @@ public abstract class FileLoaderExecutor extends JDBCExecutor {
 	@Override
 	protected void executeUpdateBatch() throws DstExecutionException {
 		try {
-			//Optimization
-			//If the batch size is 1 then better to bind and execute prepared statement itself instead of file write and file based load
-			//
-			if (enableSingleRecBatchOptimization && (batchOperCount == 1)) {
-				//prevBatchOper has the oper. 
-				bindAndExecutePreparedUpdate((Update) prevBatchOper);
-				resetCSVPrinter();
-			} else {				
-				csvPrinter.flush();
-				resetCSVPrinter();
-				putFile();
-				executeFileLoaderUpdateSql();
-				prepareUpdateStatement((Update) prevBatchOper);
-			}
+			csvPrinter.flush();
+			resetCSVPrinter();
+			putFile();
+			executeFileLoaderUpdateSql();
+			prepareUpdateStatement((Update) prevBatchOper);
 		} catch (DstExecutionException | IOException e) {
 			throw new DstExecutionException("Failed to flush CSV batch and execute update batch : ", e);
 		}
@@ -241,24 +213,14 @@ public abstract class FileLoaderExecutor extends JDBCExecutor {
 	@Override
 	protected void executeDeleteBatch() throws DstExecutionException {
 		try {
-			//Optimization
-			//If the batch size is 1 then better to bind and execute prepared statement itself instead of file write and file based load
-			//			
-			if (enableSingleRecBatchOptimization && (batchOperCount == 1)) {
-				//prevBatchOper has the oper. 
-				bindAndExecutePreparedDelete((Delete) prevBatchOper);
-				resetCSVPrinter();
-			} else {
-				csvPrinter.flush();
-				resetCSVPrinter();
-				putFile();
-				executeFileLoaderDeleteSql();
-				prepareDeleteStatement((Delete) prevBatchOper);				
-			}
+			csvPrinter.flush();
+			resetCSVPrinter();
+			putFile();
+			executeFileLoaderDeleteSql();
+			prepareDeleteStatement((Delete) prevBatchOper);
 		} catch (DstExecutionException | IOException e) {
 			throw new DstExecutionException("Failed to flush CSV batch and executed delete batch : ", e);
 		}
-	
 	}
 	
 	protected void executeFileLoaderInsertSql() throws DstExecutionException {
