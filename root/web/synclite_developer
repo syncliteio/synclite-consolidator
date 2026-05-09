@@ -1,0 +1,11 @@
+edition = DEVELOPER
+max-num-devices = 100
+max-num-jobs = 4
+total-processed-log-size-limit = UNLIMITED
+total-operation-count-limit = UNLIMITED
+total-transaction-count-limit = UNLIMITED
+allowed-sources = POSTGRESQL,MYSQL,MONGODB,SQLITE,DUCKDB,CSV
+allowed-source-app-types = ALL
+allowed-destinations = POSTGRESQL,MYSQL,MONGODB,SQLITE,DUCKDB,APACHE_ICEBERG
+valid-from = 2024-08-20
+valid-to = 2024-11-20
