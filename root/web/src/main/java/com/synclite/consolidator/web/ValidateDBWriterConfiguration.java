@@ -322,11 +322,20 @@ public class ValidateDBWriterConfiguration extends HttpServlet {
 					response.sendRedirect("jobSummary.jsp");
 				}
 			}
-		} catch(Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			//		request.setAttribute("saveStatus", "FAIL");
 			String errorMsg = "Exception : " + e.getClass() + " : " + e.getMessage(); 
 			this.globalTracer.error("Failed to validate db writer configuration for destination index : " + dstIndex + " : " + e.getMessage(), e);
 			request.getRequestDispatcher("configureDBWriter.jsp?dstIndex=" + dstIndex + "&errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			//		request.setAttribute("saveStatus", "FAIL");
+			String errorMsg = "Exception : " + e.getClass() + " : " + e.getMessage(); 
+			this.globalTracer.error("Failed to validate db writer configuration for destination index : " + dstIndex + " : " + e.getMessage(), e);
+			request.getRequestDispatcher("configureDBWriter.jsp?dstIndex=" + dstIndex + "&errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

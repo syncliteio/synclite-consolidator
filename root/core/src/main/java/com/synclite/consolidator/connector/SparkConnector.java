@@ -69,6 +69,11 @@ public class SparkConnector extends JDBCConnector{
 		return null;
 	}
 
+	@Override
+	public boolean isJdbcCapable() {
+		return false;
+	}
+
 	public SparkSession getSession() throws DstExecutionException {
 		return sparkBuilder.getOrCreate();
 		//return this.spark;

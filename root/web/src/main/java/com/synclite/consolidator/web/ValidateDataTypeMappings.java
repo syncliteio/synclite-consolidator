@@ -98,12 +98,22 @@ public class ValidateDataTypeMappings extends HttpServlet {
 			//request.getRequestDispatcher("configureFilterMapper.jsp?dstIndex=" + dstIndex).forward(request, response);
 			response.sendRedirect("configureFilterMapper.jsp?dstIndex=" + dstIndex);
 
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			//throw e;
 			request.setAttribute("saveStatus", "FAIL");
 			System.out.println("exception : " + e);
 			String errorMsg = e.getMessage();
 			request.getRequestDispatcher("configureDataTypes.jsp?dstIndex=" + dstIndex + "&errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			//throw e;
+			request.setAttribute("saveStatus", "FAIL");
+			System.out.println("exception : " + e);
+			String errorMsg = e.getMessage();
+			request.getRequestDispatcher("configureDataTypes.jsp?dstIndex=" + dstIndex + "&errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

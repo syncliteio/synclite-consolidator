@@ -60,7 +60,7 @@ public class MetadataManager {
 		});
 	}
 
-	public final void upsertProperties(HashMap<String,Object> values) throws SQLException {
+	public void upsertProperties(HashMap<String,Object> values) throws SQLException {
 		for (long i = 0; i < ConfLoader.getInstance().getSyncLiteOperRetryCount(); ++i) {
 			try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
 				conn.setAutoCommit(false);
@@ -89,7 +89,7 @@ public class MetadataManager {
 		}		
 	}
 
-	public final void upsertProperty(String key, Object value) throws SQLException {
+	public void upsertProperty(String key, Object value) throws SQLException {
 		for (long i = 0; i < ConfLoader.getInstance().getSyncLiteOperRetryCount(); ++i) {
 			try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
 				conn.setAutoCommit(false);
@@ -117,7 +117,7 @@ public class MetadataManager {
 	}
 
 	
-	public final void deleteProperty(String key) throws SQLException {
+	public void deleteProperty(String key) throws SQLException {
 		for (long i = 0; i < ConfLoader.getInstance().getSyncLiteOperRetryCount(); ++i) {
 			try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
 				conn.setAutoCommit(false);
@@ -144,7 +144,7 @@ public class MetadataManager {
 	}
 
 
-	public final String getStringProperty(String key) throws SQLException {
+	public String getStringProperty(String key) throws SQLException {
 		try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
 			try (Statement stmt = conn.createStatement()) {
 				try (ResultSet rs = stmt.executeQuery("SELECT value FROM metadata WHERE key = '" + key + "'")) {
@@ -158,7 +158,7 @@ public class MetadataManager {
 
 	}
 
-	public final Long getLongProperty(String key) throws SQLException {
+	public Long getLongProperty(String key) throws SQLException {
 		try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
 			try (Statement stmt = conn.createStatement()) {
 				try (ResultSet rs = stmt.executeQuery("SELECT value FROM metadata WHERE key = '" + key + "'")) {

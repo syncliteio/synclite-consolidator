@@ -747,8 +747,8 @@ public class SaveJobConfiguration extends HttpServlet {
 			//		request.setAttribute("saveStatus", "FAIL");
 			System.out.println("exception : " + e);
 			String errorMsg = "Error : " + e.getMessage();
-			this.globalTracer.error("Failed to save job configuration with exception : " + e.getCause(), e);
-			request.getRequestDispatcher("jobSummary.jsp?saveStatus=FAIL&saveStatusDetails=" + errorMsg).forward(request, response);
+			this.globalTracer.error("Failed to save job configuration : " + e.getMessage(), e);
+			request.getRequestDispatcher("jobSummary.jsp?saveStatus=FAIL&saveStatusDetails=" + java.net.URLEncoder.encode(errorMsg, java.nio.charset.StandardCharsets.UTF_8)).forward(request, response);
 		}
 	}
 

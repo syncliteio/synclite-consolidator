@@ -68,10 +68,18 @@ public class ValidateNumSchedules extends HttpServlet {
 			
 			//request.getRequestDispatcher("configureScheduler.jsp").forward(request, response);
 			response.sendRedirect("configureScheduler.jsp");
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			System.out.println("exception : " + e);
 			String errorMsg = e.getMessage();
 			request.getRequestDispatcher("configureNumSchedules.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			System.out.println("exception : " + e);
+			String errorMsg = e.getMessage();
+			request.getRequestDispatcher("configureNumSchedules.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 }

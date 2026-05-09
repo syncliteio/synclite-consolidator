@@ -106,11 +106,20 @@ public class MapDevicesToDsts extends HttpServlet {
 			request.getSession().setAttribute("default-dst-index-for-unmapped-devices", defaultDstForUnmappedDevicesStr);
 			
 			request.getRequestDispatcher("jobSummary.jsp").forward(request, response);
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			//		request.setAttribute("saveStatus", "FAIL");
 			System.out.println("exception : " + e);
 			String errorMsg = e.getMessage();
 			request.getRequestDispatcher("mapDevicesToDsts.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			//		request.setAttribute("saveStatus", "FAIL");
+			System.out.println("exception : " + e);
+			String errorMsg = e.getMessage();
+			request.getRequestDispatcher("mapDevicesToDsts.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

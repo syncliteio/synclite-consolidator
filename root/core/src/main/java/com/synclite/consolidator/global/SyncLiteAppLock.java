@@ -16,30 +16,113 @@
 
 package com.synclite.consolidator.global;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.Statement;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 
 import com.synclite.consolidator.exception.SyncLiteException;
 
 public class SyncLiteAppLock {
 	
-	private Connection lock;
+	private FileChannel lockChannel;
+	private FileLock lock;
+	private Path lockFile;
 	public SyncLiteAppLock() {
 	}
 	
 	public final void tryLock(Path workDir) throws SyncLiteException {		
-		Path lockFile = workDir.resolve("synclite_consolidator.lock");
-		String lockFileURL = "jdbc:sqlite:" + lockFile;
+		this.lockFile = workDir.resolve("synclite_consolidator.lock");
 		try {
-			this.lock = DriverManager.getConnection(lockFileURL);
-			try (Statement stmt = this.lock.createStatement()) {
-	            stmt.executeUpdate("PRAGMA locking_mode = EXCLUSIVE");
-	            stmt.executeUpdate("BEGIN EXCLUSIVE");
+			this.lockChannel = FileChannel.open(this.lockFile,
+					StandardOpenOption.CREATE,
+					StandardOpenOption.READ,
+					StandardOpenOption.WRITE);
+			this.lock = this.lockChannel.tryLock();
+			if (this.lock == null) {
+				String existingOwner = readLockOwnerInfo();
+				throw new SyncLiteException("Failed to lock synclite consolidator lock " + this.lockFile
+						+ ". Another consolidator job appears to be running for work-dir : " + workDir
+						+ ". Existing lock owner details: " + existingOwner);
 			}
+
+			String ownerInfo = buildLockOwnerInfo();
+			this.lockChannel.truncate(0);
+			this.lockChannel.position(0);
+			this.lockChannel.write(ByteBuffer.wrap(ownerInfo.getBytes(StandardCharsets.UTF_8)));
+			this.lockChannel.force(true);
+		} catch (OverlappingFileLockException e) {
+			String existingOwner = readLockOwnerInfo();
+			throw new SyncLiteException("Failed to lock synclite consolidator lock " + this.lockFile
+					+ ". Another consolidator job is already running in this JVM for work-dir : " + workDir
+					+ ". Existing lock owner details: " + existingOwner);
 		} catch (Exception e) {
-			throw new SyncLiteException("Failed to lock synclite consolidator lock " + lockFile + ". Please stop any other consolidator job running for the specified work-dir : " + workDir);
+			release();
+			throw new SyncLiteException("Failed to lock synclite consolidator lock " + this.lockFile
+					+ ". Please stop any other consolidator job running for the specified work-dir : " + workDir
+					+ ". Root cause: " + e.getMessage());
+		}
+	}
+
+	public final void release() {
+		if (this.lock != null) {
+			try {
+				this.lock.release();
+			} catch (Exception e) {
+				// Ignore lock release failures during shutdown.
+			}
+			this.lock = null;
+		}
+
+		if (this.lockChannel != null) {
+			try {
+				this.lockChannel.close();
+			} catch (Exception e) {
+				// Ignore channel close failures during shutdown.
+			}
+			this.lockChannel = null;
+		}
+	}
+
+	private String buildLockOwnerInfo() {
+		long pid = ProcessHandle.current().pid();
+		String hostName;
+		try {
+			hostName = InetAddress.getLocalHost().getHostName();
+		} catch (UnknownHostException e) {
+			hostName = "unknown-host";
+		}
+
+		StringBuilder info = new StringBuilder();
+		info.append("pid=").append(pid);
+		info.append(";host=").append(hostName);
+		info.append(";timestamp=").append(Instant.now());
+		return info.toString();
+	}
+
+	private String readLockOwnerInfo() {
+		if (this.lockFile == null) {
+			return "unavailable";
+		}
+
+		try {
+			if (!java.nio.file.Files.exists(this.lockFile)) {
+				return "unavailable";
+			}
+			String content = java.nio.file.Files.readString(this.lockFile, StandardCharsets.UTF_8).trim();
+			if (content.isEmpty()) {
+				return "unavailable";
+			}
+			return content;
+		} catch (IOException e) {
+			return "unavailable";
 		}
 	}
 }

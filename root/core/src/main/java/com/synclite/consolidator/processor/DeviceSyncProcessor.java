@@ -102,6 +102,7 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 		this.consolidatorMetadataMgr = device.getConsolidatorMetadataMgr(dstIndex);
 		this.statsCollector = device.getDeviceStatsCollector(dstIndex);
 		this.dstInitializer = new DeviceDstInitializer(device, userTableMapper, systemTableMapper, statsCollector, dstIndex);
+		this.dstInitializer.setSyncProcessor(this);
 		this.applyInsertIdempotently = ConfLoader.getInstance().getDstIdempotentDataIngestion(dstIndex);
 		String modeStr = ConfLoader.getInstance().getMetadataStore(dstIndex);
 		this.metadataStore = "LOCAL".equalsIgnoreCase(modeStr) ? MetadataStore.LOCAL : MetadataStore.DESTINATION;
@@ -153,12 +154,24 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 					StringBuilder sb = new StringBuilder("CREATE TABLE IF NOT EXISTS ");
 					sb.append(srcTable.id.table).append(" (");
 					boolean first = true;
+					List<Column> pkCols = new java.util.ArrayList<>();
 					for (Column col : srcTable.columns) {
 						if (!first) sb.append(", ");
 						sb.append(col.column).append(" ").append(col.type.dbNativeDataType);
 						if (col.isNotNull != 0) sb.append(" NOT NULL");
-						if (col.pkIndex != 0) sb.append(" PRIMARY KEY");
+						if (col.pkIndex != 0) pkCols.add(col);
 						first = false;
+					}
+					if (pkCols.size() == 1) {
+						sb.append(", PRIMARY KEY(").append(pkCols.get(0).column).append(")");
+					} else if (pkCols.size() > 1) {
+						pkCols.sort((a, b) -> Integer.compare(a.pkIndex, b.pkIndex));
+						sb.append(", PRIMARY KEY(");
+						for (int i = 0; i < pkCols.size(); ++i) {
+							if (i > 0) sb.append(", ");
+							sb.append(pkCols.get(i).column);
+						}
+						sb.append(")");
 					}
 					sb.append(")");
 					try {
@@ -255,13 +268,24 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 			ConsolidatorSrcTable srcTable = ConsolidatorSrcTable.from(id);
 			srcTable.sql = createSql;
 			// Execute CREATE SQL on in-memory replica so PRAGMA table_info can resolve columns
+			boolean replicaTableReady = true;
 			try (Statement stmt = inMemoryReplicaConn.createStatement()) {
 				stmt.execute(createSql);
 			} catch (SQLException e) {
-				if (!e.getMessage().toLowerCase().contains("already exists")) {
+				String msg = e.getMessage().toLowerCase();
+				// Ignore benign conditions: table already exists, or composite PK syntax
+				// that the in-memory SQLite rejects (e.g. "more than one primary key").
+				// These do not prevent column resolution via PRAGMA table_info.
+				if (!msg.contains("already exists") && !msg.contains("more than one primary key")) {
 					throw new SyncLiteException("Failed to seed in-memory replica for table : " + tableName, e);
 				}
+				// If the CREATE failed (e.g. composite PK rejection), the table was not created
+				// in the replica so columns cannot be resolved — skip this table.
+				if (msg.contains("more than one primary key")) {
+					replicaTableReady = false;
+				}
 			}
+			if (!replicaTableReady) continue;
 			// Populate srcTable.columns via PRAGMA table_info on in-memory replica
 			List<Column> cols = device.schemaReader.fetchColumns(inMemoryReplicaConn, id);
 			srcTable.clearColumns();
@@ -305,14 +329,32 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 
 	protected String buildCreateSqlFromColumns(ConsolidatorSrcTable srcTable) {
 		StringBuilder sb = new StringBuilder("CREATE TABLE IF NOT EXISTS ").append(srcTable.id.table).append(" (");
+		List<Column> pkCols = new ArrayList<>();
 		boolean first = true;
 		for (Column col : srcTable.columns) {
 			if (!first) sb.append(", ");
 			sb.append(col.column).append(" ").append(col.type.dbNativeDataType);
 			if (col.isNotNull != 0) sb.append(" NOT NULL");
-			if (col.pkIndex != 0) sb.append(" PRIMARY KEY");
+			if (col.pkIndex != 0) {
+				pkCols.add(col);
+			}
 			first = false;
 		}
+
+		if (pkCols.size() == 1) {
+			sb.append(", PRIMARY KEY(").append(pkCols.get(0).column).append(")");
+		} else if (pkCols.size() > 1) {
+			pkCols.sort((a, b) -> Integer.compare(a.pkIndex, b.pkIndex));
+			sb.append(", PRIMARY KEY(");
+			for (int i = 0; i < pkCols.size(); ++i) {
+				if (i > 0) {
+					sb.append(", ");
+				}
+				sb.append(pkCols.get(i).column);
+			}
+			sb.append(")");
+		}
+
 		sb.append(")");
 		return sb.toString();
 	}

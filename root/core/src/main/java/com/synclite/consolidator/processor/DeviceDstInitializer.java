@@ -57,6 +57,9 @@ public class DeviceDstInitializer {
 	private final ConsolidatorMetadataManager consolidatorMetadataMgr;
 	private final DeviceStatsCollector statsCollector;
 	private int dstIndex;
+	// Optional back-reference to the owning sync processor, used to persist
+	// schema to the destination in DESTINATION metadata mode.
+	private DeviceSyncProcessor syncProcessor;
 	public DeviceDstInitializer(Device device, TableMapper userTableMapper, TableMapper systemTableMapper, DeviceStatsCollector statsCollector, int dstIndex) {
 		this.dstIndex = dstIndex;
 		this.device = device;
@@ -64,6 +67,10 @@ public class DeviceDstInitializer {
 		this.userTableMapper = userTableMapper;
 		this.systemTableMapper = systemTableMapper;
 		this.statsCollector = statsCollector;
+	}
+
+	public void setSyncProcessor(DeviceSyncProcessor syncProcessor) {
+		this.syncProcessor = syncProcessor;
 	}
 
 	protected final void trySnapshotConsolidation(Path snapshot) throws SyncLiteException {
@@ -150,19 +157,45 @@ public class DeviceDstInitializer {
 	}
 
 	private final void markTableInitializing(ConsolidatorSrcTable srcTable) throws SyncLiteException {
-		try {
-			consolidatorMetadataMgr.upsertTableMetadataEntry(srcTable, "initialization_status", "INITIALIZING");
-		} catch (SQLException e) {
-			throw new SyncLiteException("Failed to persist initialization status for table : " + srcTable.id + " in consolidator metadata file : " , e);
+		long retryCount = ConfLoader.getInstance().getDstOperRetryCount(dstIndex);
+		long retryIntervalMs = ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex);
+		for (long i = 0; i < retryCount; ++i) {
+			try {
+				consolidatorMetadataMgr.upsertTableMetadataEntry(srcTable, "initialization_status", "INITIALIZING");
+				return;
+			} catch (SQLException e) {
+				if (i == (retryCount - 1)) {
+					throw new SyncLiteException("Failed to persist initialization status for table : " + srcTable.id + " in consolidator metadata file : " , e);
+				}
+				try {
+					Thread.sleep(retryIntervalMs);
+				} catch (InterruptedException e1) {
+					Thread.currentThread().interrupt();
+				}
+				device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying metadata update for table " + srcTable.id + " after exception : " + e.getMessage());
+			}
 		}
 	}
 
 	private final void markTableInitialized(ConsolidatorSrcTable srcTable, long rowCount) throws SyncLiteException {
-		try {
-			consolidatorMetadataMgr.upsertTableMetadataEntry(srcTable, "initialization_status", "INITIALIZED");
-			consolidatorMetadataMgr.upsertTableMetadataEntry(srcTable, "initial_rows", rowCount);
-		} catch (SQLException e) {
-			throw new SyncLiteException("Failed to persist initialization status for table : " + srcTable.id + " in consolidator metadata file : " , e);
+		long retryCount = ConfLoader.getInstance().getDstOperRetryCount(dstIndex);
+		long retryIntervalMs = ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex);
+		for (long i = 0; i < retryCount; ++i) {
+			try {
+				consolidatorMetadataMgr.upsertTableMetadataEntry(srcTable, "initialization_status", "INITIALIZED");
+				consolidatorMetadataMgr.upsertTableMetadataEntry(srcTable, "initial_rows", rowCount);
+				return;
+			} catch (SQLException e) {
+				if (i == (retryCount - 1)) {
+					throw new SyncLiteException("Failed to persist initialization status for table : " + srcTable.id + " in consolidator metadata file : " , e);
+				}
+				try {
+					Thread.sleep(retryIntervalMs);
+				} catch (InterruptedException e1) {
+					Thread.currentThread().interrupt();
+				}
+				device.tracer.info("Retry attempt : " + (i + 2)  + " : Retrying metadata update for table " + srcTable.id + " after exception : " + e.getMessage());
+			}
 		}
 	}
 
@@ -303,10 +336,32 @@ public class DeviceDstInitializer {
 					}
 					dstExecutor.beginTran();
 					dstExecutor.execute(tableMapper.mapOper(new CreateTable(srcTable)));
+					// In DESTINATION metadata mode, persist schema to synclite_table_schema
+					// so that loadSchemasFromDestination() can reconstruct column lists on restart.
+					if (syncProcessor != null) {
+						syncProcessor.persistSchemaToDst(dstExecutor, srcTable);
+					}
 					dstExecutor.commitTran();
 				}
 				try {
-					consolidatorMetadataMgr.upsertSchema(srcTable);
+					long metaRetryCount = ConfLoader.getInstance().getDstOperRetryCount(dstIndex);
+					long metaRetryIntervalMs = ConfLoader.getInstance().getDstOperRetryIntervalMs(dstIndex);
+					for (long j = 0; j < metaRetryCount; ++j) {
+						try {
+							consolidatorMetadataMgr.upsertSchema(srcTable);
+							break;
+						} catch (SQLException e) {
+							if (j == (metaRetryCount - 1)) {
+								throw e;
+							}
+							try {
+								Thread.sleep(metaRetryIntervalMs);
+							} catch (InterruptedException e1) {
+								Thread.currentThread().interrupt();
+							}
+							device.tracer.info("Retry attempt : " + (j + 2)  + " : Retrying metadata upsertSchema for table " + srcTable.id + " after exception : " + e.getMessage());
+						}
+					}
 				} catch (SQLException e) {
 					throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
 				}

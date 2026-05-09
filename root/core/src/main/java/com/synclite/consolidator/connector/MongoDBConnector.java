@@ -51,6 +51,11 @@ public class MongoDBConnector extends JDBCConnector{
     	return null;
     }
 
+    @Override
+    public boolean isJdbcCapable() {
+        return false;
+    }
+
     public MongoClient getClient() throws DstExecutionException {
     	return client;
     }

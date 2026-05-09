@@ -104,11 +104,20 @@ public class EditConfigurations extends HttpServlet {
 				Files.writeString(confPath, confs, StandardOpenOption.TRUNCATE_EXISTING);
 				response.sendRedirect("editConfigurations.jsp");
 			}
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			//		request.setAttribute("saveStatus", "FAIL");
 			System.out.println("exception : " + e);
 			String errorMsg = "Failed to load session with updated configurations : " + e.getMessage();
 			request.getRequestDispatcher("editConfigurations.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			//		request.setAttribute("saveStatus", "FAIL");
+			System.out.println("exception : " + e);
+			String errorMsg = "Failed to load session with updated configurations : " + e.getMessage();
+			request.getRequestDispatcher("editConfigurations.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

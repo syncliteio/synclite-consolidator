@@ -120,11 +120,20 @@ public class ValidateFilterMapper extends HttpServlet {
 
 			//request.getRequestDispatcher("configureValueMapper.jsp?dstIndex=" + dstIndex).forward(request, response);
 			response.sendRedirect("configureValueMapper.jsp?dstIndex=" + dstIndex);
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			//		request.setAttribute("saveStatus", "FAIL");
 			System.out.println("exception : " + e);
 			String errorMsg = e.getMessage();
 			request.getRequestDispatcher("configureFilterMapper.jsp?dstIndex=" + dstIndex + "&errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			//		request.setAttribute("saveStatus", "FAIL");
+			System.out.println("exception : " + e);
+			String errorMsg = e.getMessage();
+			request.getRequestDispatcher("configureFilterMapper.jsp?dstIndex=" + dstIndex + "&errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 }
