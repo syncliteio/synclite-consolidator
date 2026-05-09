@@ -1051,13 +1051,29 @@ public class Device {
 		
 		for (int dstIndex : allDstIndexes) {
 			Path consolidatorMetadataFile = Path.of(rootPath.toString(), SyncLiteConsolidatorInfo.getMetadataFileName(dstIndex));
-			if (!Files.exists(consolidatorMetadataFile)) {
-				//Try to recover consolidator metadata from stage (enables stateless EventStreamer recovery on a new machine)
+			String modeStr = ConfLoader.getInstance().getMetadataStore(dstIndex);
+			if ("LOCAL".equalsIgnoreCase(modeStr)) {
+				if (!Files.exists(consolidatorMetadataFile)) {
+					//Try to recover consolidator metadata from stage (enables stateless EventStreamer recovery on a new machine)
+					try {
+						Path consolidatorMetadataInUpload = uploadPath.resolve(SyncLiteConsolidatorInfo.getMetadataFileName(dstIndex));
+						getStageManager().downloadObject(consolidatorMetadataInUpload, consolidatorMetadataFile, SyncLiteObjectType.METADATA);
+					} catch (SyncLiteStageException e) {
+						//Ignore - file may not exist on stage yet
+					}
+				}
+			} else {
+				// Keep runtime metadata manager for state, but avoid persisted metadata files in workDir for DESTINATION mode.
 				try {
-					Path consolidatorMetadataInUpload = uploadPath.resolve(SyncLiteConsolidatorInfo.getMetadataFileName(dstIndex));
-					getStageManager().downloadObject(consolidatorMetadataInUpload, consolidatorMetadataFile, SyncLiteObjectType.METADATA);
-				} catch (SyncLiteStageException e) {
-					//Ignore - file may not exist on stage yet
+					Files.deleteIfExists(consolidatorMetadataFile);
+					Path tempDir = Path.of(System.getProperty("java.io.tmpdir"), "synclite-consolidator-metadata");
+					Files.createDirectories(tempDir);
+					String ephemeralName = SyncLiteConsolidatorInfo.getMetadataFileName(dstIndex)
+							+ "." + this.uuid + "." + this.deviceName;
+					consolidatorMetadataFile = tempDir.resolve(ephemeralName);
+					consolidatorMetadataFile.toFile().deleteOnExit();
+				} catch (IOException e) {
+					throw new SyncLiteException("Bad device. Failed to initialize ephemeral consolidator metadata path for DESTINATION mode.", e);
 				}
 			}
 			ConsolidatorMetadataManager mgr = null;
@@ -1073,6 +1089,10 @@ public class Device {
 
 
 	public final void uploadConsolidatorMetadata(int dstIndex) {
+		String modeStr = ConfLoader.getInstance().getMetadataStore(dstIndex);
+		if (!"LOCAL".equalsIgnoreCase(modeStr)) {
+			return;
+		}
 		Path consolidatorMetadataFile = Path.of(rootPath.toString(), SyncLiteConsolidatorInfo.getMetadataFileName(dstIndex));
 		try {
 			getStageManager().uploadObject(uploadPath, consolidatorMetadataFile, SyncLiteObjectType.METADATA);

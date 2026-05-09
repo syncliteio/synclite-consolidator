@@ -117,4 +117,12 @@ public class JDBCConnector {
             throw new DstExecutionException("Failed to connect to destination database : ", e);
         }
     }
+
+    /**
+     * Returns true if this destination supports a JDBC Connection (the default).
+     * Subclasses for non-JDBC destinations (MongoDB, Apache Iceberg/Spark) override this to return false.
+     */
+    public boolean isJdbcCapable() {
+        return true;
+    }
 }

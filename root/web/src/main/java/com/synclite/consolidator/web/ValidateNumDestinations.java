@@ -73,10 +73,18 @@ public class ValidateNumDestinations extends HttpServlet {
 			
 			//request.getRequestDispatcher("configureDestinationDB.jsp?dstIndex=1").forward(request, response);
 			response.sendRedirect("configureDestinationDB.jsp?dstIndex=1");
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			System.out.println("exception : " + e);
 			String errorMsg = e.getMessage();
 			request.getRequestDispatcher("configureNumDestinations.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			System.out.println("exception : " + e);
+			String errorMsg = e.getMessage();
+			request.getRequestDispatcher("configureNumDestinations.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

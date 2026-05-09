@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.synclite.consolidator.connector.JDBCConnector;
 import com.synclite.consolidator.device.Device;
 import com.synclite.consolidator.exception.DstExecutionException;
 import com.synclite.consolidator.exception.SyncLiteException;
@@ -59,6 +60,18 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     private volatile long lastConsolidatedCDCLogSegmentSeqNumber = -1;
     private int dstIndex;
 
+        private static final String createDstMetadataTblSql =
+            "CREATE TABLE IF NOT EXISTS synclite_consolidator_metadata(" +
+            "device_uuid TEXT NOT NULL, device_name TEXT NOT NULL, dst_index INTEGER NOT NULL, " +
+            "key TEXT NOT NULL, value TEXT, " +
+            "PRIMARY KEY(device_uuid, device_name, dst_index, key))";
+
+    private static final String createDstTableMetadataTblSql =
+            "CREATE TABLE IF NOT EXISTS synclite_consolidator_table_metadata(" +
+            "device_uuid VARCHAR(36) NOT NULL, device_name VARCHAR(255) NOT NULL, dst_index INTEGER NOT NULL, " +
+            "database_name VARCHAR(255) NOT NULL, table_name VARCHAR(255) NOT NULL, key TEXT NOT NULL, value TEXT, " +
+            "PRIMARY KEY(device_uuid, device_name, dst_index, database_name, table_name, key))";
+
     protected ConsolidatorMetadataManager(Path metadataFilePath, Device device, int dstIndex) throws SQLException {
         super(metadataFilePath);
         this.device = device;
@@ -76,97 +89,193 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     }
 
     public Object getTableMetadataEntry(ConsolidatorSrcTable srcTable, String key) throws SQLException {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
-            try (Statement stmt = conn.createStatement()) {
-                try (ResultSet rs = stmt.executeQuery("SELECT value FROM table_metadata WHERE database_name = '" + srcTable.id.database + "' AND table_name = '" + srcTable.id.table + "' AND key = '" + key + "'")) {
+        if (!isDestinationMetadataMode()) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
+                try (Statement stmt = conn.createStatement()) {
+                    try (ResultSet rs = stmt.executeQuery("SELECT value FROM table_metadata WHERE database_name = '" + srcTable.id.database + "' AND table_name = '" + srcTable.id.table + "' AND key = '" + key + "'")) {
+                        if (rs.next()) {
+                            return rs.getObject(1);
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+        // DESTINATION mode: read from destination
+        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+            ensureDstTableMetadataTable(conn);
+            String sql = "SELECT value FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND database_name = ? AND table_name = ? AND key = ?";
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, this.device.getDeviceUUID());
+                stmt.setString(2, this.device.getDeviceName());
+                stmt.setInt(3, this.dstIndex);
+                stmt.setString(4, srcTable.id.database);
+                stmt.setString(5, srcTable.id.table);
+                stmt.setString(6, key);
+                try (ResultSet rs = stmt.executeQuery()) {
                     if (rs.next()) {
                         return rs.getObject(1);
                     }
                 }
             }
+            return null;
+        } catch (DstExecutionException e) {
+            throw new SQLException("Failed to connect to destination for table metadata lookup", e);
         }
-        return null;
     }
 
     public void deleteTableMetadataInfo() throws SQLException {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
-            try (Statement stmt = conn.createStatement()) {
-                stmt.execute("DELETE FROM table_metadata");
+        if (!isDestinationMetadataMode()) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("DELETE FROM table_metadata");
+                }
             }
+            return;
+        }
+        // DESTINATION mode: delete from destination table
+        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+            conn.setAutoCommit(false);
+            ensureDstTableMetadataTable(conn);
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ?")) {
+                stmt.setString(1, this.device.getDeviceUUID());
+                stmt.setString(2, this.device.getDeviceName());
+                stmt.setInt(3, this.dstIndex);
+                stmt.execute();
+            }
+            conn.commit();
+        } catch (DstExecutionException e) {
+            throw new SQLException("Failed to connect to destination to delete table metadata", e);
         }
     }
 
     public void deleteSchemaInfo() throws SQLException {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
-            try (Statement stmt = conn.createStatement()) {
-                stmt.execute("DELETE FROM schema");
+        if (!isDestinationMetadataMode()) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("DELETE FROM schema");
+                }
+            }
+        } else {
+            // DESTINATION mode: delete from destination synclite_table_schema
+            try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+                conn.setAutoCommit(false);
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "DELETE FROM synclite_table_schema WHERE device_uuid = ? AND device_name = ? AND dst_index = ?")) {
+                    stmt.setString(1, this.device.getDeviceUUID());
+                    stmt.setString(2, this.device.getDeviceName());
+                    stmt.setInt(3, this.dstIndex);
+                    stmt.execute();
+                }
+                conn.commit();
+            } catch (DstExecutionException e) {
+                throw new SQLException("Failed to connect to destination to delete schema info", e);
             }
         }
+        this.deviceSrcTables.clear();
     }
 
     public void upsertTableMetadataEntry(ConsolidatorSrcTable srcTable, String key, Object value) throws SQLException {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
-            conn.setAutoCommit(false);
-            try (PreparedStatement deleteStmt= conn.prepareStatement(deleteTableMetadataTblSql)) {
-                deleteStmt.setString(1, srcTable.id.database);
-                deleteStmt.setString(2, srcTable.id.table);
-                deleteStmt.setString(3, key);
-                deleteStmt.execute();
+        if (!isDestinationMetadataMode()) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
+                conn.setAutoCommit(false);
+                try (PreparedStatement deleteStmt = conn.prepareStatement(deleteTableMetadataTblSql)) {
+                    deleteStmt.setString(1, srcTable.id.database);
+                    deleteStmt.setString(2, srcTable.id.table);
+                    deleteStmt.setString(3, key);
+                    deleteStmt.execute();
+                }
+                try (PreparedStatement insertStmt = conn.prepareStatement(insertTableMetadataTblSql)) {
+                    insertStmt.setString(1, srcTable.id.database);
+                    insertStmt.setString(2, srcTable.id.schema);
+                    insertStmt.setString(3, srcTable.id.table);
+                    insertStmt.setString(4, key);
+                    insertStmt.setObject(5, value);
+                    insertStmt.execute();
+                }
+                conn.commit();
             }
-            try (PreparedStatement insertStmt= conn.prepareStatement(insertTableMetadataTblSql)) {
-                insertStmt.setString(1, srcTable.id.database);
-                insertStmt.setString(2, srcTable.id.schema);
-                insertStmt.setString(3, srcTable.id.table);
-                insertStmt.setString(4,key);
-                insertStmt.setObject(5,value);
+            return;
+        }
+        // DESTINATION mode: write to destination
+        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+            conn.setAutoCommit(false);
+            ensureDstTableMetadataTable(conn);
+            try (PreparedStatement deleteStmt = conn.prepareStatement(
+                    "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND database_name = ? AND table_name = ? AND key = ?");
+                 PreparedStatement insertStmt = conn.prepareStatement(
+                    "INSERT INTO synclite_consolidator_table_metadata(device_uuid, device_name, dst_index, database_name, table_name, key, value) VALUES(?, ?, ?, ?, ?, ?, ?)")) {
+                deleteStmt.setString(1, this.device.getDeviceUUID());
+                deleteStmt.setString(2, this.device.getDeviceName());
+                deleteStmt.setInt(3, this.dstIndex);
+                deleteStmt.setString(4, srcTable.id.database);
+                deleteStmt.setString(5, srcTable.id.table);
+                deleteStmt.setString(6, key);
+                deleteStmt.execute();
+
+                insertStmt.setString(1, this.device.getDeviceUUID());
+                insertStmt.setString(2, this.device.getDeviceName());
+                insertStmt.setInt(3, this.dstIndex);
+                insertStmt.setString(4, srcTable.id.database);
+                insertStmt.setString(5, srcTable.id.table);
+                insertStmt.setString(6, key);
+                insertStmt.setString(7, value == null ? null : value.toString());
                 insertStmt.execute();
             }
             conn.commit();
+        } catch (DstExecutionException e) {
+            throw new SQLException("Failed to connect to destination for table metadata persistence", e);
         }
     }
 
     public void upsertSchema(ConsolidatorSrcTable srcTable) throws SQLException {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
-            conn.setAutoCommit(false);
-            try (PreparedStatement deleteSchemaStmt = conn.prepareStatement(deleteSchemaTblSql)) {
-                deleteSchemaStmt.setString(1, srcTable.id.database);
-                deleteSchemaStmt.setString(2, srcTable.id.table);
-                deleteSchemaStmt.execute();
-            }
-
-            try (PreparedStatement insertSchemaStmt = conn.prepareStatement(insertSchemaTblSql)) {
-                insertSchemaStmt.setString(1, srcTable.id.database);
-                insertSchemaStmt.setNull(2, Types.NULL);
-                insertSchemaStmt.setString(3, srcTable.id.table);
-                for (Column c : srcTable.columns) {
-                    insertSchemaStmt.setLong(4, c.cid);
-                    insertSchemaStmt.setString(5, c.column);
-                    insertSchemaStmt.setString(6, c.type.dbNativeDataType);
-                    insertSchemaStmt.setInt(7, c.isNotNull);
-                    insertSchemaStmt.setString(8, c.defaultValue);
-                    insertSchemaStmt.setInt(9, c.pkIndex);
-                    insertSchemaStmt.setInt(10, c.isAutoIncrement);
-                    insertSchemaStmt.addBatch();
+        if (!isDestinationMetadataMode()) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
+                conn.setAutoCommit(false);
+                try (PreparedStatement deleteSchemaStmt = conn.prepareStatement(deleteSchemaTblSql)) {
+                    deleteSchemaStmt.setString(1, srcTable.id.database);
+                    deleteSchemaStmt.setString(2, srcTable.id.table);
+                    deleteSchemaStmt.execute();
                 }
-                insertSchemaStmt.executeBatch();
+
+                try (PreparedStatement insertSchemaStmt = conn.prepareStatement(insertSchemaTblSql)) {
+                    insertSchemaStmt.setString(1, srcTable.id.database);
+                    insertSchemaStmt.setNull(2, Types.NULL);
+                    insertSchemaStmt.setString(3, srcTable.id.table);
+                    for (Column c : srcTable.columns) {
+                        insertSchemaStmt.setLong(4, c.cid);
+                        insertSchemaStmt.setString(5, c.column);
+                        insertSchemaStmt.setString(6, c.type.dbNativeDataType);
+                        insertSchemaStmt.setInt(7, c.isNotNull);
+                        insertSchemaStmt.setString(8, c.defaultValue);
+                        insertSchemaStmt.setInt(9, c.pkIndex);
+                        insertSchemaStmt.setInt(10, c.isAutoIncrement);
+                        insertSchemaStmt.addBatch();
+                    }
+                    insertSchemaStmt.executeBatch();
+                }
+                conn.commit();
             }
-            conn.commit();
         }
-        
+        // In DESTINATION mode: actual schema persistence to destination is done by DeviceSyncProcessor.persistSchemaToDst()
         this.deviceSrcTables.put(srcTable.id, srcTable);
     }
 
     
     public void deleteSchema(ConsolidatorSrcTable srcTable) throws SQLException {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
-            conn.setAutoCommit(false);
-            try (PreparedStatement deleteSchemaStmt = conn.prepareStatement(deleteSchemaTblSql)) {
-                deleteSchemaStmt.setString(1, srcTable.id.database);
-                deleteSchemaStmt.setString(2, srcTable.id.table);
-                deleteSchemaStmt.execute();
+        if (!isDestinationMetadataMode()) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
+                conn.setAutoCommit(false);
+                try (PreparedStatement deleteSchemaStmt = conn.prepareStatement(deleteSchemaTblSql)) {
+                    deleteSchemaStmt.setString(1, srcTable.id.database);
+                    deleteSchemaStmt.setString(2, srcTable.id.table);
+                    deleteSchemaStmt.execute();
+                }
+                conn.commit();
             }
-            conn.commit();
-        }        
+        }
+        // In DESTINATION mode: actual schema deletion from destination is done by DeviceSyncProcessor.deleteSchemaFromDst()
         this.deviceSrcTables.remove(srcTable.id);
     }
 
@@ -175,6 +284,11 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     }
     
     public void loadSchemas(Device device) throws SQLException {
+        if (isDestinationMetadataMode()) {
+            // In DESTINATION mode schemas are loaded from destination via DeviceSyncProcessor.loadSchemasFromDestination()
+            // which calls upsertSchema() to populate the in-memory cache. Nothing to do here.
+            return;
+        }
     	this.deviceSrcTables.clear();
         try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
             try (Statement stmt = conn.createStatement()) {
@@ -211,19 +325,218 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         });
     }
 
+    private boolean isDestinationMetadataMode() {
+        String mode = ConfLoader.getInstance().getMetadataStore(dstIndex);
+        if (!"DESTINATION".equalsIgnoreCase(mode)) {
+            return false;
+        }
+        // Non-JDBC destinations (MongoDB, Apache Iceberg) cannot store metadata on the destination;
+        // fall back to local SQLite storage for those.
+        return JDBCConnector.getInstance(dstIndex).isJdbcCapable();
+    }
+
+    private void ensureDstMetadataTable(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute(createDstMetadataTblSql);
+        }
+    }
+
+    private void ensureDstTableMetadataTable(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute(createDstTableMetadataTblSql);
+        }
+    }
+
+    private String getEscapedDeviceUUID() {
+        return this.device.getDeviceUUID().replace("'", "''");
+    }
+
+    private String getEscapedDeviceName() {
+        return this.device.getDeviceName().replace("'", "''");
+    }
+
+    @Override
+    public void upsertProperties(HashMap<String, Object> values) throws SQLException {
+        if (!isDestinationMetadataMode()) {
+            super.upsertProperties(values);
+            return;
+        }
+
+        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+            conn.setAutoCommit(false);
+            ensureDstMetadataTable(conn);
+
+            try (PreparedStatement deleteStmt = conn.prepareStatement(
+                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND key = ?");
+                 PreparedStatement insertStmt = conn.prepareStatement(
+                    "INSERT INTO synclite_consolidator_metadata(device_uuid, device_name, dst_index, key, value) VALUES(?, ?, ?, ?, ?)")) {
+                for (Map.Entry<String, Object> entry : values.entrySet()) {
+                    String val = entry.getValue() == null ? null : entry.getValue().toString();
+
+                    deleteStmt.setString(1, this.device.getDeviceUUID());
+                    deleteStmt.setString(2, this.device.getDeviceName());
+                    deleteStmt.setInt(3, this.dstIndex);
+                    deleteStmt.setString(4, entry.getKey());
+                    deleteStmt.addBatch();
+
+                    insertStmt.setString(1, this.device.getDeviceUUID());
+                    insertStmt.setString(2, this.device.getDeviceName());
+                    insertStmt.setInt(3, this.dstIndex);
+                    insertStmt.setString(4, entry.getKey());
+                    insertStmt.setString(5, val);
+                    insertStmt.addBatch();
+                }
+                deleteStmt.executeBatch();
+                insertStmt.executeBatch();
+            }
+            conn.commit();
+        } catch (DstExecutionException e) {
+            throw new SQLException("Failed to connect to destination for consolidator metadata persistence", e);
+        }
+    }
+
+    @Override
+    public void upsertProperty(String key, Object value) throws SQLException {
+        if (!isDestinationMetadataMode()) {
+            super.upsertProperty(key, value);
+            return;
+        }
+
+        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+            conn.setAutoCommit(false);
+            ensureDstMetadataTable(conn);
+
+            try (PreparedStatement deleteStmt = conn.prepareStatement(
+                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND key = ?");
+                 PreparedStatement insertStmt = conn.prepareStatement(
+                    "INSERT INTO synclite_consolidator_metadata(device_uuid, device_name, dst_index, key, value) VALUES(?, ?, ?, ?, ?)")) {
+                deleteStmt.setString(1, this.device.getDeviceUUID());
+                deleteStmt.setString(2, this.device.getDeviceName());
+                deleteStmt.setInt(3, this.dstIndex);
+                deleteStmt.setString(4, key);
+                deleteStmt.execute();
+
+                insertStmt.setString(1, this.device.getDeviceUUID());
+                insertStmt.setString(2, this.device.getDeviceName());
+                insertStmt.setInt(3, this.dstIndex);
+                insertStmt.setString(4, key);
+                insertStmt.setString(5, value == null ? null : value.toString());
+                insertStmt.execute();
+            }
+
+            conn.commit();
+        } catch (DstExecutionException e) {
+            throw new SQLException("Failed to connect to destination for consolidator metadata persistence", e);
+        }
+    }
+
+    @Override
+    public void deleteProperty(String key) throws SQLException {
+        if (!isDestinationMetadataMode()) {
+            super.deleteProperty(key);
+            return;
+        }
+
+        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+            conn.setAutoCommit(false);
+            ensureDstMetadataTable(conn);
+
+            try (PreparedStatement deleteStmt = conn.prepareStatement(
+                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND key = ?")) {
+                deleteStmt.setString(1, this.device.getDeviceUUID());
+                deleteStmt.setString(2, this.device.getDeviceName());
+                deleteStmt.setInt(3, this.dstIndex);
+                deleteStmt.setString(4, key);
+                deleteStmt.execute();
+            }
+
+            conn.commit();
+        } catch (DstExecutionException e) {
+            throw new SQLException("Failed to connect to destination for consolidator metadata persistence", e);
+        }
+    }
+
+    @Override
+    public String getStringProperty(String key) throws SQLException {
+        if (!isDestinationMetadataMode()) {
+            return super.getStringProperty(key);
+        }
+
+        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+            ensureDstMetadataTable(conn);
+            String sql = "SELECT value FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND key = ?";
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, this.device.getDeviceUUID());
+                stmt.setString(2, this.device.getDeviceName());
+                stmt.setInt(3, this.dstIndex);
+                stmt.setString(4, key);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getString(1);
+                    }
+                }
+            }
+            return null;
+        } catch (DstExecutionException e) {
+            throw new SQLException("Failed to connect to destination for consolidator metadata lookup", e);
+        }
+    }
+
+    @Override
+    public Long getLongProperty(String key) throws SQLException {
+        String val = getStringProperty(key);
+        if (val == null) {
+            return null;
+        }
+        return Long.valueOf(val);
+    }
+
     public void resetSchemas() throws SQLException {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
-            try (Statement stmt = conn.createStatement()) {
-                stmt.execute("DELETE FROM schema;");
+        if (!isDestinationMetadataMode()) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("DELETE FROM schema;");
+                }
+            }
+        } else {
+            try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+                conn.setAutoCommit(false);
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "DELETE FROM synclite_table_schema WHERE device_uuid = ? AND device_name = ? AND dst_index = ?")) {
+                    stmt.setString(1, this.device.getDeviceUUID());
+                    stmt.setString(2, this.device.getDeviceName());
+                    stmt.setInt(3, this.dstIndex);
+                    stmt.execute();
+                }
+                conn.commit();
+            } catch (DstExecutionException e) {
+                throw new SQLException("Failed to connect to destination to reset schemas", e);
             }
         }
         this.deviceSrcTables.clear();
     }
 
     public void resetTableMetadata() throws SQLException {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
-            try (Statement stmt = conn.createStatement()) {
-                stmt.execute("DELETE FROM table_metadata;");
+        if (!isDestinationMetadataMode()) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("DELETE FROM table_metadata;");
+                }
+            }
+        } else {
+            try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+                conn.setAutoCommit(false);
+                ensureDstTableMetadataTable(conn);
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ?")) {
+                    stmt.setString(1, this.device.getDeviceUUID());
+                    stmt.setString(2, this.device.getDeviceName());
+                    stmt.setInt(3, this.dstIndex);
+                    stmt.execute();
+                }
+                conn.commit();
+            } catch (DstExecutionException e) {
+                throw new SQLException("Failed to connect to destination to reset table metadata", e);
             }
         }
     }
@@ -357,6 +670,11 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             this.consolidatedSnapshotName = "";
             this.initializationStatus = 0;
     		upsertProperties(values);
+            if (isDestinationMetadataMode()) {
+                // Keep destination device status in sync for explicit reinitialize.
+                // Otherwise fresh-host recovery may restore status=1 and skip snapshot reinit.
+                resetDestinationDeviceStatus();
+            }
     		
             deleteSchemaInfo();
             deleteTableMetadataInfo();            
@@ -365,6 +683,32 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         }
 
 	}
+
+    private void resetDestinationDeviceStatus() throws SQLException {
+        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+            conn.setAutoCommit(false);
+            try (Statement stmt = conn.createStatement()) {
+                stmt.execute(SyncLiteConsolidatorInfo.getCreateDeviceStatusTableSql());
+            }
+            try (PreparedStatement deleteStmt = conn.prepareStatement(
+                    "DELETE FROM synclite_device_status WHERE device_uuid = ? AND device_name = ? AND dst_index = ?")) {
+                deleteStmt.setString(1, this.device.getDeviceUUID());
+                deleteStmt.setString(2, this.device.getDeviceName());
+                deleteStmt.setInt(3, this.dstIndex);
+                deleteStmt.execute();
+            }
+            try (PreparedStatement insertStmt = conn.prepareStatement(
+                    "INSERT INTO synclite_device_status(device_uuid, device_name, dst_index, initialization_status) VALUES(?, ?, ?, 0)")) {
+                insertStmt.setString(1, this.device.getDeviceUUID());
+                insertStmt.setString(2, this.device.getDeviceName());
+                insertStmt.setInt(3, this.dstIndex);
+                insertStmt.execute();
+            }
+            conn.commit();
+        } catch (DstExecutionException e) {
+            throw new SQLException("Failed to connect to destination to reset device status", e);
+        }
+    }
 
 	public void executeCheckpointTableSql(String sql) throws SyncLiteException {
         try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {

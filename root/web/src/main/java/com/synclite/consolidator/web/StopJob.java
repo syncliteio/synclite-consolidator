@@ -98,9 +98,16 @@ public class StopJob extends HttpServlet {
 				request.getSession().setAttribute("job-status","STOPPED");
 				request.getRequestDispatcher("dashboard.jsp").forward(request, response);
 			}
-		} catch(Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			String errorMsg = e.getMessage();
 			request.getRequestDispatcher("jobError.jsp?jobType=StopJob&errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			String errorMsg = e.getMessage();
+			request.getRequestDispatcher("jobError.jsp?jobType=StopJob&errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

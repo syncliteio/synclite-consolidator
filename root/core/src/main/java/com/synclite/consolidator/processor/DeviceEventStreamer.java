@@ -800,6 +800,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								beforeValues.clear();
 								afterValues.clear();
 								++currentInsertBatchCount;
+								emptyTxn = false;
 								++currentEventLogSegmentOperCnt;
 								if (currentInsertBatchCount == insertBatchSize) {						
 									//Execute checkpoint UPDATE
@@ -985,6 +986,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								beforeValues.clear();
 								afterValues.clear();
 								++currentUpdateBatchCount;
+								emptyTxn = false;
 								++currentEventLogSegmentOperCnt;
 								if (currentUpdateBatchCount == updateBatchSize) {						
 									//Execute checkpoint UPDATE
@@ -1119,6 +1121,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								beforeValues.clear();
 								afterValues.clear();
 								++currentDeleteBatchCount;
+								emptyTxn = false;
 								++currentEventLogSegmentOperCnt;
 								if (currentDeleteBatchCount == deleteBatchSize) {						
 									//Execute checkpoint UPDATE

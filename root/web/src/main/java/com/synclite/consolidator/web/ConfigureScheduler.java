@@ -276,10 +276,18 @@ public class ConfigureScheduler extends HttpServlet {
 				//request.getRequestDispatcher("dashboard.jsp").forward(request, response);
 				response.sendRedirect("dashboard.jsp");
 			}
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			String errorMsg = e.getMessage();
 			this.globalTracer.error("Failed to configure and schedule job : " + e.getMessage(), e);
 			request.getRequestDispatcher("configureScheduler.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			String errorMsg = e.getMessage();
+			this.globalTracer.error("Failed to configure and schedule job : " + e.getMessage(), e);
+			request.getRequestDispatcher("configureScheduler.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

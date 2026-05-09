@@ -117,6 +117,7 @@ public class Main {
 			ConfLoader.getInstance().loadSyncConfigProperties(confPath);
 
 			tryLockWorkDir();
+			Runtime.getRuntime().addShutdownHook(new Thread(() -> appLock.release()));
 			switch (COMMAND) {
 			case SYNC:
 				SyncDriver driver = SyncDriver.getInstance();
@@ -130,6 +131,7 @@ public class Main {
 				System.exit(0);
 			}			
 		} catch (Exception e) {
+			appLock.release();
 			try {				 
 				StringWriter sw = new StringWriter();
 				PrintWriter pw = new PrintWriter(sw);

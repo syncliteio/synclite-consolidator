@@ -222,11 +222,20 @@ public class ResetJob extends HttpServlet {
 
 				response.sendRedirect("syncLiteTerms.jsp");
 			}
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			//System.out.println("exception : " + e);
 			String errorMsg = e.getMessage();
 			request.getRequestDispatcher("resetJob.jsp?errorMsg=" + errorMsg).forward(request, response);
 			throw new ServletException(e);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			//System.out.println("exception : " + e);
+			String errorMsg = e.getMessage();
+			request.getRequestDispatcher("resetJob.jsp?errorMsg=" + errorMsg).forward(request, response);
+			throw new ServletException(e);
+		
 		}
 	}
 	

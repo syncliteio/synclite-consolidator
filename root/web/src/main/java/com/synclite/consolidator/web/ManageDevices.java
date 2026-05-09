@@ -356,11 +356,20 @@ public class ManageDevices extends HttpServlet {
 			}
 			//System.out.println("process status " + processStatus);
 			//System.out.println("process output line " + line);
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			//		request.setAttribute("saveStatus", "FAIL");
 			System.out.println("exception : " + e);
 			String errorMsg = e.getMessage();
 			request.getRequestDispatcher("manageDevices.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			//		request.setAttribute("saveStatus", "FAIL");
+			System.out.println("exception : " + e);
+			String errorMsg = e.getMessage();
+			request.getRequestDispatcher("manageDevices.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

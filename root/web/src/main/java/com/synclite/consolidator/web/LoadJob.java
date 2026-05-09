@@ -89,11 +89,20 @@ public class LoadJob extends HttpServlet {
 
 			//request.getRequestDispatcher("dashboard.jsp").forward(request, response);
 			response.sendRedirect("dashboard.jsp");
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			//		request.setAttribute("saveStatus", "FAIL");
 			System.out.println("exception : " + e);
 			String errorMsg = e.getMessage();
 			request.getRequestDispatcher("loadJob.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			//		request.setAttribute("saveStatus", "FAIL");
+			System.out.println("exception : " + e);
+			String errorMsg = e.getMessage();
+			request.getRequestDispatcher("loadJob.jsp?errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

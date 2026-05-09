@@ -78,10 +78,18 @@ public class StopScheduler extends HttpServlet {
 
 				request.getRequestDispatcher("dashboard.jsp").forward(request, response);
 			}
-		} catch (Exception e) {
+		} catch (ServletException e) {
+			response.setStatus(400);
 			String errorMsg = e.getMessage();
 			this.globalTracer.error("Failed to stop job scheduler : " + e.getMessage(), e);
 			request.getRequestDispatcher("jobError.jsp?jobType=StopReadJobScheduler&errorMsg=" + errorMsg).forward(request, response);
+		
+		} catch (Exception e) {
+			response.setStatus(500);
+			String errorMsg = e.getMessage();
+			this.globalTracer.error("Failed to stop job scheduler : " + e.getMessage(), e);
+			request.getRequestDispatcher("jobError.jsp?jobType=StopReadJobScheduler&errorMsg=" + errorMsg).forward(request, response);
+		
 		}
 	}
 

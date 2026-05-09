@@ -73,7 +73,7 @@
 							<goal>copy-resources</goal>
 						</goals>
 						<configuration>
-							<outputDirectory>${project.basedir}/src/main/webapp/WEB-INF/lib/lib</outputDirectory>
+								<outputDirectory>${project.basedir}/src/main/webapp/WEB-INF/lib/lib</outputDirectory>
 							<resources>
 								<resource>
 									<directory>${project.basedir}/../core/target/consolidator/lib</directory>
