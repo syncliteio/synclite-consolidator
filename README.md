@@ -32,7 +32,7 @@ SyncLite QReader ─┘
 | Category | Systems |
 |---|---|
 | Relational (OLTP) | PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite, DuckDB, Apache Derby, H2, HyperSQL |
-| Data Warehouses | Snowflake, Google BigQuery, Amazon Redshift, ClickHouse |
+| Data Warehouses | Amazon Redshift, ClickHouse |
 | Data Lakes | Apache Iceberg, Delta Lake, Apache Hudi |
 | NoSQL | MongoDB |
 | File / Object | Apache Parquet, CSV on S3 / MinIO / local |
@@ -94,9 +94,9 @@ Built WAR: `root/web/target/synclite-consolidator-oss.war`
 
 ## Documentation & Community
 
-- Full documentation: https://www.synclite.io/resources/documentation
+- Full documentation: https://github.com/syncliteio/SyncLite/blob/main/DOCUMENTATION.md
 - Website: https://www.synclite.io
-- Slack: https://join.slack.com/t/syncliteworkspace/shared_invite/zt-2pz945vva-uuKapsubC9Mu~uYDRKo6Jw
+- Community: https://github.com/syncliteio/SyncLite/issues
 
 ---
 
