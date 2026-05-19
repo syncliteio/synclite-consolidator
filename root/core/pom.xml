@@ -16,7 +16,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<maven.compiler.source>11</maven.compiler.source>
 		<maven.compiler.target>11</maven.compiler.target>
-        <spark.version>3.5.1</spark.version>
+        <spark.version>3.5.7</spark.version>
         <iceberg.version>1.5.2</iceberg.version>
 	</properties>
 	<build>
@@ -229,7 +229,7 @@
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
-			<version>42.7.5</version>
+			<version>42.7.7</version>
 		</dependency>
 	
 		<!-- https://mvnrepository.com/artifact/com.mysql/mysql-connector-j -->
@@ -243,7 +243,7 @@
 		<dependency>
 		    <groupId>com.microsoft.sqlserver</groupId>
 		    <artifactId>mssql-jdbc</artifactId>
-		    <version>13.2.0.jre11</version>
+		    <version>13.4.0.jre11</version>
 		    <scope>compile</scope>
 		</dependency>
 
@@ -305,14 +305,21 @@
 		<dependency>
 			<groupId>io.minio</groupId>
 			<artifactId>minio</artifactId>
-			<version>8.5.17</version>
+			<version>8.6.0</version>
+		</dependency>
+
+		<!-- Explicit okhttp dependency required by MinIO client -->
+		<dependency>
+		    <groupId>com.squareup.okhttp3</groupId>
+		    <artifactId>okhttp</artifactId>
+		    <version>4.12.0</version>
 		</dependency>
 
 		<!-- https://mvnrepository.com/artifact/org.apache.kafka/kafka-clients -->
 		<dependency>
 			<groupId>org.apache.kafka</groupId>
 			<artifactId>kafka-clients</artifactId>
-			<version>3.9.0</version>
+			<version>3.9.1</version>
 		</dependency>
 
 		<!-- https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk-s3 -->
