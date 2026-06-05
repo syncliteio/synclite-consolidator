@@ -88,7 +88,11 @@
 			}
 			Path statsFilePath = Path.of(session.getAttribute("device-data-root").toString(), "synclite_consolidator_statistics.db");		
 			if (!Files.exists(statsFilePath)) {
-				out.println("<h4 style=\"color: red;\"> Statistics file for the consolidator job is missing .</h4>");
+				if ("LOADED".equals(session.getAttribute("job-status"))) {
+					out.println("<h4 style=\"color: #1d4ed8;\"> Job configuration is loaded, but the job has not been started yet.</h4>");
+				} else {
+					out.println("<h4 style=\"color: red;\"> Statistics file for the consolidator job is missing .</h4>");
+				}
 				throw new javax.servlet.jsp.SkipPageException();				
 			}
 		%>

@@ -68,6 +68,11 @@ function autoRefresh() {
 		
 			Path statsFilePath = Path.of(session.getAttribute("device-data-root").toString(), "synclite_consolidator_statistics.db");		
 			if (!Files.exists(statsFilePath)) {
+				if ("LOADED".equals(session.getAttribute("job-status"))) {
+					out.println("<h4 style=\"color: #1d4ed8;\"> Job configuration loaded successfully.</h4>");
+					out.println("Statistics are not available yet because the consolidator job has not been started.<br>");
+					throw new javax.servlet.jsp.SkipPageException();
+				}
 				out.println("<h4 style=\"color: red;\"> Statistics file for the consolidator job is missing.</h4>");
 				
 				Path exceptionFile = Path.of(session.getAttribute("device-data-root").toString(), "synclite_consolidator_exception.trace");

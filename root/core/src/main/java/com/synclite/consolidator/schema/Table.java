@@ -157,8 +157,11 @@ public class Table {
     }
 
     public final void renameColumn(Column col, String newName) {
-        col.column = newName;
-        colMap.remove(col.column);
+        if (col == null || newName == null) {
+            return;
+        }
+        String oldName = col.column;
+        colMap.remove(oldName);
         col.column = newName;
         colMap.put(col.column, col);
     }

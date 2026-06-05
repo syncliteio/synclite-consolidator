@@ -31,6 +31,8 @@ import com.synclite.consolidator.device.Device;
 import com.synclite.consolidator.exception.SyncLiteException;
 import com.synclite.consolidator.global.ConfLoader;
 import com.synclite.consolidator.global.ConsolidatorMetadataManager;
+import com.synclite.consolidator.global.DstSyncMode;
+import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
 import com.synclite.consolidator.oper.OperType;
 import com.synclite.consolidator.schema.ConsolidatorSrcTable;
 import com.synclite.consolidator.schema.TableID;
@@ -164,16 +166,22 @@ public class DeviceStatsCollector {
 			updateStatsTablePstmt.clearBatch();
 			for (HashMap.Entry<TableID, HashMap<OperType, Long>> entry : stats.entrySet()) {
 				TableID tableID = entry.getKey();
+				if (!shouldTrackTableStats(tableID)) {
+					continue;
+				}
 				Map<OperType, Long> opCounts = entry.getValue();
 				for (Map.Entry<OperType, Long> opEntry : opCounts.entrySet()) {
-					OperType opType = opEntry.getKey();
+					OperType opType = normalizeStatsOperType(opEntry.getKey());
+					if (opType == null) {
+						continue;
+					}
 					Long opCount = opEntry.getValue();
 
 					String database = tableID.database;
 					String schema = tableID.schema;
 					String table = tableID.table;
 
-					if (((opType == OperType.CREATETABLE) || (opType == OperType.RENAMETABLE)) && 
+					if ((opType == OperType.CREATETABLE) && 
 							(! this.tablesInStats.contains(tableID))
 							) {
 
@@ -274,6 +282,21 @@ public class DeviceStatsCollector {
 		}
 	}
 
+	private OperType normalizeStatsOperType(OperType opType) {
+		if (ConfLoader.getInstance().getDstSyncMode() == DstSyncMode.CONSOLIDATION) {
+			if (opType == OperType.DROPTABLE || opType == OperType.DROPCOLUMN) {
+				return null;
+			}
+			if (opType == OperType.RENAMECOLUMN) {
+				return OperType.ADDCOLUMN;
+			}
+			if (opType == OperType.RENAMETABLE) {
+				return OperType.CREATETABLE;
+			}
+		}
+		return opType;
+	}
+
 	protected void updateInitialTableAndDeviceStatistics() throws SyncLiteException {
 		device.tracer.info("Collecting initialization statistics");
 		if (hasInitializationStatsCollected == 1) {
@@ -295,6 +318,9 @@ public class DeviceStatsCollector {
 			boolean insertBatchIsFilled = false;
 			
 			for (Map.Entry<ConsolidatorSrcTable, Long> entry : consolidatorControlPropMgr.getInitializedTables().entrySet()) {
+				if (!shouldTrackTableStats(entry.getKey().id)) {
+					continue;
+				}
 
 				deleteStatsTablePstmt.setString(1, this.dstAlias);
 				deleteStatsTablePstmt.setString(2, entry.getKey().id.database);						
@@ -344,6 +370,10 @@ public class DeviceStatsCollector {
 		} catch (SQLException e) {
 			throw new SyncLiteException("Failed to update initialization stats in stats file : " + statsFilePath, e);
 		}
+	}
+
+	private boolean shouldTrackTableStats(TableID tableID) {
+		return tableID != null && !SyncLiteConsolidatorInfo.getSyncLiteMetadataTableName().equalsIgnoreCase(tableID.table);
 	}
 
 	//Method specifically for REPLICATION TO SQLITE usecase 

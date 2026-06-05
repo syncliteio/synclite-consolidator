@@ -44,15 +44,6 @@ public class SyncLiteConsolidatorInfo {
     		+ "PRIMARY KEY(device_uuid, device_name, dst_index, table_name))";
     }
 
-    public static String getCreateDeviceStatusTableSql() {
-    	return "CREATE TABLE IF NOT EXISTS synclite_device_status("
-    		+ "device_uuid VARCHAR(36) NOT NULL, "
-    		+ "device_name VARCHAR(255) NOT NULL, "
-    		+ "dst_index INTEGER NOT NULL, "
-    		+ "initialization_status INTEGER NOT NULL DEFAULT 0, "
-    		+ "PRIMARY KEY(device_uuid, device_name, dst_index))";
-    }
-    
     public static String getMetadataFileName(int dstIndex) {
         return "synclite_consolidator_metadata_" + dstIndex + ".db";
     }

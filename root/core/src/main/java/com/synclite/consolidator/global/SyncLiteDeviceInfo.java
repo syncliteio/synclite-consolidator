@@ -18,7 +18,7 @@ package com.synclite.consolidator.global;
 
 import java.nio.file.Path;
 
-public class SyncLiteReplicatorInfo {
+public class SyncLiteDeviceInfo {
 
     public static String getCDCLogSegmentPrefix() {
         return ".cdclog";
@@ -30,7 +30,7 @@ public class SyncLiteReplicatorInfo {
     }
 
     public static String getMetadataFileName() {
-        return "synclite_replicator_metadata.db";
+        return "synclite_device_metadata.db";
     }
 
 	public static Path getDataBackupSnapshotPath(Path dbPath, String dbName) {

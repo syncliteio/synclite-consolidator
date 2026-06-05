@@ -46,7 +46,7 @@ import org.apache.log4j.RollingFileAppender;
 @WebServlet("/saveJobConfiguration")
 public class SaveJobConfiguration extends HttpServlet {
 	private static final long serialVersionUID = 1L;
-	private Logger globalTracer;
+	private Logger globalTracer = Logger.getLogger(SaveJobConfiguration.class);
 
 	/**
 	 * Default constructor. 
@@ -757,7 +757,7 @@ public class SaveJobConfiguration extends HttpServlet {
 	}
 	
 	private final void initTracer(Path workDir) {
-		this.globalTracer = Logger.getLogger(ValidateJobConfiguration.class);
+		this.globalTracer = Logger.getLogger(SaveJobConfiguration.class);
 		if (this.globalTracer.getAppender("ConsolidatorTracer") == null) {
 			globalTracer.setLevel(Level.INFO);
 			RollingFileAppender fa = new RollingFileAppender();

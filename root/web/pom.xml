@@ -3,11 +3,15 @@
 	<groupId>com.synclite</groupId>
 	<artifactId>synclite-consolidator</artifactId>
 	<version>${revision}</version>
+	<properties>
+		<revision>oss</revision>
+	</properties>
 	<packaging>war</packaging>
 	<parent>
 		<groupId>com.synclite</groupId>
 		<artifactId>root</artifactId>
 		<version>${revision}</version>
+	
 	</parent>
 	<build>
 		<plugins>

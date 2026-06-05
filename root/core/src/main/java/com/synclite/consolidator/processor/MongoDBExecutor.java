@@ -566,10 +566,9 @@ public class MongoDBExecutor extends JDBCExecutor {
 
 			// Iterate over the matched documents
 			for (Document doc : documents) {
-				CDCLogPosition logPos = new CDCLogPosition(0, -1, -1, 0, 0);
+				CDCLogPosition logPos = new CDCLogPosition(0, -1, 0, 0);
 				logPos.commitId = Long.valueOf(doc.get("commit_id").toString());
 				logPos.changeNumber = Long.valueOf(doc.get("cdc_change_number").toString());
-				logPos.txnChangeNumber = Long.valueOf(doc.get("cdc_txn_change_number").toString());
 				logPos.logSegmentSequenceNumber = Long.valueOf(doc.get("cdc_log_segment_sequence_number").toString());
 				logPos.txnCount = Long.valueOf(doc.get("txn_count").toString());
 				return logPos;

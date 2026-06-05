@@ -140,7 +140,7 @@ public abstract class SQLExecutor implements AutoCloseable{
     }
 
     /**
-     * Read the initialization status stored in synclite_device_status on the destination.
+     * Read initialization status from destination synclite_metadata.
      * Returns 1 if initialized, 0 if not, -1 if not supported / table does not exist yet.
      */
     public long readInitializationStatus(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {

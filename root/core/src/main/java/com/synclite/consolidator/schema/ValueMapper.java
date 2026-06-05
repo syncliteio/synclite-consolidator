@@ -57,7 +57,19 @@ public class ValueMapper {
 		} else {
 			valueToCheck = value.toString();
 		}
-		Object mappedValue = ConfLoader.getInstance().getMappedValue(dstIndex, tableID.table, c.column, valueToCheck.toString());	
+		Object mappedValue = ConfLoader.getInstance().getMappedValue(dstIndex, tableID.table, c.column, valueToCheck);
+		if (mappedValue == null) {
+			// SQL CHAR(n) values arrive blank-padded; per SQL semantics trailing
+			// spaces are insignificant for comparison, so retry the lookup using
+			// the right-trimmed key before falling through to the source value.
+			int end = valueToCheck.length();
+			while (end > 0 && valueToCheck.charAt(end - 1) == ' ') {
+				end--;
+			}
+			if (end != valueToCheck.length()) {
+				mappedValue = ConfLoader.getInstance().getMappedValue(dstIndex, tableID.table, c.column, valueToCheck.substring(0, end));
+			}
+		}
 		if (mappedValue == null) {
 			//If no mapping found then delegate to system mappper 
 			return value;

@@ -64,8 +64,10 @@ if (request.getParameter("dst-triggers-" + dstIndex) != null) {
 	properties.put("dst-triggers-" + dstIndex, "");
 }
 
-if (request.getParameter("dst-triggers-" + dstIndex) == null) {
+if ((request.getParameter("dst-triggers-" + dstIndex) == null) && (request.getParameter("dst-enable-triggers-" + dstIndex) == null)) {
 	//Read configs from syncJob.props if they are present
+	//Skip when either field was posted (e.g. dropdown onchange auto-submit),
+	//otherwise the conf-file values would clobber the user's just-selected value.
 
 	Path propsPath = Path.of(properties.get("device-data-root").toString(), "synclite_consolidator.conf");
 	BufferedReader reader = null;

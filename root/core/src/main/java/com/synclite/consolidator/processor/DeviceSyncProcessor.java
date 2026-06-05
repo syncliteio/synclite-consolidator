@@ -54,19 +54,31 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	// ── Shared SQL constants ───────────────────────────────────────────────────
 	public static final String createTxnTableSql =
 		"CREATE TABLE IF NOT EXISTS synclite_metadata(commit_id LONG NOT NULL PRIMARY KEY, " +
-		"command_log_change_number LONG NOT NULL, command_log_txn_change_number LONG NOT NULL, " +
-		"command_log_segment_sequence_number LONG NOT NULL, cdc_change_number LONG NOT NULL, " +
-		"cdc_txn_change_number LONG NOT NULL, cdc_log_segment_sequence_number LONG NOT NULL, " +
+		"cdc_change_number LONG NOT NULL, " +
+		"cdc_log_segment_sequence_number LONG NOT NULL, " +
+		"initialization_status LONG NOT NULL DEFAULT 0, " +
 		"txn_count LONG NOT NULL)";
+	public static final String createDstTxnTableSql =
+		"CREATE TABLE IF NOT EXISTS synclite_metadata(" +
+		"synclite_device_id TEXT NOT NULL, " +
+		"synclite_device_name TEXT NOT NULL, " +
+		"synclite_update_timestamp TEXT, " +
+		"commit_id LONG NOT NULL, " +
+		"cdc_change_number LONG NOT NULL, " +
+		"cdc_log_segment_sequence_number LONG NOT NULL, " +
+		"initialization_status LONG NOT NULL DEFAULT 0, " +
+		"txn_count LONG NOT NULL, " +
+		"PRIMARY KEY(synclite_device_id, synclite_device_name, commit_id))";
 	public static final String selectTxnTableSql =
-		"SELECT commit_id, command_log_change_number, command_log_txn_change_number, command_log_segment_sequence_number, " +
-		"cdc_change_number, cdc_txn_change_number, cdc_log_segment_sequence_number, txn_count " +
+		"SELECT commit_id, cdc_change_number, cdc_log_segment_sequence_number, txn_count " +
 		"FROM synclite_metadata";
 	public static final String insertTxnTableSql =
-		"INSERT INTO synclite_metadata VALUES($1, -1, -1, 0, -1, -1, 0, 0);";
+		"INSERT INTO synclite_metadata(" +
+		"commit_id, cdc_change_number, cdc_log_segment_sequence_number, txn_count" +
+		") VALUES($1, -1, 0, 0);";
 	protected static final String updateTxnTableSql =
 		"UPDATE synclite_metadata SET commit_id = ?, cdc_change_number = ?, " +
-		"cdc_txn_change_number = ?, cdc_log_segment_Sequence_number = ?, txn_count = ?";
+		"cdc_log_segment_sequence_number = ?, txn_count = ?";
 
 	// ── Where metadata is stored ───────────────────────────────────────────────
 	protected enum MetadataStore { DESTINATION, LOCAL }
@@ -76,7 +88,7 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	protected Connection inMemoryReplicaConn;
 	protected ConsolidatorSrcTable checkpointTable;
 	protected boolean dstSchemaTableInitialized = false;
-	protected boolean dstDeviceStatusTableInitialized = false;
+	protected boolean dstInitStatusColumnInitialized = false;
 	protected boolean hasProcessedAllSegments = false;
 
 	protected TableMapper userTableMapper;
@@ -88,7 +100,6 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	protected long consolidatedTxnCount = 0;
 	protected long lastConsolidatedCommitId = 0;
 	protected long lastConsolidatedChangeNumber = -1;
-	protected long lastConsolidatedTxnChangeNumber = -1;
 	protected boolean applyInsertIdempotently;
 
 	protected HashSet<TableID> currentTxnDstTables = new HashSet<TableID>();
@@ -206,27 +217,53 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 		}
 	}
 
-	// ── Device-status-on-destination helpers ───────────────────────────────────
+	// ── Initialization status on destination metadata ───────────────────────────
 
-	protected void ensureDstDeviceStatusTableExists(SQLExecutor dstExecutor) throws DstExecutionException {
-		if (dstDeviceStatusTableInitialized) return;
-		dstExecutor.execute(new NativeOper(null, SyncLiteConsolidatorInfo.getCreateDeviceStatusTableSql()));
+	protected void ensureDstMetadataInitStatusColumn(SQLExecutor dstExecutor) throws DstExecutionException {
+		if (dstInitStatusColumnInitialized) return;
+		dstExecutor.execute(new NativeOper(null, createDstTxnTableSql));
+		boolean recreate = false;
+		try {
+			dstExecutor.execute(new NativeOper(null,
+					"SELECT synclite_device_id, synclite_device_name, initialization_status FROM synclite_metadata WHERE 1 = 0"));
+		} catch (DstExecutionException e) {
+			String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+			if (msg.contains("no such column") || msg.contains("unknown column") || msg.contains("invalid identifier")) {
+				recreate = true;
+			} else {
+				throw e;
+			}
+		}
+		if (!recreate) {
+			try {
+				dstExecutor.execute(new NativeOper(null,
+						"SELECT command_log_change_number FROM synclite_metadata WHERE 1 = 0"));
+				recreate = true;
+			} catch (DstExecutionException e) {
+				String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+				if (!(msg.contains("no such column") || msg.contains("unknown column") || msg.contains("invalid identifier"))) {
+					throw e;
+				}
+			}
+		}
+		if (recreate) {
+			// Recreate incompatible or legacy checkpoint table schema in one shot (no ALTER path).
+			dstExecutor.execute(new NativeOper(null, "DROP TABLE IF EXISTS synclite_metadata"));
+			dstExecutor.execute(new NativeOper(null, createDstTxnTableSql));
+		}
 		dstExecutor.commitTran();
 		dstExecutor.beginTran();
-		dstDeviceStatusTableInitialized = true;
+		dstInitStatusColumnInitialized = true;
 	}
 
 	protected void persistInitializationStatusToDst(SQLExecutor dstExecutor, long status) throws DstExecutionException {
-		ensureDstDeviceStatusTableExists(dstExecutor);
+		ensureDstMetadataInitStatusColumn(dstExecutor);
 		String uuid  = device.getDeviceUUID().replace("'", "''");
 		String dname = device.getDeviceName().replace("'", "''");
 		dstExecutor.execute(new NativeOper(null,
-				"DELETE FROM synclite_device_status WHERE device_uuid = '" + uuid
-				+ "' AND device_name = '" + dname
-				+ "' AND dst_index = " + dstIndex));
-		dstExecutor.execute(new NativeOper(null,
-				"INSERT INTO synclite_device_status(device_uuid, device_name, dst_index, initialization_status) VALUES('"
-				+ uuid + "', '" + dname + "', " + dstIndex + ", " + status + ")"));
+				"UPDATE synclite_metadata SET initialization_status = " + status
+				+ " WHERE synclite_device_id = '" + uuid
+				+ "' AND synclite_device_name = '" + dname + "'"));
 	}
 
 	/**
@@ -235,7 +272,7 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	 * Called when local status is 0 and metadataStore == DESTINATION (fresh-host recovery).
 	 */
 	protected void loadInitializationStatusFromDestination(SQLExecutor dstExecutor) throws SyncLiteException, DstExecutionException {
-		ensureDstDeviceStatusTableExists(dstExecutor);
+		ensureDstMetadataInitStatusColumn(dstExecutor);
 		long dstStatus = dstExecutor.readInitializationStatus(
 				device.getDeviceUUID(), device.getDeviceName(), this.dstIndex);
 		if (dstStatus == 1) {
@@ -387,55 +424,60 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	// ── Checkpoint helpers ─────────────────────────────────────────────────────
 
 	protected final List<Oper> prepareCheckpointUpdate(long commitIDToCheckpoint,
-			long changeNumberToCheckpoint, long txnChangeNumberToCheckpoint,
+			long changeNumberToCheckpoint,
 			List<Object> beforeValues, List<Object> afterValues) throws SyncLiteException {
-		beforeValues.add(this.lastConsolidatedCommitId);
-		beforeValues.add(0);
-		beforeValues.add(0);
-		beforeValues.add(0);
-		beforeValues.add(this.lastConsolidatedChangeNumber);
-		beforeValues.add(this.lastConsolidatedTxnChangeNumber);
-		beforeValues.add(getCurrentLogSegmentSequenceNumber());
-		beforeValues.add(this.consolidatedTxnCount);
+		List<Object> checkpointBeforeValues = new ArrayList<Object>(1);
+		checkpointBeforeValues.add(this.lastConsolidatedCommitId);
 
-		afterValues.add(commitIDToCheckpoint);
-		afterValues.add(0);
-		afterValues.add(0);
-		afterValues.add(0);
-		afterValues.add(changeNumberToCheckpoint);
-		afterValues.add(txnChangeNumberToCheckpoint);
-		afterValues.add(getCurrentLogSegmentSequenceNumber());
-		afterValues.add(this.consolidatedTxnCount + 1);
+		List<Object> checkpointAfterValues = new ArrayList<Object>(4);
+		checkpointAfterValues.add(commitIDToCheckpoint);
+		checkpointAfterValues.add(changeNumberToCheckpoint);
+		checkpointAfterValues.add(getCurrentLogSegmentSequenceNumber());
+		checkpointAfterValues.add(this.consolidatedTxnCount + 1);
 
-		return systemTableMapper.mapOper(new Update(checkpointTable, beforeValues, afterValues));
+		Update checkpointUpdate = new Update(checkpointTable, checkpointBeforeValues, checkpointAfterValues);
+		checkpointUpdate.whereColumns = new ArrayList<Column>();
+		checkpointUpdate.whereColumns.add(getCheckpointColumn("commit_id"));
+		checkpointUpdate.setColumns = new ArrayList<Column>();
+		checkpointUpdate.setColumns.add(getCheckpointColumn("commit_id"));
+		checkpointUpdate.setColumns.add(getCheckpointColumn("cdc_change_number"));
+		checkpointUpdate.setColumns.add(getCheckpointColumn("cdc_log_segment_sequence_number"));
+		checkpointUpdate.setColumns.add(getCheckpointColumn("txn_count"));
+		return systemTableMapper.mapOper(checkpointUpdate);
+	}
+
+	private Column getCheckpointColumn(String columnName) throws SyncLiteException {
+		Column col = checkpointTable.colMap.get(columnName);
+		if (col == null) {
+			throw new SyncLiteException("Missing checkpoint column in synclite_metadata: " + columnName);
+		}
+		return col;
 	}
 
 	protected final List<Oper> prepareCheckpointInsert() throws SyncLiteException {
 		List<Object> afterValues = new ArrayList<Object>();
 		afterValues.add(this.lastConsolidatedCommitId);
-		afterValues.add(0);
-		afterValues.add(0);
-		afterValues.add(0);
 		afterValues.add(this.lastConsolidatedChangeNumber);
+		afterValues.add(getCurrentLogSegmentSequenceNumber());
+		afterValues.add(consolidatorMetadataMgr.getInitializationStatus());
 		afterValues.add(this.consolidatedTxnCount);
 		return systemTableMapper.mapOper(new Insert(checkpointTable, afterValues, false));
 	}
 
 	protected void updateDstCheckpointIfNeeded(SQLExecutor dstExecutor, long commitId,
-			long changeNumber, long txnChangeNumber,
+			long changeNumber,
 			List<Object> beforeValues, List<Object> afterValues) throws DstExecutionException, SyncLiteException {
 		if (!ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
-			dstExecutor.execute(prepareCheckpointUpdate(commitId, changeNumber, txnChangeNumber, beforeValues, afterValues));
+			dstExecutor.execute(prepareCheckpointUpdate(commitId, changeNumber, beforeValues, afterValues));
 		}
 	}
 
-	protected void updateLocalCheckpointIfNeeded(long commitId, long changeNumber, long txnChangeNumber)
+	protected void updateLocalCheckpointIfNeeded(long commitId, long changeNumber)
 			throws DstExecutionException, SyncLiteException {
 		if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
 			ArrayList<Object> args = new ArrayList<Object>();
 			args.add(commitId);
 			args.add(changeNumber);
-			args.add(txnChangeNumber);
 			args.add(getCurrentLogSegmentSequenceNumber());
 			args.add(this.consolidatedTxnCount + 1);
 			consolidatorMetadataMgr.executeCheckpointTablePreparedStmt(updateTxnTableSql, args);

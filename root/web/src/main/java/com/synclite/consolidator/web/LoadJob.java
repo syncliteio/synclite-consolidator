@@ -114,10 +114,9 @@ public class LoadJob extends HttpServlet {
 		for (int dstIndex = 1; dstIndex <= numDestinations; ++dstIndex) {
 			request.getSession().setAttribute("dst-type-name-" + dstIndex, getDstName(request.getSession().getAttribute("dst-type-" + dstIndex).toString()));			
 		}		
-		request.getSession().setAttribute("job-status","STARTED");
+		request.getSession().setAttribute("job-status","LOADED");
 		request.getSession().setAttribute("job-type","SYNC");
-		//TODO fix start time for job being loaded
-		request.getSession().setAttribute("job-start-time",System.currentTimeMillis());		
+		request.getSession().removeAttribute("job-start-time");
 	}
 
 	private final String getDstName(String dType) {

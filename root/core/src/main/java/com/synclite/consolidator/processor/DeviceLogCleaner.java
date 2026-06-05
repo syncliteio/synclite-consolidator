@@ -36,12 +36,36 @@ import com.synclite.consolidator.stage.SyncLiteObjectType;
 
 public class DeviceLogCleaner {
 
+	private static final String LAST_CLEANED_KEY = "last_cleaned_log_segment_seq_num";
+
 	private Device device;
 	private long cleanedUpto = -1L;
 	private static final ConcurrentHashMap<Device, DeviceLogCleaner> logCleaners = new ConcurrentHashMap<Device, DeviceLogCleaner>();
 	private static DeviceStageManager deviceStageManager = DeviceStageManager.getDataStageManagerInstance();
 	private DeviceLogCleaner(Device device) throws SyncLiteException {
 		this.device = device;
+		// Persist + restore the cleanup watermark so a consolidator restart
+		// doesn't re-walk every segment from 0 just to discover they were
+		// already deleted. The value lives in the per-device metadata DB
+		// alongside other device-scoped keys (`status`, `database_name`,
+		// ...). Best-effort: a missing/corrupt value falls back to -1
+		// which preserves the original behavior.
+		try {
+			if (device.getDeviceMetadataMgr() != null) {
+				Long persisted = device.getDeviceMetadataMgr().getLongProperty(LAST_CLEANED_KEY);
+				if (persisted != null && persisted >= 0L) {
+					this.cleanedUpto = persisted;
+				}
+			}
+		} catch (Throwable t) {
+			// Persistence is a cache; if it fails we silently fall back to
+			// the original Java behavior (re-walk from -1). The cleaner must
+			// never refuse to construct on a metadata-DB hiccup.
+			try {
+				device.tracer.warn("Failed to read " + LAST_CLEANED_KEY + " from device metadata; starting cleanup watermark at -1", t);
+			} catch (Throwable ignored) {
+			}
+		}
 	}
 
 	public static DeviceLogCleaner getInstance(Device device) {
@@ -101,7 +125,7 @@ public class DeviceLogCleaner {
 				device.tracer.warn("Cleanup failed for transactional log segment : " + seqNum + ", will retry in next cleanup cycle", e);
 			}
 		}
-		this.cleanedUpto = nextContiguousCleaned;
+		advanceCleanedUpto(nextContiguousCleaned);
 	}
 
 	private void bestEffortCleanUpTelemetryDeviceLogsUpto(long targetSeqNum) {
@@ -120,7 +144,29 @@ public class DeviceLogCleaner {
 				device.tracer.warn("Cleanup failed for telemetry log segment : " + seqNum + ", will retry in next cleanup cycle", e);
 			}
 		}
-		this.cleanedUpto = nextContiguousCleaned;
+		advanceCleanedUpto(nextContiguousCleaned);
+	}
+
+	private void advanceCleanedUpto(long newWatermark) {
+		if (newWatermark <= this.cleanedUpto) {
+			return;
+		}
+		this.cleanedUpto = newWatermark;
+		// Persisting the watermark is a best-effort optimization; a
+		// failure here must never abort cleanup (the in-memory value is
+		// already advanced, so subsequent passes still skip the cleaned
+		// range while the process lives; restart-after-failure simply
+		// re-walks the already-deleted range, which is harmless).
+		try {
+			if (device.getDeviceMetadataMgr() != null) {
+				device.getDeviceMetadataMgr().upsertProperty(LAST_CLEANED_KEY, newWatermark);
+			}
+		} catch (Throwable t) {
+			try {
+				device.tracer.warn("Failed to persist " + LAST_CLEANED_KEY + "=" + newWatermark + "; will retry on next cleanup cycle", t);
+			} catch (Throwable ignored) {
+			}
+		}
 	}
 
 	private void cleanUpTxnDeviceLogs(long logSegmentSeqNumber) throws SyncLiteException {
@@ -173,6 +219,7 @@ public class DeviceLogCleaner {
 		} catch (SyncLiteStageException e) {
 			throw new SyncLiteException("Failed to delete command log segment : " + cmdLogSegmentPath + " from device stage ", e);
 		}		
+		device.tracer.info("Cleaned processed segment : seqNum=" + logSegmentSeqNumber + " cdclogPath=" + cdcLogSegmentPath + " cmdlogPath=" + cmdLogSegmentPath);
 	}
 
 	//Method specifically for replication to SQLite case
@@ -219,6 +266,7 @@ public class DeviceLogCleaner {
 		} catch (SyncLiteStageException e) {
 			throw new SyncLiteException("Failed to delete command log segment : " + cmdLogSegmentPath + " from device stage ", e);
 		}		
+		device.tracer.info("Cleaned processed command log segment : seqNum=" + logSegmentSeqNumber + " cmdlogPath=" + cmdLogSegmentPath);
 	}
 
 	private void cleanUpTelemetryDeviceLogs(long logSegmentSeqNumber) throws SyncLiteException {
@@ -286,5 +334,6 @@ public class DeviceLogCleaner {
 		} catch (SyncLiteStageException e) {
 			throw new SyncLiteException("Failed to delete event log segment : " + eventLogSegmentPath  + " from device stage ", e);
 		}
+		device.tracer.info("Cleaned processed event log segment : seqNum=" + logSegmentSeqNumber + " eventlogPath=" + eventLogSegmentPath);
 	}
 }
