@@ -116,6 +116,9 @@ public class ConsolidatorSrcTable extends Table {
 
     public Oper generateRenameColumnOper(String oldColName, String newColName) {
         Column renamedCol = colMap.get(oldColName);
+        if (renamedCol == null) {
+            return null;
+        }
         renameColumn(renamedCol, newColName);
         return new RenameColumn(this, renamedCol, oldColName, newColName);
     }

@@ -256,7 +256,7 @@ public class ValidateDestinationDB extends HttpServlet {
 				break;
 			}
 											
-			request.getSession().setAttribute("dst-type-" + dstIndex, dstType);
+			request.getSession().setAttribute("dst-type-" + dstIndex, dstType.toString());
 			request.getSession().setAttribute("dst-type-name-" + dstIndex, dstTypeName);
 			request.getSession().setAttribute("dst-connection-string-" + dstIndex, dstConnectionString);
 			request.getSession().setAttribute("dst-connection-timeout-s-" + dstIndex, dstConnectionTimeoutSStr);

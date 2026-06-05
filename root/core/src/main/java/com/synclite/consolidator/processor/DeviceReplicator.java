@@ -46,6 +46,7 @@ import com.synclite.consolidator.nativedb.DB;
 import com.synclite.consolidator.nativedb.DBCallback;
 import com.synclite.consolidator.nativedb.PreparedStatement;
 import com.synclite.consolidator.oper.OperType;
+import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ReplicatorTable;
 import com.synclite.consolidator.schema.TableID;
 import com.synclite.consolidator.watchdog.Monitor;
@@ -56,13 +57,13 @@ public class DeviceReplicator extends DeviceProcessor {
 		try {
 	        String arch = System.getProperty("os.arch");
 	        if (arch.equals("x86")) {
-				System.loadLibrary("synclite3_x86");
+				System.loadLibrary("synclitecdc_x86");
 	        } else if (arch.equals("amd64") || arch.equals("x86_64")) {
-	        	System.loadLibrary("synclite3_x86_64");
+	        	System.loadLibrary("synclitecdc_x86_64");
 	        } else {	        
 	        	//throw new SyncLiteException("SyncLite native library not supported for current architecture : " + arch);
 	        	//try to load the x86_64 one 
-	        	System.loadLibrary("synclite3_x86_64");
+	        	System.loadLibrary("synclitecdc_x86_64");
 	        }
 		} catch (Exception e) {    		
 			throw new RuntimeException("Failed to load SyncLite native library : " + e.getMessage(), e);
@@ -136,15 +137,6 @@ public class DeviceReplicator extends DeviceProcessor {
 			}
 		}
 
-		public final void logCheckpointRecord(long commitId) throws SyncLiteException {
-			try {
-				CDCLogRecord checkpointRecord = new CDCLogRecord(commitId, null, null, null, null, OperType.CHECKPOINTTRAN, "CHECKPOINT", DeviceReplicator.this.currentCDCLogSegment.logSegmentLogCount, null, null);
-				log(checkpointRecord);
-			} catch (SyncLiteException e) {
-				throw new SyncLiteException("Failed to log a checkpoint log record in cdc log segment : " + DeviceReplicator.this.currentCDCLogSegment.path + " with exception : ", e);
-			}
-		}
-
 		public final void logCommitAndFlush(long commitId) throws SyncLiteException {
 			try {
 				//Process the schema stage table if present and append to schema log table
@@ -197,15 +189,6 @@ public class DeviceReplicator extends DeviceProcessor {
 			}
 		}
 
-		public final void beginTranForCheckpoint() throws SyncLiteException {
-			try {
-				device.tracer.debug("CDCLOGGER: beginTranForCheckpoint");
-				cdcLogSegmentWriter.beginTran();
-			} catch (SyncLiteException e) {
-				throw new SyncLiteException("Failed to begin checkpoint transaction in cdc log segment : " + DeviceReplicator.this.currentCDCLogSegment.path + " with exception : ", e);
-			}
-		}
-
 		protected final void closeCurrentCDCLogSegment() throws SyncLiteException {
 			DeviceReplicator.this.currentCDCLogSegment.closeAndMarkReady();
 		}
@@ -216,7 +199,7 @@ public class DeviceReplicator extends DeviceProcessor {
 			this.lastLogSegmentCreateTime = System.currentTimeMillis();
 		}
 
-		public final void logDDLRecord(long commitID, DDLInfo ddlInfo) throws SyncLiteException {
+		public final void logDDLRecord(long commitID, DDLInfo ddlInfo, String sql) throws SyncLiteException {
 			try {
 				ReplicatorTable tbl= ReplicatorTable.from(TableID.from(this.device.getDeviceUUID(), this.device.getDeviceName(), 1, ddlInfo.databaseName, null, ddlInfo.tableName));
 				HashMap<String, String> renamedColMap = null;
@@ -225,33 +208,34 @@ public class DeviceReplicator extends DeviceProcessor {
 					renamedColMap.put(ddlInfo.columnName, ddlInfo.oldColumnName);
 				}
 				CDCLogSchema colSchemas = new CDCLogSchema(tbl.columns, renamedColMap);
+				String ddlSql = DeviceReplicator.this.buildDDLSql(ddlInfo, tbl, colSchemas, sql);
 				switch (ddlInfo.ddlType) {
 				case CREATETABLE:
-					CDCLogRecord record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.CREATETABLE, null, currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
+					CDCLogRecord record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.CREATETABLE, ddlSql, currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
 					log(record);
 					break;
 				case DROPTABLE:
-					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.DROPTABLE, null, currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
+					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.DROPTABLE, ddlSql, currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
 					log(record);
 					break;
 				case RENAMETABLE:
-					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, ddlInfo.oldTableName , OperType.RENAMETABLE, null, currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
+					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, ddlInfo.oldTableName , OperType.RENAMETABLE, ddlSql, currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
 					log(record);
 					break;
 				case ADDCOLUMN:
-					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.ADDCOLUMN, null, DeviceReplicator.this.currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
+					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.ADDCOLUMN, ddlSql, DeviceReplicator.this.currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
 					log(record);
 					break;
 				case DROPCOLUMN:
-					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.DROPCOLUMN, null, DeviceReplicator.this.currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
+					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.DROPCOLUMN, ddlSql, DeviceReplicator.this.currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
 					log(record);
 					break;
 				case RENAMECOLUMN:
-					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.RENAMECOLUMN, null, DeviceReplicator.this.currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
+					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.RENAMECOLUMN, ddlSql, DeviceReplicator.this.currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
 					log(record);
 					break;
 				case ALTERCOLUMN:
-					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.ALTERCOLUMN, null, DeviceReplicator.this.currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
+					record = new CDCLogRecord(commitID, tbl.id.database, null, tbl.id.table, null, OperType.ALTERCOLUMN, ddlSql, DeviceReplicator.this.currentCDCLogSegment.logSegmentLogCount, null, colSchemas);
 					log(record);
 					break;
 				}
@@ -269,8 +253,6 @@ public class DeviceReplicator extends DeviceProcessor {
 
 		public abstract void log(CDCLogRecord record) throws SyncLiteException;
 
-		public abstract void logCheckpointRecord(long commitId) throws SyncLiteException;
-
 		public abstract void logCommitAndFlush(long commitId) throws SyncLiteException;
 
 		public abstract void logBeginRecord(long commitId) throws SyncLiteException;
@@ -283,13 +265,9 @@ public class DeviceReplicator extends DeviceProcessor {
 
 		protected abstract void createNewCDCLogSegment() throws SyncLiteException;
 
-		public abstract void logDDLRecord(long commitID, DDLInfo ddlInfo) throws SyncLiteException;
+		public abstract void logDDLRecord(long commitID, DDLInfo ddlInfo, String sql) throws SyncLiteException;
 
 		public abstract void rollbackTran() throws SyncLiteException;
-
-		/** Re-opens a CDC transaction after executeDDL flushes mid-transaction.
-		 *  Does NOT write a BEGIN record — only opens the SQLite transaction. */
-		public abstract void beginTranForCheckpoint() throws SyncLiteException;
 	}
 
 	private class NullLogger extends Logger{
@@ -299,8 +277,6 @@ public class DeviceReplicator extends DeviceProcessor {
 		protected void setCDCLogSegmentWriter(CDCLogSegmentWriter cdcLogSegmentWriter) {}
 
 		public void log(CDCLogRecord record) throws SyncLiteException {}
-
-		public void logCheckpointRecord(long commitId) throws SyncLiteException {}
 
 		public void logCommitAndFlush(long commitId) throws SyncLiteException {}
 
@@ -314,11 +290,9 @@ public class DeviceReplicator extends DeviceProcessor {
 
 		protected void createNewCDCLogSegment() throws SyncLiteException {}
 
-		public void logDDLRecord(long commitID, DDLInfo ddlInfo) throws SyncLiteException {}
+		public void logDDLRecord(long commitID, DDLInfo ddlInfo, String sql) throws SyncLiteException {}
 
 		public void rollbackTran() throws SyncLiteException {}
-
-		public void beginTranForCheckpoint() throws SyncLiteException {}
 	}
 
 	private long commitID;
@@ -330,11 +304,15 @@ public class DeviceReplicator extends DeviceProcessor {
 	private Logger logger;
 	private CommandLogSegment currentCommandLogSegment;
 	private CDCLogSegment currentCDCLogSegment;
-	// Reuse shared SQL constants from DeviceSyncProcessor
-	private static final String updateTxnTableSql =
-		"UPDATE synclite_metadata SET commit_id = ?, command_log_change_number = ?, command_log_txn_change_number = ?, " +
-		"command_log_segment_sequence_number = ?, cdc_change_number = ?, " +
-		"cdc_txn_change_number = ?, cdc_log_segment_sequence_number = ?, txn_count = ?";
+	private String lastCallbackSql;
+	private static final String createReplayCheckpointTableSql =
+		"CREATE TABLE IF NOT EXISTS replay_checkpoint(commandlog_segment_sequence_number LONG NOT NULL, commit_id LONG NOT NULL, cdc_log_segment_sequence_number LONG NOT NULL)";
+	private static final String selectReplayCheckpointSql =
+		"SELECT commandlog_segment_sequence_number, commit_id, cdc_log_segment_sequence_number FROM replay_checkpoint ORDER BY commandlog_segment_sequence_number DESC, commit_id DESC LIMIT 1";
+	private static final String updateReplayCheckpointSql =
+		"UPDATE replay_checkpoint SET commandlog_segment_sequence_number = ?, commit_id = ?, cdc_log_segment_sequence_number = ?";
+	private static final String insertReplayCheckpointSql =
+		"INSERT INTO replay_checkpoint(commandlog_segment_sequence_number, commit_id, cdc_log_segment_sequence_number) VALUES($1, $2, $3)";
 	private static final String firstCommitIDSql = "SELECT commit_id FROM synclite_txn";
 	private DBCallback callback;
 	private DeviceStatsCollector statsCollector;
@@ -360,9 +338,10 @@ public class DeviceReplicator extends DeviceProcessor {
 			this.statsCollector = null;
 			this.logCleaner = null;
 		}
+		this.lastCallbackSql = null;
 
 		//
-		//Take this snapshot now so that the checkpoint table synclite_metadata is recorded in the snapshot.
+		//Take this snapshot now so that replay checkpoint state is included in the snapshot.
 		//
 		device.dataBackupSnapshot();
 		device.updateDeviceStatus(DeviceStatus.SYNCING, "");
@@ -378,27 +357,24 @@ public class DeviceReplicator extends DeviceProcessor {
 		String url = "jdbc:sqlite:" + this.replicaPath;
 		try (Connection conn = DriverManager.getConnection(url)) {
 			try (Statement stmt = conn.createStatement()) {
-				stmt.execute(DeviceSyncProcessor.createTxnTableSql);
-				try (ResultSet rs = stmt.executeQuery(DeviceSyncProcessor.selectTxnTableSql)) {
+				stmt.execute(createReplayCheckpointTableSql);
+				try (ResultSet rs = stmt.executeQuery(selectReplayCheckpointSql)) {
 					if (rs.next()) {
+						long commandLogSegmentSequenceNumber = rs.getLong("commandlog_segment_sequence_number");
 						this.commitID = rs.getLong("commit_id");
-						this.changeNumber = rs.getLong("command_log_change_number");
-						this.txnChangeNumber = rs.getLong("command_log_txn_change_number");
-						long commandLogSegmentSequenceNumber = rs.getLong("command_log_segment_sequence_number");
-						long cdcLogSegmentSequenceNumber = rs.getLong("cdc_log_segment_sequence_number");
-						long cdcLogSegmentChangeNumber = rs.getLong("cdc_change_number");
-						this.processedTxnCount = rs.getLong("txn_count");
-						this.currentCommandLogSegment = device.getCommandLogSegment(commandLogSegmentSequenceNumber);
-						//If we had started the replay then validate that the required command log segment is available
-						if (this.changeNumber > -1) {
-							if (this.currentCommandLogSegment == null) {
-								throw new SyncLiteException("Restart recovery failed. Command log segment with sequence number :" + commandLogSegmentSequenceNumber + " missing from the device");
-							}
-						}
+					long cdcLogSegmentSequenceNumber = rs.getLong("cdc_log_segment_sequence_number");
+					this.changeNumber = -1;
+					this.txnChangeNumber = -1;
+					this.processedTxnCount = 0;
+					this.currentCommandLogSegment = device.getCommandLogSegment(commandLogSegmentSequenceNumber);
+					if (this.currentCommandLogSegment == null) {
+						throw new SyncLiteException("Restart recovery failed. Command log segment with sequence number :" + commandLogSegmentSequenceNumber + " missing from the device");
+					}
+					device.tracer.info("Replay checkpoint recovered : commandlogSeq=" + commandLogSegmentSequenceNumber + " commitID=" + this.commitID + " cdclogSeq=" + cdcLogSegmentSequenceNumber);
 					if (!isReplicationToSQLite()) {
 						this.currentCDCLogSegment = device.getCDCLogSegment(cdcLogSegmentSequenceNumber);
 						if (this.currentCDCLogSegment == null) {
-							throw new SyncLiteException("Restart recovery failed. CDC segment with sequence number :" + cdcLogSegmentSequenceNumber + " missing from the device");
+							this.currentCDCLogSegment = device.getNewCDCLogSegment(cdcLogSegmentSequenceNumber);
 						}
 						this.currentCDCLogSegment.load(this.commitID);
 					}
@@ -421,7 +397,10 @@ public class DeviceReplicator extends DeviceProcessor {
 						this.currentCDCLogSegment.load(DeviceReplicator.this.commitID);
 					}
 						this.processedTxnCount = 0;
-						String insertSql = DeviceSyncProcessor.insertTxnTableSql.replace("$1", String.valueOf(this.commitID));
+						String insertSql = insertReplayCheckpointSql
+							.replace("$1", String.valueOf(0))
+						.replace("$2", String.valueOf(this.commitID))
+						.replace("$3", String.valueOf(0));
 						stmt.execute(insertSql);
 						//Update statsCollector about replica size
 						if (statsCollector != null) {
@@ -509,7 +488,7 @@ public class DeviceReplicator extends DeviceProcessor {
 			long commandLogOperCount= 0;
 			long currentCommandLogTxnCount = 0;
 			try (DB targetReplicaDB = new DB(this.replicaPath, this.callback);
-					PreparedStatement updateTxnTablePstmt = targetReplicaDB.prepare(updateTxnTableSql);
+					PreparedStatement updateTxnTablePstmt = targetReplicaDB.prepare(updateReplayCheckpointSql);
 					CommandLogSegmentReader reader = currentCommandLogSegment.open(this.commitID);
 						//CDCLogSegmentWriterHolder cdcLogSegmentWriterHolder = new CDCLogSegmentWriterHolder(currentCDCLogSegment.getWriter());
 					CDCLogSegmentWriter writer = (currentCDCLogSegment != null) ? currentCDCLogSegment.getWriter() : null;
@@ -641,48 +620,26 @@ public class DeviceReplicator extends DeviceProcessor {
 
 	private final void executeDDL(DB targetReplicaDB, PreparedStatement updateTxnTablePstmt, CommandLogRecord log) throws SyncLiteException {
 		try {
-			device.tracer.debug("REPLICATOR: executeDDL start - checkpointTran");
-			checkpointTran(updateTxnTablePstmt);
-			// NOTE: Do NOT call logger.beginTran() here. A CDC transaction is already open
-			// from processing the outer BEGIN command. Calling beginTran() again causes a
-			// nested BEGIN TRANSACTION on the native DB which corrupts the transaction state
-			// and prevents the COMMIT from writing to disk.
+			// DDL is replayed in-line and logged as a regular CDC DDL record.
 			if (log.ddlInfo.ddlType == OperType.ALTERCOLUMN) {
 				//
 				//SQLite does not support ALTER COLUMN and does not need it to be applied also due it is dynamic type system.
 				//Skip applying it on the replica.
 				//But make sure to log it in CDC log, so that it can be replayed on final destination
 				//
-				logger.logDDLRecord(this.commitID, log.ddlInfo);
+				logger.logDDLRecord(this.commitID, log.ddlInfo, log.sql);
 			} else {
 				device.tracer.debug("REPLICATOR: executeDDL - exec on replica: " + log.sql);
 				targetReplicaDB.exec(log.sql);
 				device.tracer.debug("REPLICATOR: executeDDL - reloadTableSchemas");
 				reloadTableSchemas(targetReplicaDB, log.ddlInfo);
 				device.tracer.debug("REPLICATOR: executeDDL - logger.logDDLRecord");
-				logger.logDDLRecord(this.commitID, log.ddlInfo);
+				logger.logDDLRecord(this.commitID, log.ddlInfo, log.sql);
 			}
-			device.tracer.debug("REPLICATOR: executeDDL - second checkpointTran");
-			checkpointTran(updateTxnTablePstmt);
-			// Flush (commit) the currently open CDC transaction which now contains:
-			// [BEGIN, CHECKPOINT, DDL, CHECKPOINT]. The COMMIT record will be logged
-			// by commitTran() via logCommitAndFlush() in the normal transaction flow.
-			device.tracer.debug("REPLICATOR: executeDDL - logger.flushLogSegment commitId=" + this.commitID);
-			logger.flushLogSegment();
-			// Re-open a new CDC transaction so that commitTran() can flush checkpoint + COMMIT records.
-			// executeDDL commits the CDC txn (for DDL atomicity), but commitTran() still needs
-			// an open transaction to write the final checkpoint and then calls flushLogSegment().
-			device.tracer.debug("REPLICATOR: executeDDL - logger.beginTranForCheckpoint");
-			logger.beginTranForCheckpoint();
 			device.tracer.debug("REPLICATOR: executeDDL complete");
 		} catch (SQLException e) {
 			throw new SyncLiteException("Failed to execute sql : " + log.sql + " on replica : " + this.replicaPath, e);
 		}
-	}
-
-	private final void checkpointTran(PreparedStatement updateTxnTablePstmt) throws SyncLiteException {
-		executeCheckpointOper(updateTxnTablePstmt, currentCommandLogSegment);
-		logger.logCheckpointRecord(this.commitID);
 	}
 
 	private final void reloadTableSchemas(DB targetReplicaDB, DDLInfo ddlInfo) throws SyncLiteException {
@@ -700,6 +657,7 @@ public class DeviceReplicator extends DeviceProcessor {
 
 	private final void beginTran(DB targetReplicaDB, long commitId) throws SyncLiteException {
 		device.tracer.debug("REPLICATOR: beginTran - logger.beginTran commitId=" + commitId);
+		this.lastCallbackSql = null;
 		logger.beginTran(commitId);
 		device.tracer.debug("REPLICATOR: beginTran - targetReplicaDB.beginTran");
 		try {
@@ -726,6 +684,7 @@ public class DeviceReplicator extends DeviceProcessor {
 		}
 		device.tracer.debug("REPLICATOR: commitTran - logger.logCommitAndFlush commitId=" + this.commitID);
 		logger.logCommitAndFlush(this.commitID);
+		this.lastCallbackSql = null;
 		device.tracer.debug("REPLICATOR: commitTran complete");
 	}
 
@@ -738,18 +697,14 @@ public class DeviceReplicator extends DeviceProcessor {
 		} catch (SQLException e) {
 			throw new SyncLiteException("Failed to rollback a transaction on replica : " + this.replicaPath + " with exception : ", e);
 		}
+		this.lastCallbackSql = null;
 	}
 
 	private final void executeCheckpointOper(PreparedStatement updateTxnTablePstmt, CommandLogSegment commandLogSegment) throws SyncLiteException {
 		try {
-			updateTxnTablePstmt.bindLong(1, this.commitID);
-			updateTxnTablePstmt.bindLong(2, this.changeNumber);
-			updateTxnTablePstmt.bindLong(3, this.txnChangeNumber);
-			updateTxnTablePstmt.bindLong(4, commandLogSegment.sequenceNumber);
-			updateTxnTablePstmt.bindLong(5, currentCDCLogSegment.logSegmentLogCount + 1);
-			updateTxnTablePstmt.bindLong(6, -1);
-			updateTxnTablePstmt.bindLong(7, currentCDCLogSegment.sequenceNumber);
-			updateTxnTablePstmt.bindLong(8, this.processedTxnCount);
+			updateTxnTablePstmt.bindLong(1, commandLogSegment.sequenceNumber);
+			updateTxnTablePstmt.bindLong(2, this.commitID);
+			updateTxnTablePstmt.bindLong(3, currentCDCLogSegment != null ? currentCDCLogSegment.sequenceNumber : commandLogSegment.sequenceNumber);
 			updateTxnTablePstmt.step();
 		} catch (SQLException e) {
 			throw new SyncLiteException("Failed to bind arguments for a checkpoint statement in replica : " + this.replicaPath + " with exception : ", e);
@@ -765,6 +720,9 @@ public class DeviceReplicator extends DeviceProcessor {
 			long[] beforeImage,
 			long[] afterImage
 			){
+		if (table != null && table.equalsIgnoreCase("replay_checkpoint")) {
+			return 0;
+		}
 		//long numFields = (beforeImage != null) ? beforeImage.length : afterImage.length;
 
 		ReplicatorTable tbl = ReplicatorTable.from(TableID.from(device.getDeviceUUID(), device.getDeviceName(), 1, database, null, table));
@@ -792,6 +750,14 @@ public class DeviceReplicator extends DeviceProcessor {
 			}
 		}
 
+		String synthesizedSql = buildCallbackSql(tbl, operation, beforeImage, afterImage);
+		String sqlForRecord = synthesizedSql;
+		if (synthesizedSql != null && synthesizedSql.equals(this.lastCallbackSql)) {
+			sqlForRecord = null;
+		} else {
+			this.lastCallbackSql = synthesizedSql;
+		}
+
 		if (operation.equals("INSERT")) {
 			List<CDCColumnValues> colValuesList = new ArrayList<CDCColumnValues>();
 			for (int i=0 ; i < afterImage.length; ++i) {
@@ -799,7 +765,7 @@ public class DeviceReplicator extends DeviceProcessor {
 				colValuesList.add(colValues);
 			}
 			try {
-				CDCLogRecord logRecord = new CDCLogRecord(this.commitID, database, null, table, null, OperType.INSERT, null, currentCDCLogSegment.logSegmentLogCount, colValuesList, null);
+				CDCLogRecord logRecord = new CDCLogRecord(this.commitID, database, null, table, null, OperType.INSERT, sqlForRecord, currentCDCLogSegment.logSegmentLogCount, colValuesList, null);
 				logger.log(logRecord);
 			} catch (SyncLiteException e) {
 				this.callback.setException(e);
@@ -811,7 +777,7 @@ public class DeviceReplicator extends DeviceProcessor {
 				colValuesList.add(colValues);
 			}
 			try {
-				CDCLogRecord logRecord = new CDCLogRecord(this.commitID, database, null, table, null, OperType.UPDATE, null, currentCDCLogSegment.logSegmentLogCount, colValuesList, null);
+				CDCLogRecord logRecord = new CDCLogRecord(this.commitID, database, null, table, null, OperType.UPDATE, sqlForRecord, currentCDCLogSegment.logSegmentLogCount, colValuesList, null);
 				logger.log(logRecord);
 			} catch (SyncLiteException e) {
 				this.callback.setException(e);
@@ -823,13 +789,154 @@ public class DeviceReplicator extends DeviceProcessor {
 				colValuesList.add(colValues);
 			}
 			try {
-				CDCLogRecord logRecord = new CDCLogRecord(this.commitID, database, null, table, null, OperType.DELETE, null, currentCDCLogSegment.logSegmentLogCount, colValuesList, null);
+				CDCLogRecord logRecord = new CDCLogRecord(this.commitID, database, null, table, null, OperType.DELETE, sqlForRecord, currentCDCLogSegment.logSegmentLogCount, colValuesList, null);
 				logger.log(logRecord);
 			} catch (SyncLiteException e) {
 				this.callback.setException(e);
 			}
 		}
 		return 0;
+	}
+
+	private String buildCallbackSql(ReplicatorTable tbl, String operation, long[] beforeImage, long[] afterImage) {
+		String tableName = tbl.id.table;
+		if (operation.equals("INSERT") && afterImage != null) {
+			int n = afterImage.length;
+			String placeholders = buildPlaceholders(n);
+			if (tbl.columns.size() == n) {
+				return "INSERT INTO " + tableName + " (" + joinColumnNames(tbl, n) + ") VALUES (" + placeholders + ")";
+			}
+			return "INSERT INTO " + tableName + " VALUES (" + placeholders + ")";
+		}
+		if (operation.equals("UPDATE") && beforeImage != null && afterImage != null) {
+			int n = afterImage.length;
+			if (n > 0 && beforeImage.length == n && tbl.columns.size() >= n) {
+				StringBuilder setClause = new StringBuilder();
+				StringBuilder whereClause = new StringBuilder();
+				for (int i = 0; i < n; ++i) {
+					if (i > 0) {
+						setClause.append(", ");
+						whereClause.append(" AND ");
+					}
+					String colName = tbl.columns.get(i).column;
+					setClause.append(colName).append(" = ?");
+					whereClause.append(colName).append(" = ?");
+				}
+				return "UPDATE " + tableName + " SET " + setClause + " WHERE " + whereClause;
+			}
+		}
+		if (operation.equals("DELETE") && beforeImage != null) {
+			int n = beforeImage.length;
+			if (n > 0 && tbl.columns.size() >= n) {
+				StringBuilder whereClause = new StringBuilder();
+				for (int i = 0; i < n; ++i) {
+					if (i > 0) {
+						whereClause.append(" AND ");
+					}
+					String colName = tbl.columns.get(i).column;
+					whereClause.append(colName).append(" = ?");
+				}
+				return "DELETE FROM " + tableName + " WHERE " + whereClause;
+			}
+		}
+		return operation;
+	}
+
+	private String joinColumnNames(ReplicatorTable tbl, int n) {
+		StringBuilder out = new StringBuilder();
+		for (int i = 0; i < n; ++i) {
+			if (i > 0) {
+				out.append(", ");
+			}
+			out.append(tbl.columns.get(i).column);
+		}
+		return out.toString();
+	}
+
+	private String buildPlaceholders(int n) {
+		StringBuilder out = new StringBuilder();
+		for (int i = 0; i < n; ++i) {
+			if (i > 0) {
+				out.append(", ");
+			}
+			out.append("?");
+		}
+		return out.toString();
+	}
+
+	private String buildDDLSql(DDLInfo ddlInfo, ReplicatorTable tbl, CDCLogSchema colSchemas, String fallbackSql) {
+		switch (ddlInfo.ddlType) {
+		case CREATETABLE:
+			return buildCreateTableSql(tbl.id.table, colSchemas);
+		case DROPTABLE:
+			return "DROP TABLE " + tbl.id.table;
+		case RENAMETABLE:
+			if (ddlInfo.oldTableName != null) {
+				return "ALTER TABLE " + ddlInfo.oldTableName + " RENAME TO " + tbl.id.table;
+			}
+			break;
+		case ADDCOLUMN:
+			if (ddlInfo.columnName != null) {
+				String colDef = ddlInfo.colDef == null ? "" : ddlInfo.colDef;
+				return "ALTER TABLE " + tbl.id.table + " ADD COLUMN " + ddlInfo.columnName + colDef;
+			}
+			break;
+		case DROPCOLUMN:
+			if (ddlInfo.columnName != null) {
+				return "ALTER TABLE " + tbl.id.table + " DROP COLUMN " + ddlInfo.columnName;
+			}
+			break;
+		case RENAMECOLUMN:
+			if (ddlInfo.oldColumnName != null && ddlInfo.columnName != null) {
+				return "ALTER TABLE " + tbl.id.table + " RENAME COLUMN " + ddlInfo.oldColumnName + " TO " + ddlInfo.columnName;
+			}
+			break;
+		case ALTERCOLUMN:
+			if (ddlInfo.columnName != null) {
+				String colDef = ddlInfo.colDef == null ? "" : ddlInfo.colDef;
+				return "ALTER TABLE " + tbl.id.table + " ALTER COLUMN " + ddlInfo.columnName + colDef;
+			}
+			break;
+		default:
+			break;
+		}
+		return fallbackSql;
+	}
+
+	private String buildCreateTableSql(String tableName, CDCLogSchema colSchemas) {
+		if (colSchemas == null || colSchemas.columns == null || colSchemas.columns.isEmpty()) {
+			return "CREATE TABLE " + tableName;
+		}
+
+		StringBuilder sql = new StringBuilder("CREATE TABLE ");
+		sql.append(tableName).append(" (");
+		StringBuilder pkCols = new StringBuilder();
+		int pkCnt = 0;
+		for (int i = 0; i < colSchemas.columns.size(); ++i) {
+			Column col = colSchemas.columns.get(i);
+			if (i > 0) {
+				sql.append(", ");
+			}
+			sql.append(col.column).append(" ").append(col.type.dbNativeDataType);
+			if (col.isNotNull != 0) {
+				sql.append(" NOT NULL");
+			}
+			if (col.defaultValue != null && !col.defaultValue.isBlank()) {
+				sql.append(" DEFAULT ").append(col.defaultValue);
+			}
+			if (col.pkIndex > 0) {
+				if (pkCnt > 0) {
+					pkCols.append(", ");
+				}
+				pkCols.append(col.column);
+				pkCnt++;
+			}
+		}
+		if (pkCnt > 0) {
+			sql.append(", PRIMARY KEY (").append(pkCols).append(")");
+		}
+		sql.append(")");
+		return sql.toString();
 	}
 
 	private boolean isReplicationToSQLite() {

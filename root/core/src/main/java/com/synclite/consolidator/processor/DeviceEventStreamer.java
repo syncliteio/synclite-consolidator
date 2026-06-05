@@ -73,6 +73,7 @@ import com.synclite.consolidator.schema.ValueMapper;
 import com.synclite.consolidator.watchdog.Monitor;
 
 public class DeviceEventStreamer extends DeviceSyncProcessor {
+	private static final String REPLAY_CHECKPOINT_TABLE = "replay_checkpoint";
 
 	private static final String firstCommitIDSql = "SELECT commit_id FROM synclite_txn";
 
@@ -80,8 +81,8 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 	private EventLogSegment currentEventLogSegment;
 	private long lastConsolidatedCommitIdOnReplica;
 	private long lastConsolidatedChangeNumberOnReplica;
-	private long lastConsolidatedTxnChangeNumberOnReplica;
 	private CDCLogPosition restartEventLogPosition;
+	private boolean dstCheckpointRowMissing;
 	private boolean replicaAppenderEnabled;
 	private boolean isStoreDevice;
 
@@ -89,6 +90,8 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 		super(device, dstIndex); // DeviceSyncProcessor sets up shared infrastructure + ensureWorkDirExists + initInMemoryReplica
 		this.restartEventLogPosition = null;
 		this.replicaPath = device.getReplica(this.dstIndex);
+		ConfLoader.getInstance().blockTable(dstIndex, REPLAY_CHECKPOINT_TABLE);
+		this.dstCheckpointRowMissing = false;
 		this.replicaAppenderEnabled = false;
 		this.isStoreDevice = SyncLiteLoggerInfo.isStoreDevice(device.getDeviceType());
 		if (SyncLiteLoggerInfo.isAppenderOrStoreDevice(device.getDeviceType()) || SyncLiteLoggerInfo.isDBLoggerOrStreamingDevice(device.getDeviceType())) {
@@ -126,9 +129,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 							//Setting changeNumber to MAX_VALUE will make it skip all the logs for this first txn.
 							//
 							this.lastConsolidatedChangeNumber = Long.MAX_VALUE;
-							this.lastConsolidatedTxnChangeNumber = Long.MAX_VALUE;
 							this.lastConsolidatedChangeNumberOnReplica = Long.MAX_VALUE;
-							this.lastConsolidatedTxnChangeNumberOnReplica = Long.MAX_VALUE;
 							
 							this.currentEventLogSegment = device.getEventLogSegment(0);
 							this.consolidatedTxnCount = 0;
@@ -138,7 +139,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 						} else {
 							this.lastConsolidatedCommitIdOnReplica = rs.getLong("commit_id");
 							this.lastConsolidatedChangeNumberOnReplica = rs.getLong("cdc_change_number");
-							this.lastConsolidatedTxnChangeNumberOnReplica = rs.getLong("cdc_txn_change_number");
 						}
 					}
 				}
@@ -152,7 +152,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			device.tracer.info("Replica file not found at : " + replicaPath + ". Will recover checkpoint and schema from destination and metadata store.");
 			this.lastConsolidatedCommitIdOnReplica = 0;
 			this.lastConsolidatedChangeNumberOnReplica = -1;
-			this.lastConsolidatedTxnChangeNumberOnReplica = -1;
 		}
 		
 		if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
@@ -169,6 +168,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			}
 		}
 		device.updateLastReplicatedCommitID(this.lastConsolidatedCommitId);
+		device.tracer.info("Event streamer checkpoint recovered : dstIndex=" + dstIndex + " commitID=" + this.lastConsolidatedCommitId + " changeNumber=" + this.lastConsolidatedChangeNumberOnReplica);
 	}
 
 	
@@ -251,13 +251,23 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			if (checkpointInfo.isEmpty()) {
 				throw new SyncLiteException("Failed to read checkpoint info from consolidator metadata file : ");
 			} else {
-				this.restartEventLogPosition = new CDCLogPosition(Long.valueOf(checkpointInfo.get("commit_id").toString()), Long.valueOf(checkpointInfo.get("cdc_change_number").toString()), Long.valueOf(checkpointInfo.get("cdc_txn_change_number").toString()), Long.valueOf(checkpointInfo.get("cdc_log_segment_sequence_number").toString()), Long.valueOf(checkpointInfo.get("txn_count").toString()));
+				this.restartEventLogPosition = new CDCLogPosition(Long.valueOf(checkpointInfo.get("commit_id").toString()), Long.valueOf(checkpointInfo.get("cdc_change_number").toString()), Long.valueOf(checkpointInfo.get("cdc_log_segment_sequence_number").toString()), Long.valueOf(checkpointInfo.get("txn_count").toString()));
 			}
 		} else {
 			for (long i = 0; i < ConfLoader.getInstance().getDstOperRetryCount(dstIndex); ++i) {
 				try {			
 					try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, this.dstIndex, device.tracer) ) {
-						this.restartEventLogPosition = dstExecutor.readCDCLogPosition(device.getDeviceUUID(), device.getDeviceName(), systemTableMapper.mapTable(checkpointTable));
+						ensureDstMetadataInitStatusColumn(dstExecutor);
+						try {
+							this.restartEventLogPosition = dstExecutor.readCDCLogPosition(device.getDeviceUUID(), device.getDeviceName(), systemTableMapper.mapTable(checkpointTable));
+						} catch (DstExecutionException e) {
+							if (e.getMessage() != null && e.getMessage().contains("No checkpoint log position found in the destination")) {
+								this.restartEventLogPosition = new CDCLogPosition(0, -1, 0, 0);
+								this.dstCheckpointRowMissing = true;
+							} else {
+								throw e;
+							}
+						}
 						break;
 					}
 				} catch (DstExecutionException e) {
@@ -285,7 +295,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			this.currentEventLogSegment = device.getEventLogSegment(this.restartEventLogPosition.logSegmentSequenceNumber);
 			this.lastConsolidatedCommitId = this.restartEventLogPosition.commitId;
 			this.lastConsolidatedChangeNumber = this.restartEventLogPosition.changeNumber;
-			this.lastConsolidatedTxnChangeNumber = this.restartEventLogPosition.txnChangeNumber;
 			this.consolidatedTxnCount = this.restartEventLogPosition.txnCount;
 			device.updateLastConsolidatedCommitID(this.lastConsolidatedCommitId);
 			//Monitor.getInstance().incrTotalDstTxnCnt(this.consolidatedTxnCount);
@@ -302,6 +311,27 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			}
 			*/
 		}
+	}
+
+	@Override
+	protected void updateDstCheckpointIfNeeded(SQLExecutor dstExecutor, long commitId,
+			long changeNumber,
+			List<Object> beforeValues, List<Object> afterValues) throws DstExecutionException, SyncLiteException {
+		if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
+			return;
+		}
+		if (this.dstCheckpointRowMissing) {
+			List<Object> checkpointValues = new ArrayList<Object>();
+			checkpointValues.add(commitId);
+			checkpointValues.add(changeNumber);
+			checkpointValues.add(getCurrentLogSegmentSequenceNumber());
+			checkpointValues.add(consolidatorMetadataMgr.getInitializationStatus());
+			checkpointValues.add(this.consolidatedTxnCount + 1);
+			dstExecutor.execute(systemTableMapper.mapOper(new Insert(checkpointTable, checkpointValues, false)));
+			this.dstCheckpointRowMissing = false;
+			return;
+		}
+		super.updateDstCheckpointIfNeeded(dstExecutor, commitId, changeNumber, beforeValues, afterValues);
 	}
 
 	private long doSync() throws SyncLiteException {
@@ -395,9 +425,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			consolidatorMetadataMgr.updateLastConsolidatedCDCLogSegmentSeqNum(currentEventLogSegment.sequenceNumber);
 
 			this.lastConsolidatedChangeNumber = -1;
-			this.lastConsolidatedTxnChangeNumber = -1;
 			this.lastConsolidatedChangeNumberOnReplica = -1;
-			this.lastConsolidatedTxnChangeNumberOnReplica = -1;
 			
 			device.tracer.info("Skipped failed log segment : " + currentEventLogSegment);
 		} catch(Exception e) {
@@ -454,7 +482,87 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 				EventLogRecord lastLog = log;
 				TableID prevTableId = null;
 				PreparedStatement replicaInsertPrepStmt = null;
+				boolean inTransaction = false;
 				while (log != null) {
+					if (log.isBegin()) {
+						inTransaction = true;
+						emptyTxn = true;
+						currentInsertBatchCount = 0;
+						currentUpdateBatchCount = 0;
+						currentDeleteBatchCount = 0;
+						currentInsertBatchCountOnReplica = 0;
+						lastLog = log;
+						log = reader.readNextRecord();
+						continue;
+					}
+					if (log.isCommit()) {
+						if (!inTransaction) {
+							throw new SyncLiteException("Invalid event stream, COMMIT encountered without a matching BEGIN in segment : " + currentEventLogSegment);
+						}
+
+						if (replicaConn != null && currentInsertBatchCountOnReplica > 0) {
+							if (replicaInsertPrepStmt != null) {
+								replicaInsertPrepStmt.executeBatch();
+								replicaInsertPrepStmt.close();
+								replicaInsertPrepStmt = null;
+							}
+							currentInsertBatchCountOnReplica = 0;
+						}
+
+						updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
+						beforeValues.clear();
+						afterValues.clear();
+						commitDstTran(dstExecutor);
+						updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
+
+						if (replicaConn != null) {
+							bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber);
+							replicaConn.commit();
+							replicaConn.setAutoCommit(false);
+							this.lastConsolidatedCommitIdOnReplica = log.commitId;
+							this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
+						}
+
+						++currentEventLogSegmentTxnCnt;
+						++consolidatedTxnCount;
+						this.lastConsolidatedCommitId = log.commitId;
+						this.lastConsolidatedChangeNumber = log.changeNumber;
+						emptyTxn = true;
+						inTransaction = false;
+						dstExecutor.beginTran();
+
+						lastLog = log;
+						log = reader.readNextRecord();
+						continue;
+					}
+					if (log.isRollback()) {
+						if (!inTransaction) {
+							throw new SyncLiteException("Invalid event stream, ROLLBACK encountered without a matching BEGIN in segment : " + currentEventLogSegment);
+						}
+						if (replicaInsertPrepStmt != null) {
+							replicaInsertPrepStmt.close();
+							replicaInsertPrepStmt = null;
+						}
+						currentInsertBatchCountOnReplica = 0;
+						currentInsertBatchCount = 0;
+						currentUpdateBatchCount = 0;
+						currentDeleteBatchCount = 0;
+						if (replicaConn != null) {
+							replicaConn.rollback();
+							replicaConn.setAutoCommit(false);
+						}
+						dstExecutor.rollbackTran();
+						dstExecutor.beginTran();
+						emptyTxn = true;
+						inTransaction = false;
+						lastLog = log;
+						log = reader.readNextRecord();
+						continue;
+					}
+					if (!inTransaction) {
+						throw new SyncLiteException("Invalid event stream, data log encountered outside BEGIN/COMMIT boundaries in segment : " + currentEventLogSegment + " : " + log.sql);
+					}
+
 					emptyTxn = false;
 					if (log.tableName == null) {
 						//Ignore invalid logs
@@ -502,7 +610,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 					//We may have multiple DeviceEventStreamers one per destination.
 					//
 					try {
-						if ((log.commitId > this.lastConsolidatedCommitIdOnReplica) || ((log.commitId == this.lastConsolidatedCommitIdOnReplica) && (log.changeNumber > this.lastConsolidatedChangeNumberOnReplica)) || ((log.commitId == this.lastConsolidatedCommitIdOnReplica) && (log.changeNumber == this.lastConsolidatedChangeNumberOnReplica) && (log.txnChangeNumber > this.lastConsolidatedTxnChangeNumberOnReplica))) {
+						if ((log.commitId > this.lastConsolidatedCommitIdOnReplica) || ((log.commitId == this.lastConsolidatedCommitIdOnReplica) && (log.changeNumber > this.lastConsolidatedChangeNumberOnReplica))) {
 							if (log.ddlInfo == null) {
 								if (this.replicaAppenderEnabled) {
 									//Execute INSERT on replica for appender/store devices
@@ -516,12 +624,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 												replicaInsertPrepStmt.close();
 												replicaInsertPrepStmt = null;
 												currentInsertBatchCountOnReplica = 0;
-												//Execute checkpoint UPDATE
-												bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber, log.txnChangeNumber);
-												replicaConn.commit();
-												this.lastConsolidatedCommitIdOnReplica = log.commitId;
-												this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
-												replicaConn.setAutoCommit(false);
 											}
 										} 
 										if (replicaInsertPrepStmt == null) {
@@ -536,12 +638,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 												replicaInsertPrepStmt = null;
 											}
 											currentInsertBatchCountOnReplica = 0;
-											//Execute checkpoint UPDATE
-											bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber, log.txnChangeNumber);
-											replicaConn.commit();
-											this.lastConsolidatedCommitIdOnReplica = log.commitId;
-											this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
-											
 										}
 									}
 								} else if (this.isStoreDevice) {
@@ -554,15 +650,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 												replicaInsertPrepStmt = null;
 											}
 											currentInsertBatchCountOnReplica = 0;
-											if (lastLog != null) {
-												bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber);
-											}
-											replicaConn.commit();
-											replicaConn.setAutoCommit(false);
-											if (lastLog != null) {
-												this.lastConsolidatedCommitIdOnReplica = lastLog.commitId;
-												this.lastConsolidatedChangeNumberOnReplica = lastLog.changeNumber;
-											}
 										}
 										//Reset insert prepared statement as we are switching to UPDATE
 										if (replicaInsertPrepStmt != null) {
@@ -574,11 +661,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 											bindReplicaUpdatePrepStmt(srcTable, replicaUpdatePrepStmt, log.argValues, log.argCnt);
 											replicaUpdatePrepStmt.executeUpdate();
 										}
-										bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber, log.txnChangeNumber);
-										replicaConn.commit();
-										this.lastConsolidatedCommitIdOnReplica = log.commitId;
-										this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
-										replicaConn.setAutoCommit(false);
 									} else if (log.opType == OperType.DELETE) {
 										//Flush any pending INSERT batch
 										if (currentInsertBatchCountOnReplica > 0) {
@@ -588,15 +670,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 												replicaInsertPrepStmt = null;
 											}
 											currentInsertBatchCountOnReplica = 0;
-											if (lastLog != null) {
-												bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber);
-											}
-											replicaConn.commit();
-											replicaConn.setAutoCommit(false);
-											if (lastLog != null) {
-												this.lastConsolidatedCommitIdOnReplica = lastLog.commitId;
-												this.lastConsolidatedChangeNumberOnReplica = lastLog.changeNumber;
-											}
 										}
 										//Reset insert prepared statement as we are switching to DELETE
 										if (replicaInsertPrepStmt != null) {
@@ -608,11 +681,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 											bindReplicaDeletePrepStmt(srcTable, replicaDeletePrepStmt, log.argValues);
 											replicaDeletePrepStmt.executeUpdate();
 										}
-										bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber, log.txnChangeNumber);
-										replicaConn.commit();
-										this.lastConsolidatedCommitIdOnReplica = log.commitId;
-										this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
-										replicaConn.setAutoCommit(false);
 									}
 								}
 							} else if (log.ddlInfo != null) {
@@ -623,16 +691,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 										replicaInsertPrepStmt = null;
 									}
 									currentInsertBatchCountOnReplica = 0;
-									//Execute checkpoint UPDATE
-									if (lastLog != null) {
-										bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber);
-									}
-									replicaConn.commit();
-									replicaConn.setAutoCommit(false);
-									if (lastLog != null) {
-										this.lastConsolidatedCommitIdOnReplica = lastLog.commitId;
-										this.lastConsolidatedChangeNumberOnReplica = lastLog.changeNumber;
-									}
 								}
 								//Reset prepared statement as schema may change as a result of DDL below.
 								if (replicaInsertPrepStmt != null) {
@@ -649,11 +707,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 							//Apply on on-disk replica only when enabled
 							if (replicaConn != null) {
 								executeDDLOnReplica(replicaConn, srcTable, log.opType, log.sql, log.ddlInfo);
-								bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber, log.txnChangeNumber);
-								replicaConn.commit();
-								this.lastConsolidatedCommitIdOnReplica = log.commitId;
-								this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
-								replicaConn.setAutoCommit(false);
 							}
 							} else {
 								//throw new SyncLiteException("Invalid event log received : " + log.sql);
@@ -673,18 +726,18 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 					}
 					
 					//Skip log based on lastConsolidated commitid and changenumber
-					if ((log.commitId > this.lastConsolidatedCommitId) || ((log.commitId == this.lastConsolidatedCommitId) && (log.changeNumber > this.lastConsolidatedChangeNumber)) || ((log.commitId == this.lastConsolidatedCommitId) && (log.changeNumber == this.lastConsolidatedChangeNumber) && (log.txnChangeNumber > this.lastConsolidatedTxnChangeNumber))) {
+					if ((log.commitId > this.lastConsolidatedCommitId) || ((log.commitId == this.lastConsolidatedCommitId) && (log.changeNumber > this.lastConsolidatedChangeNumber))) {
 						//
 						//Check if prevOper or prevTable is different than this log's oper and table..
 						//If yes then flush the existing batches
 						//
 						device.tracer.info("DIAG: cn=" + log.changeNumber + " commitId=" + log.commitId + " opType=" + log.opType + " table=" + log.tableName + " prevOp=" + (lastLog != null ? lastLog.opType : "null") + " insertCnt=" + currentInsertBatchCount + " deleteCnt=" + currentDeleteBatchCount + " argCnt=" + log.argCnt + " args=" + log.argValues);
-						if (((prevTableId != null) && (prevTableId != tableId)) || ((lastLog != null) && (lastLog.opType != log.opType))) {
+						if (false && (((prevTableId != null) && (prevTableId != tableId)) || ((lastLog != null) && (lastLog.opType != log.opType)))) {
 							if ((currentInsertBatchCount > 0) || (currentUpdateBatchCount > 0 ) || (currentDeleteBatchCount > 0)) {				
 								//Execute checkpoint UPDATE
 								device.tracer.info("DIAG: FLUSH BLOCK entered. insertCnt=" + currentInsertBatchCount + " deleteCnt=" + currentDeleteBatchCount + " updateCnt=" + currentUpdateBatchCount);
 								if (lastLog != null) {
-									updateDstCheckpointIfNeeded(dstExecutor, lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber, beforeValues, afterValues);
+									updateDstCheckpointIfNeeded(dstExecutor, lastLog.commitId, lastLog.changeNumber, beforeValues, afterValues);
 								}
 								beforeValues.clear();
 								afterValues.clear();
@@ -692,7 +745,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								commitDstTran(dstExecutor);
 
 								if (lastLog != null) {
-									updateLocalCheckpointIfNeeded(lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber);
+									updateLocalCheckpointIfNeeded(lastLog.commitId, lastLog.changeNumber);
 								}
 
 								if (currentInsertBatchCount > 0) {
@@ -712,7 +765,6 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								if (lastLog != null) {
 									this.lastConsolidatedCommitId = lastLog.commitId;
 									this.lastConsolidatedChangeNumber = lastLog.changeNumber;
-									this.lastConsolidatedTxnChangeNumber = lastLog.txnChangeNumber;
 								}
 								emptyTxn = true;
 								dstExecutor.beginTran();
@@ -802,22 +854,21 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								++currentInsertBatchCount;
 								emptyTxn = false;
 								++currentEventLogSegmentOperCnt;
-								if (currentInsertBatchCount == insertBatchSize) {						
+								if (false && currentInsertBatchCount == insertBatchSize) {
 									//Execute checkpoint UPDATE
 									
-									updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, log.txnChangeNumber, beforeValues, afterValues);
+									updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
 									beforeValues.clear();
 									afterValues.clear();
 
 									commitDstTran(dstExecutor);
 									
-									updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
+									updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
 									
 									device.tracer.info("Committed insert/upsert/replace batch of size : " + currentInsertBatchCount);
 									
 									this.lastConsolidatedCommitId = log.commitId;
 									this.lastConsolidatedChangeNumber = log.changeNumber;
-									this.lastConsolidatedTxnChangeNumber = log.txnChangeNumber;
 									
 									++currentEventLogSegmentTxnCnt;
 									++consolidatedTxnCount;
@@ -833,17 +884,16 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								if (log.argCnt == 0 && log.sql != null && !log.sql.isBlank()) {
 									UpdateIfPredicate sqlStmt = new UpdateIfPredicate(srcTable, log.sql);
 									dstExecutor.execute(sqlStmt.map(tableMapper));
-									updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, log.txnChangeNumber, beforeValues, afterValues);
+									updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
 									beforeValues.clear();
 									afterValues.clear();
 									commitDstTran(dstExecutor);
-									updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
+									updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
 									emptyTxn = true;
 									++currentEventLogSegmentTxnCnt;
 									++consolidatedTxnCount;
 									this.lastConsolidatedCommitId = log.commitId;
 									this.lastConsolidatedChangeNumber = log.changeNumber;
-									this.lastConsolidatedTxnChangeNumber = log.txnChangeNumber;
 									dstExecutor.beginTran();
 									++currentEventLogSegmentOperCnt;
 								} else {
@@ -930,11 +980,17 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 									int numSetCols = resolvedSetColumns.size();
 									for (int i = 0; i < numSetCols; ++i) {
 										Column col = resolvedSetColumns.get(i);
+										if (!ConfLoader.getInstance().isAllowedColumn(dstIndex, log.tableName, col.column)) {
+											continue;
+										}
 										Object colAfterVal = valueMapper.mapValue(tableId, col, log.argValues.get(i));
 										afterValues.add(colAfterVal);
 									}
 									for (int i = 0; i < resolvedWhereColumns.size(); ++i) {
 										Column col = resolvedWhereColumns.get(i);
+										if (!ConfLoader.getInstance().isAllowedColumn(dstIndex, log.tableName, col.column)) {
+											continue;
+										}
 										Object colBeforeVal = valueMapper.mapValue(tableId, col, log.argValues.get(numSetCols + i));
 										beforeValues.add(colBeforeVal);
 									}
@@ -988,22 +1044,21 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								++currentUpdateBatchCount;
 								emptyTxn = false;
 								++currentEventLogSegmentOperCnt;
-								if (currentUpdateBatchCount == updateBatchSize) {						
+								if (false && currentUpdateBatchCount == updateBatchSize) {
 									//Execute checkpoint UPDATE
 									
-									updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, lastLog.txnChangeNumber, beforeValues, afterValues);
+									updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
 									beforeValues.clear();
 									afterValues.clear();
 
 									commitDstTran(dstExecutor);
 									
-									updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
+									updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
 									
 									device.tracer.info("Committed update batch of size : " + currentInsertBatchCount);
 									
 									this.lastConsolidatedCommitId = log.commitId;
 									this.lastConsolidatedChangeNumber = log.changeNumber;
-									this.lastConsolidatedTxnChangeNumber = log.txnChangeNumber;
 									
 									++currentEventLogSegmentTxnCnt;
 									++consolidatedTxnCount;
@@ -1123,22 +1178,21 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								++currentDeleteBatchCount;
 								emptyTxn = false;
 								++currentEventLogSegmentOperCnt;
-								if (currentDeleteBatchCount == deleteBatchSize) {						
+								if (false && currentDeleteBatchCount == deleteBatchSize) {
 									//Execute checkpoint UPDATE
 									
-									updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, log.txnChangeNumber, beforeValues, afterValues);
+									updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
 									beforeValues.clear();
 									afterValues.clear();
 
 									commitDstTran(dstExecutor);
 									
-									updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
+									updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
 									
 									device.tracer.info("Committed delete batch of size : " + currentInsertBatchCount);
 									
 									this.lastConsolidatedCommitId = log.commitId;
 									this.lastConsolidatedChangeNumber = log.changeNumber;
-									this.lastConsolidatedTxnChangeNumber = log.txnChangeNumber;
 
 									++currentEventLogSegmentTxnCnt;
 									++consolidatedTxnCount;
@@ -1176,27 +1230,26 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								}
 								
 								dstExecutor.execute(sqlStmt.map(tableMapper));
-								updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, log.txnChangeNumber, beforeValues, afterValues);
+								updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
 								beforeValues.clear();
 								afterValues.clear();
 								
 								commitDstTran(dstExecutor);
-								updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
+								updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
 								emptyTxn = true;
 								++currentEventLogSegmentTxnCnt;
 								++consolidatedTxnCount;
 								
 								this.lastConsolidatedCommitId = log.commitId;
 								this.lastConsolidatedChangeNumber = log.changeNumber;
-								this.lastConsolidatedTxnChangeNumber = log.txnChangeNumber;
 								
 								dstExecutor.beginTran();
 								++currentEventLogSegmentOperCnt;
 							} else if (log.opType == OperType.SHUTDOWN){ 
 								//FINISH REPLICATION received. terminate the job
-								updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, log.txnChangeNumber, beforeValues, afterValues);
+								updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
 								commitDstTran(dstExecutor);
-								updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
+								updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
 								SyncDriver.getInstance().shutdownJob();
 							} else if (log.opType == OperType.LOAD) {
 								//TODO
@@ -1241,15 +1294,14 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								} else {
 									opStats.put(OperType.INSERT, insertOpCnt + loadedRecordCount);
 								}										
-								updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, log.txnChangeNumber, beforeValues, afterValues);
+								updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
 								beforeValues.clear();
 								afterValues.clear();
 								commitDstTran(dstExecutor);
-								updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
+								updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
 								
 								this.lastConsolidatedCommitId = log.commitId;
 								this.lastConsolidatedChangeNumber = log.changeNumber;
-								this.lastConsolidatedTxnChangeNumber = log.txnChangeNumber;
 								
 								emptyTxn = true;
 								++currentEventLogSegmentTxnCnt;
@@ -1438,23 +1490,10 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 							tblMappedInsertOpers.remove(srcTable.id);
 							tblMappedUpdateOpers.remove(srcTable.id);
 							tblMappedDeleteOpers.remove(srcTable.id);
-							updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, log.txnChangeNumber, beforeValues, afterValues);
-							beforeValues.clear();
-							afterValues.clear();
-							commitDstTran(dstExecutor);
-							updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber, log.txnChangeNumber);
-							emptyTxn = true;
+							emptyTxn = false;
 							if (!ddlIgnoredInConsolidation) {
-								++currentEventLogSegmentTxnCnt;
-								++consolidatedTxnCount;
 								++currentEventLogSegmentOperCnt;
 							}
-							
-							this.lastConsolidatedCommitId = log.commitId;
-							this.lastConsolidatedChangeNumber = log.changeNumber;
-							this.lastConsolidatedTxnChangeNumber = log.txnChangeNumber;
-							
-							dstExecutor.beginTran();
 							} else {
 							//throw new SyncLiteException("Invalid event log received : " + log.sql);
 							//Ignore invalid event logs
@@ -1465,50 +1504,9 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 					log = reader.readNextRecord();
 				}
 
-				if (!emptyTxn) {
-					//execute and commit the last non empty transaction on replica
-					if (replicaConn != null && currentInsertBatchCountOnReplica > 0) {
-						if (replicaInsertPrepStmt != null) {
-							replicaInsertPrepStmt.executeBatch();
-							replicaInsertPrepStmt.close();
-							replicaInsertPrepStmt = null;
-						}
-						bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber);
-						replicaConn.commit();
-						replicaConn.setAutoCommit(false);
-						this.lastConsolidatedCommitIdOnReplica = lastLog.commitId;
-						this.lastConsolidatedChangeNumberOnReplica = lastLog.changeNumber;
-						this.lastConsolidatedTxnChangeNumberOnReplica = lastLog.txnChangeNumber;
-					}
-
-					if ((currentInsertBatchCount > 0) || (currentUpdateBatchCount > 0 ) || (currentDeleteBatchCount > 0)) {				
-						//Execute checkpoint UPDATE on dst if there was some log seen and commit the non empty txn
-						if (lastLog != null) {
-							updateDstCheckpointIfNeeded(dstExecutor, lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber, beforeValues, afterValues);
-						}
-						commitDstTran(dstExecutor);
-						if (lastLog != null) {
-							updateLocalCheckpointIfNeeded(lastLog.commitId, lastLog.changeNumber, lastLog.txnChangeNumber);
-						}
-						
-						if (currentInsertBatchCount > 0) {
-							device.tracer.info("Committed insert/upsert/replace batch of size : " + currentInsertBatchCount);
-						}
-						if (currentUpdateBatchCount > 0) {
-							device.tracer.info("Committed update batch of size : " + currentUpdateBatchCount);
-						}
-						if (currentDeleteBatchCount > 0 ) {
-							device.tracer.info("Committed delete batch of size : " + currentDeleteBatchCount);
-						}
-						++currentEventLogSegmentTxnCnt;
-						++consolidatedTxnCount;
-						if (lastLog != null) {
-							this.lastConsolidatedCommitId = lastLog.commitId;
-							this.lastConsolidatedChangeNumber = lastLog.changeNumber;
-							this.lastConsolidatedTxnChangeNumber = lastLog.txnChangeNumber;
-						}
-					}
-				}							
+				if (inTransaction || !emptyTxn) {
+					throw new SyncLiteException("Invalid event stream, segment ended before COMMIT for an open transaction : " + currentEventLogSegment);
+				}
 			} finally {
 				if (replicaConn != null) {
 					try { replicaConn.close(); } catch (Exception ignore) {}
@@ -1527,9 +1525,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			consolidatorMetadataMgr.updateLastConsolidatedCDCLogSegmentSeqNum(currentEventLogSegment.sequenceNumber);
 
 			this.lastConsolidatedChangeNumber = -1;
-			this.lastConsolidatedTxnChangeNumber = -1;
 			this.lastConsolidatedChangeNumberOnReplica = -1;
-			this.lastConsolidatedTxnChangeNumberOnReplica = -1;
 
 			device.tracer.debug("Consolidated " + currentEventLogSegmentOperCnt + " operations from segment : " + this.currentEventLogSegment.path);
 			return currentEventLogSegmentOperCnt;
@@ -1620,17 +1616,16 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 		pStmt.addBatch();
 	}
 
-	private void bindAndExecuteReplicaCheckpointUpdatePrepStmt(PreparedStatement pstmt, long commitId, long changeNumber, long txnChangeNumber) throws SQLException {
+	private void bindAndExecuteReplicaCheckpointUpdatePrepStmt(PreparedStatement pstmt, long commitId, long changeNumber) throws SQLException {
 		pstmt.clearBatch();
 		pstmt.setLong(1, commitId);
 		pstmt.setLong(2, changeNumber);
-		pstmt.setLong(3, txnChangeNumber);
 		if (this.currentEventLogSegment == null) {
-			pstmt.setLong(4, 0);
+			pstmt.setLong(3, 0);
 		} else {
-			pstmt.setLong(4, this.currentEventLogSegment.sequenceNumber);
+			pstmt.setLong(3, this.currentEventLogSegment.sequenceNumber);
 		}
-		pstmt.setLong(5, this.consolidatedTxnCount + 1); //+1 since this value will be incremented only after applying the txn on dst
+		pstmt.setLong(4, this.consolidatedTxnCount + 1); //+1 since this value will be incremented only after applying the txn on dst
 		pstmt.execute();
 	}
 

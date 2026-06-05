@@ -1526,12 +1526,11 @@ public abstract class JDBCExecutor extends SQLExecutor {
 		try (Statement stmt = conn.createStatement()) {
 			try (ResultSet rs = stmt.executeQuery(sqlGenerator.getCheckpointTableSelectSql(deviceUUID, deviceName, dstControlTable))) {
 				if (rs.next()) {
-					CDCLogPosition logPos = new CDCLogPosition(0, -1, -1, 0, 0);
+					CDCLogPosition logPos = new CDCLogPosition(0, -1, 0, 0);
 					logPos.commitId = rs.getLong(1);
 					logPos.changeNumber = rs.getLong(2);
-					logPos.txnChangeNumber = rs.getLong(3);
-					logPos.logSegmentSequenceNumber = rs.getLong(4);
-					logPos.txnCount = rs.getLong(5);
+					logPos.logSegmentSequenceNumber = rs.getLong(3);
+					logPos.txnCount = rs.getLong(4);
 					return logPos;
 				}
 				throw new DstExecutionException("No checkpoint log position found in the destination");
@@ -1560,18 +1559,17 @@ public abstract class JDBCExecutor extends SQLExecutor {
 
 	@Override
 	public long readInitializationStatus(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
-		String sql = "SELECT initialization_status FROM synclite_device_status WHERE device_uuid = '"
-				+ deviceUUID.replace("'", "''") + "' AND device_name = '"
-				+ deviceName.replace("'", "''") + "' AND dst_index = " + dstIdx;
-		try (Statement stmt = conn.createStatement();
-				ResultSet rs = stmt.executeQuery(sql)) {
+		String uuid = deviceUUID.replace("'", "''");
+		String dname = deviceName.replace("'", "''");
+		String sql = "SELECT initialization_status FROM synclite_metadata WHERE synclite_device_id = '"
+				+ uuid + "' AND synclite_device_name = '" + dname + "' ORDER BY commit_id DESC LIMIT 1";
+		try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
 			if (rs.next()) {
 				return rs.getLong(1);
 			}
 			return -1;
 		} catch (SQLException e) {
-			// Table may not exist yet on a fresh host
-			return -1;
+			throw new DstExecutionException("Failed to read initialization status from destination : " + e.getMessage(), e);
 		}
 	}
 

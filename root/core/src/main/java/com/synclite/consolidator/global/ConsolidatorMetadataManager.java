@@ -60,17 +60,17 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     private volatile long lastConsolidatedCDCLogSegmentSeqNumber = -1;
     private int dstIndex;
 
-        private static final String createDstMetadataTblSql =
+    private static final String createDstMetadataTblSql =
             "CREATE TABLE IF NOT EXISTS synclite_consolidator_metadata(" +
-            "device_uuid TEXT NOT NULL, device_name TEXT NOT NULL, dst_index INTEGER NOT NULL, " +
-            "key TEXT NOT NULL, value TEXT, " +
-            "PRIMARY KEY(device_uuid, device_name, dst_index, key))";
+            "device_uuid VARCHAR(64) NOT NULL, device_name VARCHAR(255) NOT NULL, dst_index INTEGER NOT NULL, " +
+            "prop_key VARCHAR(255) NOT NULL, prop_value TEXT, " +
+            "PRIMARY KEY(device_uuid, device_name, dst_index, prop_key))";
 
     private static final String createDstTableMetadataTblSql =
             "CREATE TABLE IF NOT EXISTS synclite_consolidator_table_metadata(" +
-            "device_uuid VARCHAR(36) NOT NULL, device_name VARCHAR(255) NOT NULL, dst_index INTEGER NOT NULL, " +
-            "database_name VARCHAR(255) NOT NULL, table_name VARCHAR(255) NOT NULL, key TEXT NOT NULL, value TEXT, " +
-            "PRIMARY KEY(device_uuid, device_name, dst_index, database_name, table_name, key))";
+            "device_uuid VARCHAR(64) NOT NULL, device_name VARCHAR(255) NOT NULL, dst_index INTEGER NOT NULL, " +
+            "database_name VARCHAR(255) NOT NULL, table_name VARCHAR(255) NOT NULL, prop_key VARCHAR(255) NOT NULL, prop_value TEXT, " +
+            "PRIMARY KEY(device_uuid, device_name, dst_index, database_name, table_name, prop_key))";
 
     protected ConsolidatorMetadataManager(Path metadataFilePath, Device device, int dstIndex) throws SQLException {
         super(metadataFilePath);
@@ -104,7 +104,7 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         // DESTINATION mode: read from destination
         try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
             ensureDstTableMetadataTable(conn);
-            String sql = "SELECT value FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND database_name = ? AND table_name = ? AND key = ?";
+            String sql = "SELECT prop_value FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND database_name = ? AND table_name = ? AND prop_key = ?";
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setString(1, this.device.getDeviceUUID());
                 stmt.setString(2, this.device.getDeviceName());
@@ -203,9 +203,9 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             conn.setAutoCommit(false);
             ensureDstTableMetadataTable(conn);
             try (PreparedStatement deleteStmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND database_name = ? AND table_name = ? AND key = ?");
+                    "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND database_name = ? AND table_name = ? AND prop_key = ?");
                  PreparedStatement insertStmt = conn.prepareStatement(
-                    "INSERT INTO synclite_consolidator_table_metadata(device_uuid, device_name, dst_index, database_name, table_name, key, value) VALUES(?, ?, ?, ?, ?, ?, ?)")) {
+                    "INSERT INTO synclite_consolidator_table_metadata(device_uuid, device_name, dst_index, database_name, table_name, prop_key, prop_value) VALUES(?, ?, ?, ?, ?, ?, ?)")) {
                 deleteStmt.setString(1, this.device.getDeviceUUID());
                 deleteStmt.setString(2, this.device.getDeviceName());
                 deleteStmt.setInt(3, this.dstIndex);
@@ -347,32 +347,21 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         }
     }
 
-    private String getEscapedDeviceUUID() {
-        return this.device.getDeviceUUID().replace("'", "''");
-    }
-
-    private String getEscapedDeviceName() {
-        return this.device.getDeviceName().replace("'", "''");
-    }
-
     @Override
     public void upsertProperties(HashMap<String, Object> values) throws SQLException {
         if (!isDestinationMetadataMode()) {
             super.upsertProperties(values);
             return;
         }
-
         try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
             conn.setAutoCommit(false);
             ensureDstMetadataTable(conn);
-
             try (PreparedStatement deleteStmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND key = ?");
+                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND prop_key = ?");
                  PreparedStatement insertStmt = conn.prepareStatement(
-                    "INSERT INTO synclite_consolidator_metadata(device_uuid, device_name, dst_index, key, value) VALUES(?, ?, ?, ?, ?)")) {
+                    "INSERT INTO synclite_consolidator_metadata(device_uuid, device_name, dst_index, prop_key, prop_value) VALUES(?, ?, ?, ?, ?)")) {
                 for (Map.Entry<String, Object> entry : values.entrySet()) {
                     String val = entry.getValue() == null ? null : entry.getValue().toString();
-
                     deleteStmt.setString(1, this.device.getDeviceUUID());
                     deleteStmt.setString(2, this.device.getDeviceName());
                     deleteStmt.setInt(3, this.dstIndex);
@@ -401,15 +390,13 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             super.upsertProperty(key, value);
             return;
         }
-
         try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
             conn.setAutoCommit(false);
             ensureDstMetadataTable(conn);
-
             try (PreparedStatement deleteStmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND key = ?");
+                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND prop_key = ?");
                  PreparedStatement insertStmt = conn.prepareStatement(
-                    "INSERT INTO synclite_consolidator_metadata(device_uuid, device_name, dst_index, key, value) VALUES(?, ?, ?, ?, ?)")) {
+                    "INSERT INTO synclite_consolidator_metadata(device_uuid, device_name, dst_index, prop_key, prop_value) VALUES(?, ?, ?, ?, ?)")) {
                 deleteStmt.setString(1, this.device.getDeviceUUID());
                 deleteStmt.setString(2, this.device.getDeviceName());
                 deleteStmt.setInt(3, this.dstIndex);
@@ -423,7 +410,6 @@ public class ConsolidatorMetadataManager extends MetadataManager {
                 insertStmt.setString(5, value == null ? null : value.toString());
                 insertStmt.execute();
             }
-
             conn.commit();
         } catch (DstExecutionException e) {
             throw new SQLException("Failed to connect to destination for consolidator metadata persistence", e);
@@ -436,20 +422,17 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             super.deleteProperty(key);
             return;
         }
-
         try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
             conn.setAutoCommit(false);
             ensureDstMetadataTable(conn);
-
             try (PreparedStatement deleteStmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND key = ?")) {
+                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND prop_key = ?")) {
                 deleteStmt.setString(1, this.device.getDeviceUUID());
                 deleteStmt.setString(2, this.device.getDeviceName());
                 deleteStmt.setInt(3, this.dstIndex);
                 deleteStmt.setString(4, key);
                 deleteStmt.execute();
             }
-
             conn.commit();
         } catch (DstExecutionException e) {
             throw new SQLException("Failed to connect to destination for consolidator metadata persistence", e);
@@ -461,10 +444,9 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         if (!isDestinationMetadataMode()) {
             return super.getStringProperty(key);
         }
-
         try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
             ensureDstMetadataTable(conn);
-            String sql = "SELECT value FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND key = ?";
+            String sql = "SELECT prop_value FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ? AND prop_key = ?";
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setString(1, this.device.getDeviceUUID());
                 stmt.setString(2, this.device.getDeviceName());
@@ -523,21 +505,21 @@ public class ConsolidatorMetadataManager extends MetadataManager {
                     stmt.execute("DELETE FROM table_metadata;");
                 }
             }
-        } else {
-            try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-                conn.setAutoCommit(false);
-                ensureDstTableMetadataTable(conn);
-                try (PreparedStatement stmt = conn.prepareStatement(
-                        "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ?")) {
-                    stmt.setString(1, this.device.getDeviceUUID());
-                    stmt.setString(2, this.device.getDeviceName());
-                    stmt.setInt(3, this.dstIndex);
-                    stmt.execute();
-                }
-                conn.commit();
-            } catch (DstExecutionException e) {
-                throw new SQLException("Failed to connect to destination to reset table metadata", e);
+            return;
+        }
+        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
+            conn.setAutoCommit(false);
+            ensureDstTableMetadataTable(conn);
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND dst_index = ?")) {
+                stmt.setString(1, this.device.getDeviceUUID());
+                stmt.setString(2, this.device.getDeviceName());
+                stmt.setInt(3, this.dstIndex);
+                stmt.execute();
             }
+            conn.commit();
+        } catch (DstExecutionException e) {
+            throw new SQLException("Failed to connect to destination to reset table metadata", e);
         }
     }
     
@@ -688,21 +670,22 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
             conn.setAutoCommit(false);
             try (Statement stmt = conn.createStatement()) {
-                stmt.execute(SyncLiteConsolidatorInfo.getCreateDeviceStatusTableSql());
+                stmt.execute("CREATE TABLE IF NOT EXISTS synclite_metadata("
+                        + "synclite_device_id TEXT NOT NULL, "
+                        + "synclite_device_name TEXT NOT NULL, "
+                        + "synclite_update_timestamp TEXT, "
+                        + "commit_id LONG NOT NULL, "
+                        + "cdc_change_number LONG NOT NULL, "
+                        + "cdc_log_segment_sequence_number LONG NOT NULL, "
+                        + "initialization_status INTEGER NOT NULL DEFAULT 0, "
+                        + "txn_count LONG NOT NULL, "
+                        + "PRIMARY KEY(synclite_device_id, synclite_device_name, commit_id))");
             }
-            try (PreparedStatement deleteStmt = conn.prepareStatement(
-                    "DELETE FROM synclite_device_status WHERE device_uuid = ? AND device_name = ? AND dst_index = ?")) {
-                deleteStmt.setString(1, this.device.getDeviceUUID());
-                deleteStmt.setString(2, this.device.getDeviceName());
-                deleteStmt.setInt(3, this.dstIndex);
-                deleteStmt.execute();
-            }
-            try (PreparedStatement insertStmt = conn.prepareStatement(
-                    "INSERT INTO synclite_device_status(device_uuid, device_name, dst_index, initialization_status) VALUES(?, ?, ?, 0)")) {
-                insertStmt.setString(1, this.device.getDeviceUUID());
-                insertStmt.setString(2, this.device.getDeviceName());
-                insertStmt.setInt(3, this.dstIndex);
-                insertStmt.execute();
+            try (PreparedStatement updateStmt = conn.prepareStatement(
+                    "UPDATE synclite_metadata SET initialization_status = 0 WHERE synclite_device_id = ? AND synclite_device_name = ?")) {
+                updateStmt.setString(1, this.device.getDeviceUUID());
+                updateStmt.setString(2, this.device.getDeviceName());
+                updateStmt.execute();
             }
             conn.commit();
         } catch (DstExecutionException e) {

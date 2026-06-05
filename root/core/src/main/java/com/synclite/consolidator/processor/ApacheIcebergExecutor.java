@@ -596,12 +596,11 @@ public class ApacheIcebergExecutor extends JDBCExecutor {
 		try {
 			Dataset<Row> rs = spark.sql(sqlGenerator.getCheckpointTableSelectSql(deviceUUID, deviceName, dstControlTable));
 			for (Row row : rs.collectAsList()) {
-				CDCLogPosition logPos = new CDCLogPosition(0, -1, -1, 0, 0);
+				CDCLogPosition logPos = new CDCLogPosition(0, -1, 0, 0);
 				logPos.commitId = row.getLong(0);
 				logPos.changeNumber = row.getLong(1);
-				logPos.txnChangeNumber = row.getLong(2);
-				logPos.logSegmentSequenceNumber = row.getLong(3);
-				logPos.txnCount = row.getLong(4);
+				logPos.logSegmentSequenceNumber = row.getLong(2);
+				logPos.txnCount = row.getLong(3);
 				return logPos;
 			}
 			throw new DstExecutionException("No checkpoint log position found in the destination");

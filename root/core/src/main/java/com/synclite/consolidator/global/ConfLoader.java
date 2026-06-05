@@ -406,7 +406,13 @@ public class ConfLoader {
 		if (dstColumnFilterMapperRules[dstIndex] != null) {
 			if (dstColumnFilterMapperRules[dstIndex].get(tableName.toUpperCase()) != null) {
 				rule = dstColumnFilterMapperRules[dstIndex].get(tableName.toUpperCase()).get(columnName.toUpperCase());
-			} 
+			} else {
+				// Table has no filter entries at all: mirror isAllowedColumn,
+				// which treats this as "all columns allowed". Without this the
+				// two helpers disagree and TableMapper.mapColumn receives a
+				// null name -> NPE in Column.checkSystemColumn.
+				return columnName;
+			}
 		}
 		if (rule == null) {
 			//unspecified column in the rules

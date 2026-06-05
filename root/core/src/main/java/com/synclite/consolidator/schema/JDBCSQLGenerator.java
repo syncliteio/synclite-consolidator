@@ -477,7 +477,7 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
 
     @Override
     public String getCheckpointTableSelectSql(String deviceUUID, String deviceName, ConsolidatorDstTable dstControlTable) {
-        String sql = "SELECT commit_id, cdc_change_number, cdc_txn_change_number, cdc_log_segment_sequence_number, txn_count FROM " + getTableNameSQL(dstControlTable.id);
+        String sql = "SELECT commit_id, cdc_change_number, cdc_log_segment_sequence_number, txn_count FROM " + getTableNameSQL(dstControlTable.id);
         if (dstControlTable.hasColumn("synclite_device_id")) {
             sql += " WHERE synclite_device_id = '" + deviceUUID + "'";
         }

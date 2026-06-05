@@ -668,6 +668,7 @@ public class SyncDriver implements Runnable{
 	}
 
 	private final void doSyncInternal(Device device) {
+		boolean processingLockAcquired = false;
 		try {
 			if (device != null) {
 				if (!device.aquireProcessingLock()) {
@@ -675,6 +676,7 @@ public class SyncDriver implements Runnable{
 					addDeviceTask(device);
 					return;
 				}
+				processingLockAcquired = true;
 				//driverLogger.debug(Thread.currentThread().getName() + " : Processing device : " + device);
 				if ((device.getStatus() == DeviceStatus.SYNCING) ||
 						(device.getStatus() == DeviceStatus.SYNCING_FAILED) ||
@@ -730,7 +732,7 @@ public class SyncDriver implements Runnable{
 				device.tracer.error("Failed updating device status for device : " + device + " with exception : " + e1);
 			}
 		} finally {
-			if (device != null) {
+			if ((device != null) && processingLockAcquired) {
 				device.releaseProcessingLock();
 			}
 		}
@@ -740,11 +742,16 @@ public class SyncDriver implements Runnable{
 		while(! Thread.currentThread().isInterrupted()) {
 			try {
 				for (Device device : Set.copyOf(devices)) {
+					boolean processingLockAcquired = false;
 					try {
 						if ((device.getStatus() == DeviceStatus.SYNCING) ||
 								(device.getStatus() == DeviceStatus.SYNCING_FAILED) ||
 								(device.getStatus() == DeviceStatus.REGISTERED))
 						{
+							if (!device.aquireProcessingLock()) {
+								continue;
+							}
+							processingLockAcquired = true;
 							if (device.getAllDstIndexes().contains(dstIndex)) {
 								for (int idx : device.getAllDstIndexes()) {
 									DeviceProcessor syncer = DeviceProcessor.getInstance(device, idx);
@@ -764,6 +771,10 @@ public class SyncDriver implements Runnable{
 							Monitor.getInstance().setFailedDeviceCnt(this.failedDevices.size());
 						} catch (Exception e1) {
 							device.tracer.error("Failed updating device status for device : " + device + " with exception : " + e1);
+						}
+					} finally {
+						if (processingLockAcquired) {
+							device.releaseProcessingLock();
 						}
 					}
 				}

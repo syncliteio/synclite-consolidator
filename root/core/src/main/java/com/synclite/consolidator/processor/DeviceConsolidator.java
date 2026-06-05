@@ -60,10 +60,12 @@ import com.synclite.consolidator.schema.TableMapper;
 import com.synclite.consolidator.schema.ValueMapper;
 import com.synclite.consolidator.watchdog.Monitor;
 public class DeviceConsolidator extends DeviceSyncProcessor {
+	private static final String REPLAY_CHECKPOINT_TABLE = "replay_checkpoint";
 
 	// ── Consolidator-specific fields ──────────────────────────────────────────
 	private CDCLogPosition restartCDCLogPosition;
 	private CDCLogSegment currentCDCLogSegment;
+	private boolean dstCheckpointRowMissing;
 
 	@Override
 	protected long getCurrentLogSegmentSequenceNumber() {
@@ -74,6 +76,8 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 		super(device, dstIndex); // DeviceSyncProcessor sets up shared infrastructure + ensureWorkDirExists + initInMemoryReplica
 		this.restartCDCLogPosition = null;
 		this.currentCDCLogSegment = null;
+		this.dstCheckpointRowMissing = false;
+		ConfLoader.getInstance().blockTable(dstIndex, REPLAY_CHECKPOINT_TABLE);
 		initCheckpointTableIfNeeded();
 		device.updateDeviceStatus(DeviceStatus.SYNCING, "");
 	}
@@ -135,7 +139,6 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 				this.restartCDCLogPosition = new CDCLogPosition(
 						Long.valueOf(checkpointInfo.get("commit_id").toString()),
 						Long.valueOf(checkpointInfo.get("cdc_change_number").toString()),
-						Long.valueOf(checkpointInfo.get("cdc_txn_change_number").toString()),
 						Long.valueOf(checkpointInfo.get("cdc_log_segment_sequence_number").toString()),
 						Long.valueOf(checkpointInfo.get("txn_count").toString()));
 			}
@@ -144,8 +147,18 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 			for (long i = 0; i < ConfLoader.getInstance().getDstOperRetryCount(dstIndex); ++i) {
 				try {
 					try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, this.dstIndex, device.tracer)) {
-						this.restartCDCLogPosition = dstExecutor.readCDCLogPosition(
-								device.getDeviceUUID(), device.getDeviceName(), systemTableMapper.mapTable(checkpointTable));
+						ensureDstMetadataInitStatusColumn(dstExecutor);
+						try {
+							this.restartCDCLogPosition = dstExecutor.readCDCLogPosition(
+									device.getDeviceUUID(), device.getDeviceName(), systemTableMapper.mapTable(checkpointTable));
+						} catch (DstExecutionException e) {
+							if (e.getMessage() != null && e.getMessage().contains("No checkpoint log position found in the destination")) {
+								this.restartCDCLogPosition = new CDCLogPosition(0, -1, 0, 0);
+								this.dstCheckpointRowMissing = true;
+							} else {
+								throw e;
+							}
+						}
 						break;
 					}
 				} catch (DstExecutionException e) {
@@ -173,6 +186,27 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 			this.consolidatedTxnCount = this.restartCDCLogPosition.txnCount;
 			device.updateLastConsolidatedCommitID(this.lastConsolidatedCommitId);
 		}
+	}
+
+	@Override
+	protected void updateDstCheckpointIfNeeded(SQLExecutor dstExecutor, long commitId,
+			long changeNumber,
+			List<Object> beforeValues, List<Object> afterValues) throws DstExecutionException, SyncLiteException {
+		if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
+			return;
+		}
+		if (this.dstCheckpointRowMissing) {
+			List<Object> checkpointValues = new ArrayList<Object>();
+			checkpointValues.add(commitId);
+			checkpointValues.add(changeNumber);
+			checkpointValues.add(getCurrentLogSegmentSequenceNumber());
+			checkpointValues.add(consolidatorMetadataMgr.getInitializationStatus());
+			checkpointValues.add(this.consolidatedTxnCount + 1);
+			dstExecutor.execute(systemTableMapper.mapOper(new Insert(checkpointTable, checkpointValues, false)));
+			this.dstCheckpointRowMissing = false;
+			return;
+		}
+		super.updateDstCheckpointIfNeeded(dstExecutor, commitId, changeNumber, beforeValues, afterValues);
 	}
 
 	@Override
@@ -379,13 +413,18 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 									if (opStats == null) {
 										opStats = new HashMap<OperType, Long>();
 										tableStats.put(tableId, opStats);
-									}										
-									Long opCnt = opStats.get(opType);
-									if (opCnt == null) {
-										opStats.put(opType, 1L);
-									} else {
-										opStats.put(opType, opCnt + 1L);
-									}										
+									}
+									boolean ddlIgnoredInConsolidation =
+											(ConfLoader.getInstance().getDstSyncMode() == DstSyncMode.CONSOLIDATION)
+											&& (opType == OperType.DROPTABLE || opType == OperType.DROPCOLUMN);
+									if (!ddlIgnoredInConsolidation) {
+										Long opCnt = opStats.get(opType);
+										if (opCnt == null) {
+											opStats.put(opType, 1L);
+										} else {
+											opStats.put(opType, opCnt + 1L);
+										}
+									}
 								} 
 
 								if (commitId < this.lastConsolidatedCommitId) {
@@ -491,22 +530,23 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 									break;
 								case COMMITTRAN:
 									// Write checkpoint atomically with user data, then commit.
-									updateDstCheckpointIfNeeded(dstExecutor, commitId, changeNumber, -1, afterValues, beforeValues);
+									updateDstCheckpointIfNeeded(dstExecutor, commitId, changeNumber, afterValues, beforeValues);
 									afterValues.clear();
 									beforeValues.clear();
 									commitDstTran(dstExecutor); // fires triggers, commits, clears currentTxnDstTables, resets idempotent flag
-									updateLocalCheckpointIfNeeded(commitId, changeNumber, -1);
+									++this.consolidatedTxnCount;
+									updateLocalCheckpointIfNeeded(commitId, changeNumber);
 									device.tracer.debug("Consolidated Txn with CommitID : " + commitId);
 									this.lastConsolidatedCommitId = commitId;
 									this.lastConsolidatedChangeNumber = changeNumber;
 									++currentCDCLogSegmentTxnCnt;
 									break;
 								case CHECKPOINTTRAN:
-									updateDstCheckpointIfNeeded(dstExecutor, commitId, changeNumber, -1, afterValues, beforeValues);
+									updateDstCheckpointIfNeeded(dstExecutor, commitId, changeNumber, afterValues, beforeValues);
 									afterValues.clear();
 									beforeValues.clear();
 									commitDstTran(dstExecutor);
-									updateLocalCheckpointIfNeeded(commitId, changeNumber, -1);
+									updateLocalCheckpointIfNeeded(commitId, changeNumber);
 									device.tracer.debug("Partially committed Txn with CommitID : " + commitId + " upto change number : " + changeNumber);
 									this.lastConsolidatedChangeNumber = changeNumber;
 									break;
@@ -721,7 +761,6 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 					}
 				}
 
-				this.consolidatedTxnCount += currentCDCLogSegmentTxnCnt;
 				//Monitor.getInstance().incrTotalCDCLogSegmentCnt(1);
 				statsCollector.updateTableAndLogStatsForLogSegment(tableStats, currentCDCLogSegment.sequenceNumber, currentCDCLogSegmentTxnCnt, currentCDCLogSegment.getSize());
 				Monitor.getInstance().registerChangedDevice(device);
