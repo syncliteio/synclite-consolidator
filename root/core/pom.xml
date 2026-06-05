@@ -226,12 +226,6 @@
 			<version>3.53.0.0</version>
 		</dependency>
 
-		<dependency>
-			<groupId>net.java.dev.jna</groupId>
-			<artifactId>jna</artifactId>
-			<version>5.14.0</version>
-		</dependency>
-
 		<!-- https://mvnrepository.com/artifact/org.postgresql/postgresql -->
 		<dependency>
 			<groupId>org.postgresql</groupId>
