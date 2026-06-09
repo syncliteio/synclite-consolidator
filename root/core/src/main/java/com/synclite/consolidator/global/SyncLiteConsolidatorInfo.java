@@ -23,25 +23,35 @@ import com.synclite.consolidator.schema.TableID;
 public class SyncLiteConsolidatorInfo {
 
     public static TableID getCheckpointTableID(String deviceUUID, String deviceName, int dstIndex) {
-        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, getSyncLiteMetadataTableName());
+        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, getSyncLiteCheckpointTableName());
     }
 
-    public static String getSyncLiteMetadataTableName() {
-    	return "synclite_metadata";
+    public static String getSyncLiteCheckpointTableName() {
+    	return "synclite_checkpoint";
     }
 
-    public static String getTableSchemaTableName() {
-    	return "synclite_table_schema";
+    /**
+     * Name of the unified per-table metadata bookkeeping table on the destination.
+     * Per-table source DDL is stored as {@code prop_key='create_sql'} rows here.
+     */
+    public static String getConsolidatorTableMetadataTableName() {
+    	return "synclite_consolidator_table_metadata";
     }
 
-    public static String getCreateTableSchemaTableSql() {
-    	return "CREATE TABLE IF NOT EXISTS synclite_table_schema("
-    		+ "device_uuid VARCHAR(36) NOT NULL, "
+    public static String getCreateConsolidatorTableMetadataTableSql() {
+    	return "CREATE TABLE IF NOT EXISTS synclite_consolidator_table_metadata("
+    		+ "device_uuid VARCHAR(64) NOT NULL, "
     		+ "device_name VARCHAR(255) NOT NULL, "
-    		+ "dst_index INTEGER NOT NULL, "
+    		+ "database_name VARCHAR(255) NOT NULL, "
     		+ "table_name VARCHAR(255) NOT NULL, "
-    		+ "create_sql TEXT, "
-    		+ "PRIMARY KEY(device_uuid, device_name, dst_index, table_name))";
+    		+ "prop_key VARCHAR(255) NOT NULL, "
+    		+ "prop_value TEXT, "
+    		+ "PRIMARY KEY(device_uuid, device_name, database_name, table_name, prop_key))";
+    }
+
+    /** Reserved {@code prop_key} value carrying the per-table CREATE SQL blob. */
+    public static String getCreateSqlPropKey() {
+    	return "create_sql";
     }
 
     public static String getMetadataFileName(int dstIndex) {

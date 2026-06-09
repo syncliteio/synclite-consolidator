@@ -36,6 +36,7 @@ import com.synclite.consolidator.exception.DstDuplicateKeyException;
 import com.synclite.consolidator.exception.DstExecutionException;
 import com.synclite.consolidator.exception.SyncLiteException;
 import com.synclite.consolidator.global.ConfLoader;
+import com.synclite.consolidator.global.MetadataRetry;
 import com.synclite.consolidator.global.DstSyncMode;
 import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
 import com.synclite.consolidator.log.CDCLogPosition;
@@ -85,7 +86,7 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 	/**
 	 * Initialises the local checkpoint table (LOCAL mode only).
 	 * In DESTINATION mode the checkpoint lives on the destination DB and needs no local setup here.
-	 * In LOCAL mode also blocks synclite_metadata from being re-created on the destination.
+	 * In LOCAL mode also blocks synclite_checkpoint from being re-created on the destination.
 	 */
 	private final void initCheckpointTableIfNeeded() throws SyncLiteException {
 		if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
@@ -100,12 +101,12 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 			} catch (SyncLiteException e) {
 				throw new SyncLiteException("Failed to initialize the checkpoint table in SyncLite consolidator metadata file : ", e);
 			}
-			// Block synclite_metadata from being created on destination in LOCAL mode
+			// Block synclite_checkpoint from being created on destination in LOCAL mode
 			ConsolidatorSrcTable replicatorCheckpointTable = ConsolidatorSrcTable.from(
 					SyncLiteConsolidatorInfo.getCheckpointTableID(device.getDeviceUUID(), device.getDeviceName(), this.dstIndex));
 			ConfLoader.getInstance().blockTable(dstIndex, replicatorCheckpointTable.id.table);
 		}
-		// DESTINATION mode: synclite_metadata lives on destination, created during snapshot consolidation
+		// DESTINATION mode: synclite_checkpoint lives on destination, created during snapshot consolidation
 	}
 
 	private final void reloadCheckpointInfo() throws SyncLiteException {
@@ -143,7 +144,7 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 						Long.valueOf(checkpointInfo.get("txn_count").toString()));
 			}
 		} else {
-			// DESTINATION mode: read checkpoint from destination synclite_metadata table
+			// DESTINATION mode: read checkpoint from destination synclite_checkpoint table
 			for (long i = 0; i < ConfLoader.getInstance().getDstOperRetryCount(dstIndex); ++i) {
 				try {
 					try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, this.dstIndex, device.tracer)) {
@@ -351,7 +352,8 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 			Path targetPath = failedLogDir.resolve(currentCDCLogSegment.path.getFileName());
 			Files.copy(currentCDCLogSegment.path, targetPath, StandardCopyOption.REPLACE_EXISTING);
 
-			consolidatorMetadataMgr.updateLastConsolidatedCDCLogSegmentSeqNum(currentCDCLogSegment.sequenceNumber);
+			MetadataRetry.retry(dstIndex, device.tracer, "updateLastConsolidatedCDCLogSegmentSeqNum",
+					() -> consolidatorMetadataMgr.updateLastConsolidatedCDCLogSegmentSeqNum(currentCDCLogSegment.sequenceNumber));
 			
 			this.lastConsolidatedChangeNumber = -1;
 			device.tracer.info("Skipped failed log segment : " + currentCDCLogSegment);
@@ -792,8 +794,10 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 
 	private final void resetSchemas() throws SyncLiteException {
 		try {
-			consolidatorMetadataMgr.resetTableMetadata();
-			consolidatorMetadataMgr.resetSchemas();
+			MetadataRetry.retry(dstIndex, device.tracer, "resetTableMetadata",
+					() -> consolidatorMetadataMgr.resetTableMetadata());
+			MetadataRetry.retry(dstIndex, device.tracer, "resetSchemas",
+					() -> consolidatorMetadataMgr.resetSchemas());
 		} catch (SQLException e) {
 			throw new SyncLiteException("Failed to reset schema and metadata tables in consolidator metadata file : " + consolidatorMetadataMgr.getMetadataFilePath());
 		}
