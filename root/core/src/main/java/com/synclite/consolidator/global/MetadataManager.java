@@ -27,6 +27,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MetadataManager {
+	/** Bump when on-disk metadata layout/semantics change in a non-back-compatible way.
+	 *  Stored in the `metadata` table under {@link #SYNCLITE_METADATA_VERSION_KEY} so a
+	 *  future consolidator version can detect an older store and run a migration routine. */
+	public static final long SYNCLITE_METADATA_VERSION = 1L;
+	public static final String SYNCLITE_METADATA_VERSION_KEY = "synclite_metadata_version";
+
 	protected Path metadataFilePath;
 	protected static final ConcurrentHashMap<Path, MetadataManager> metadataMgrs= new ConcurrentHashMap<Path, MetadataManager>();
 
@@ -43,8 +49,20 @@ public class MetadataManager {
 		try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
 			try (Statement stmt = conn.createStatement()) {
 				stmt.execute("CREATE TABLE IF NOT EXISTS metadata(key TEXT, value TEXT);");
+				seedMetadataVersionIfAbsent(stmt);
 			}
 		}
+	}
+
+	private static void seedMetadataVersionIfAbsent(Statement stmt) throws SQLException {
+		try (ResultSet rs = stmt.executeQuery(
+				"SELECT value FROM metadata WHERE key = '" + SYNCLITE_METADATA_VERSION_KEY + "'")) {
+			if (rs.next()) {
+				return;
+			}
+		}
+		stmt.execute("INSERT INTO metadata(key, value) VALUES('"
+				+ SYNCLITE_METADATA_VERSION_KEY + "', '" + SYNCLITE_METADATA_VERSION + "')");
 	}
 
 	public static MetadataManager getInstance(Path metadataFilePath) throws SQLException {

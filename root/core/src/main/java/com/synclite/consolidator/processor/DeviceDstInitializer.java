@@ -220,11 +220,15 @@ public class DeviceDstInitializer {
 			if (srcTable == logReaderCheckpointTable) {
 				continue;
 			}
-			
-			if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
-				if (srcTable == consolidatorCheckpointTable) {
-					continue;
-				}
+
+			// Always skip the consolidator's own checkpoint table from the snapshot-init loop.
+			// In LOCAL mode the checkpoint is stored in the local metadata file. In DESTINATION
+			// mode the checkpoint table on the destination is owned by DeviceSyncProcessor
+			// (see ensureDstMetadataInitStatusColumn / persistInitializationStatusToDst); the
+			// snapshot init path must not write create_sql / initialization_status / initial_rows
+			// rows for it into synclite_consolidator_table_metadata.
+			if (srcTable == consolidatorCheckpointTable) {
+				continue;
 			}
 
 			if (! ConfLoader.getInstance().isAllowedTable(dstIndex, srcTable.id.table)) {
@@ -270,10 +274,9 @@ public class DeviceDstInitializer {
 				continue;
 			}
 
-			if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
-				if (srcTable == consolidatorCheckpointTable) {
-					continue;
-				}
+			// Always skip the consolidator's own checkpoint table — owned by DeviceSyncProcessor.
+			if (srcTable == consolidatorCheckpointTable) {
+				continue;
 			}
 
 			if (! ConfLoader.getInstance().isAllowedTable(dstIndex, srcTable.id.table)) {
@@ -307,10 +310,9 @@ public class DeviceDstInitializer {
 					continue;
 				}
 
-				if (ConfLoader.getInstance().getDstDisableMetadataTable(dstIndex)) {
-					if (srcTable == consolidatorCheckpointTable) {
-						continue;
-					}
+				// Always skip the consolidator's own checkpoint table — owned by DeviceSyncProcessor.
+				if (srcTable == consolidatorCheckpointTable) {
+					continue;
 				}
 
 				if (! ConfLoader.getInstance().isAllowedTable(dstIndex, srcTable.id.table)) {
@@ -336,8 +338,9 @@ public class DeviceDstInitializer {
 					}
 					dstExecutor.beginTran();
 					dstExecutor.execute(tableMapper.mapOper(new CreateTable(srcTable)));
-					// In DESTINATION metadata mode, persist schema to synclite_table_schema
-					// so that loadSchemasFromDestination() can reconstruct column lists on restart.
+					// In DESTINATION metadata mode, persist schema as a create_sql row in
+					// synclite_consolidator_table_metadata so loadSchemasFromDestination()
+					// can reconstruct column lists on restart.
 					if (syncProcessor != null) {
 						syncProcessor.persistSchemaToDst(dstExecutor, srcTable);
 					}

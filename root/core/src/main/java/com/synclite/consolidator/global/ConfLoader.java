@@ -2810,8 +2810,8 @@ public class ConfLoader {
 				}
 				line = reader.readLine();
 			}
-			//Always allow synclite_metadata table
-			this.dstTableFilterMapperRules[dstIndex].put(SyncLiteConsolidatorInfo.getSyncLiteMetadataTableName().toUpperCase(), "true");
+			//Always allow synclite_checkpoint table
+			this.dstTableFilterMapperRules[dstIndex].put(SyncLiteConsolidatorInfo.getSyncLiteCheckpointTableName().toUpperCase(), "true");
 		} catch (IOException e) {
 			throw new SyncLitePropsException("Failed to load configuration file : " + filterMapperRulesFile + " : ", e);
 		} finally {

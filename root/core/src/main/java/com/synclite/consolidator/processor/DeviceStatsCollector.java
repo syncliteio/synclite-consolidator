@@ -373,7 +373,7 @@ public class DeviceStatsCollector {
 	}
 
 	private boolean shouldTrackTableStats(TableID tableID) {
-		return tableID != null && !SyncLiteConsolidatorInfo.getSyncLiteMetadataTableName().equalsIgnoreCase(tableID.table);
+		return tableID != null && !SyncLiteConsolidatorInfo.getSyncLiteCheckpointTableName().equalsIgnoreCase(tableID.table);
 	}
 
 	//Method specifically for REPLICATION TO SQLITE usecase 

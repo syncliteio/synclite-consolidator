@@ -51,6 +51,7 @@ import com.synclite.consolidator.exception.SyncLiteException;
 import com.synclite.consolidator.exception.SyncLiteStageException;
 import com.synclite.consolidator.global.ConfLoader;
 import com.synclite.consolidator.global.ConsolidatorMetadataManager;
+import com.synclite.consolidator.global.MetadataRetry;
 import com.synclite.consolidator.global.DevicePatternType;
 import com.synclite.consolidator.global.MetadataManager;
 import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
@@ -913,7 +914,8 @@ public class Device {
 	}
 
 	public void resetInitializedSnapshot(int dstIndex) throws SyncLiteException {    	
-		consolidatorMetadataMgrs.get(dstIndex).resetInitializedSnapshot();
+		MetadataRetry.retry(dstIndex, tracer, "resetInitializedSnapshot",
+				() -> consolidatorMetadataMgrs.get(dstIndex).resetInitializedSnapshot());
 	}
 
 	public static Device getDeviceByName(String deviceName) {
@@ -1295,28 +1297,16 @@ public class Device {
 		}
 		
 		for(int dstIndex : allDstIndexes) {
+			HashMap<String, Object> identity = new HashMap<>();
+			identity.put("database_name", this.dbName);
+			identity.put("device_name", this.deviceName);
+			identity.put("device_type", this.deviceType);
+			identity.put("database_id", this.dbID);
 			try {
-				consolidatorMetadataMgrs.get(dstIndex).upsertProperty("database_name", this.dbName);
+				MetadataRetry.retry(dstIndex, tracer, "seed_consolidator_identity",
+						() -> consolidatorMetadataMgrs.get(dstIndex).upsertProperties(identity));
 			} catch (SQLException e) {
-				updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write device_name record in the importer metadata file");
-			}
-
-			try {
-				consolidatorMetadataMgrs.get(dstIndex).upsertProperty("device_name", this.deviceName);
-			} catch (SQLException e) {
-				updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write device_name record in the importer metadata file");
-			}
-
-			try {
-				consolidatorMetadataMgrs.get(dstIndex).upsertProperty("device_type", this.deviceType);
-			} catch (SQLException e) {
-				updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write device_type record in the importer metadata file");
-			}
-
-			try {
-				consolidatorMetadataMgrs.get(dstIndex).upsertProperty("database_id", this.dbID);
-			} catch (SQLException e) {
-				updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write database_id record in the importer metadata file");
+				updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write identity records in the importer metadata file");
 			}
 		}
 
@@ -1705,7 +1695,8 @@ public class Device {
 
 	private final void reInitialize(int dstIndex) throws SyncLiteException {
 		tracer.info("Marking device for reinitialization for dst : " + dstIndex);
-		this.consolidatorMetadataMgrs.get(dstIndex).resetInitializationStatus();	
+		MetadataRetry.retry(dstIndex, tracer, "resetInitializationStatus",
+				() -> this.consolidatorMetadataMgrs.get(dstIndex).resetInitializationStatus());
 		dataBackupSnapshot();
 		resetDeviceTableStats(dstIndex);
 		tracer.info("Marked device for reinitialization for dst : " + dstIndex);

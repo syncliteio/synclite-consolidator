@@ -131,8 +131,10 @@ public abstract class SQLExecutor implements AutoCloseable{
     protected abstract CDCLogPosition readCDCLogPosition(String deviceUUID, String deviceName, ConsolidatorDstTable dstCheckpointTable) throws DstExecutionException;
 
     /**
-     * Read per-table CREATE SQL strings from the destination's synclite_table_schema system table.
-     * Returns a list of two-element arrays: [table_name, create_sql].
+     * Read per-table CREATE SQL strings from the destination's
+     * {@code synclite_consolidator_table_metadata} system table
+     * (rows with {@code prop_key='create_sql'}).
+     * Returns a list of three-element arrays: [database_name, table_name, create_sql].
      * Default: returns empty list (non-JDBC / unsupported destinations fall back gracefully).
      */
     public List<String[]> readTableSchemas(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
@@ -140,7 +142,7 @@ public abstract class SQLExecutor implements AutoCloseable{
     }
 
     /**
-     * Read initialization status from destination synclite_metadata.
+     * Read initialization status from destination synclite_checkpoint.
      * Returns 1 if initialized, 0 if not, -1 if not supported / table does not exist yet.
      */
     public long readInitializationStatus(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {

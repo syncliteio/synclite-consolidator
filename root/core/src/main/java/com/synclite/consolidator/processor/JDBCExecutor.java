@@ -1543,13 +1543,13 @@ public abstract class JDBCExecutor extends SQLExecutor {
 	@Override
 	public List<String[]> readTableSchemas(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
 		List<String[]> schemas = new ArrayList<>();
-		String sql = "SELECT table_name, create_sql FROM synclite_table_schema WHERE device_uuid = '"
+		String sql = "SELECT database_name, table_name, prop_value FROM synclite_consolidator_table_metadata WHERE device_uuid = '"
 				+ deviceUUID.replace("'", "''") + "' AND device_name = '"
-				+ deviceName.replace("'", "''") + "' AND dst_index = " + dstIdx;
+				+ deviceName.replace("'", "''") + "' AND prop_key = 'create_sql'";
 		try (Statement stmt = conn.createStatement();
 				ResultSet rs = stmt.executeQuery(sql)) {
 			while (rs.next()) {
-				schemas.add(new String[]{rs.getString(1), rs.getString(2)});
+				schemas.add(new String[]{rs.getString(1), rs.getString(2), rs.getString(3)});
 			}
 		} catch (SQLException e) {
 			// Table may not exist yet on a completely fresh device — return empty
@@ -1561,7 +1561,7 @@ public abstract class JDBCExecutor extends SQLExecutor {
 	public long readInitializationStatus(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
 		String uuid = deviceUUID.replace("'", "''");
 		String dname = deviceName.replace("'", "''");
-		String sql = "SELECT initialization_status FROM synclite_metadata WHERE synclite_device_id = '"
+		String sql = "SELECT initialization_status FROM synclite_checkpoint WHERE synclite_device_id = '"
 				+ uuid + "' AND synclite_device_name = '" + dname + "' ORDER BY commit_id DESC LIMIT 1";
 		try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
 			if (rs.next()) {
