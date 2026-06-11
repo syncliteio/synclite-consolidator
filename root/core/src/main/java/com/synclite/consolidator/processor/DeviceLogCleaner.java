@@ -46,16 +46,13 @@ public class DeviceLogCleaner {
 		this.device = device;
 		// Persist + restore the cleanup watermark so a consolidator restart
 		// doesn't re-walk every segment from 0 just to discover they were
-		// already deleted. The value lives in the per-device metadata DB
-		// alongside other device-scoped keys (`status`, `database_name`,
-		// ...). Best-effort: a missing/corrupt value falls back to -1
-		// which preserves the original behavior.
+		// already deleted. The value lives in the consolidator metadata DB
+		// alongside other device-scoped keys (`database_name`, ...). Best-effort:
+		// a missing/corrupt value falls back to -1 which preserves the original behavior.
 		try {
-			if (device.getDeviceMetadataMgr() != null) {
-				Long persisted = device.getDeviceMetadataMgr().getLongProperty(LAST_CLEANED_KEY);
-				if (persisted != null && persisted >= 0L) {
-					this.cleanedUpto = persisted;
-				}
+			Long persisted = device.getDeviceMetadataLongProperty(LAST_CLEANED_KEY);
+			if (persisted != null && persisted >= 0L) {
+				this.cleanedUpto = persisted;
 			}
 		} catch (Throwable t) {
 			// Persistence is a cache; if it fails we silently fall back to
@@ -158,9 +155,7 @@ public class DeviceLogCleaner {
 		// range while the process lives; restart-after-failure simply
 		// re-walks the already-deleted range, which is harmless).
 		try {
-			if (device.getDeviceMetadataMgr() != null) {
-				device.getDeviceMetadataMgr().upsertProperty(LAST_CLEANED_KEY, newWatermark);
-			}
+			device.upsertDeviceMetadataProperty(LAST_CLEANED_KEY, newWatermark);
 		} catch (Throwable t) {
 			try {
 				device.tracer.warn("Failed to persist " + LAST_CLEANED_KEY + "=" + newWatermark + "; will retry on next cleanup cycle", t);

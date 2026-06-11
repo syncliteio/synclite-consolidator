@@ -48,12 +48,12 @@ public class DeviceStatsCollector {
 	private final ConsolidatorMetadataManager consolidatorControlPropMgr;
 	private HashSet<TableID> tablesInStats = new HashSet<TableID>();
 
-	private final String createCheckpointTableSql = "CREATE TABLE IF NOT EXISTS checkpoint(dst_alias TEXT, cdc_log_segment_sequence_number LONG, is_initialization_stats_collected LONG, processed_oper_count LONG, processed_txn_count, processed_log_size LONG)";
-	private final String insertCheckpointTableSql = "INSERT INTO checkpoint(dst_alias, cdc_log_segment_sequence_number, is_initialization_stats_collected, processed_oper_count, processed_txn_count, processed_log_size) VALUES ('$', -1, 0, 0, 0, 0);";
-	private final String selectCheckpointTableSql = "SELECT cdc_log_segment_sequence_number, is_initialization_stats_collected, processed_oper_count, processed_txn_count, processed_log_size FROM checkpoint WHERE dst_alias = '$'";
-	private final String updateLogSegmentCheckpointTableSql = "UPDATE checkpoint SET cdc_log_segment_sequence_number = ?, processed_oper_count = processed_oper_count + ?, processed_txn_count = processed_txn_count + ?, processed_log_size = processed_log_size + ? WHERE dst_alias = ?";
-	private final String updateInitializationStatsCheckpointTableSql = "UPDATE checkpoint SET is_initialization_stats_collected = 1, processed_oper_count = $1, processed_txn_count = $2, processed_log_size = $3 WHERE dst_alias = '$4'";
-	private final String resetInitilizationStatsCollectedSql = "UPDATE checkpoint SET is_initialization_stats_collected = 0 WHERE dst_alias = '$'";
+	private final String createDeviceStatisticsTableSql = "CREATE TABLE IF NOT EXISTS device_statistics(dst_alias TEXT, cdc_log_segment_sequence_number LONG, is_initialization_stats_collected LONG, processed_oper_count LONG, processed_txn_count, processed_log_size LONG)";
+	private final String insertDeviceStatisticsTableSql = "INSERT INTO device_statistics(dst_alias, cdc_log_segment_sequence_number, is_initialization_stats_collected, processed_oper_count, processed_txn_count, processed_log_size) VALUES ('$', -1, 0, 0, 0, 0);";
+	private final String selectDeviceStatisticsTableSql = "SELECT cdc_log_segment_sequence_number, is_initialization_stats_collected, processed_oper_count, processed_txn_count, processed_log_size FROM device_statistics WHERE dst_alias = '$'";
+	private final String updateLogSegmentDeviceStatisticsTableSql = "UPDATE device_statistics SET cdc_log_segment_sequence_number = ?, processed_oper_count = processed_oper_count + ?, processed_txn_count = processed_txn_count + ?, processed_log_size = processed_log_size + ? WHERE dst_alias = ?";
+	private final String updateInitializationStatsDeviceStatisticsTableSql = "UPDATE device_statistics SET is_initialization_stats_collected = 1, processed_oper_count = $1, processed_txn_count = $2, processed_log_size = $3 WHERE dst_alias = '$4'";
+	private final String resetInitilizationStatsCollectedSql = "UPDATE device_statistics SET is_initialization_stats_collected = 0 WHERE dst_alias = '$'";
 	private final String createStatsTableSql = "CREATE TABLE IF NOT EXISTS table_statistics(dst_alias TEXT, database_name TEXT, schema_name TEXT, table_name TEXT, initial_rows LONG, insert_rows LONG, update_rows LONG, delete_rows LONG, add_column LONG, drop_column LONG, rename_column LONG, create_table LONG, drop_table LONG, rename_table LONG, PRIMARY KEY(dst_alias, database_name, schema_name, table_name))";
 	private final String insertStatsTableSql = "INSERT OR REPLACE INTO table_statistics(dst_alias, database_name, schema_name, table_name, initial_rows, insert_rows, update_rows, delete_rows, add_column, drop_column, rename_column, create_table, drop_table, rename_table) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 	private final String updateStatsTableSql = "UPDATE table_statistics SET insert_rows = insert_rows + ?, update_rows = update_rows + ?, delete_rows = delete_rows + ?, add_column = add_column + ?, drop_column = drop_column + ?, rename_column = rename_column + ?, create_table = create_table + ?, drop_table = drop_table + ?, rename_table = rename_table + ? WHERE dst_alias = ? AND database_name = ? AND table_name = ?";
@@ -83,17 +83,17 @@ public class DeviceStatsCollector {
 		try (Connection statsFileConn = DriverManager.getConnection(url)) {
 			configureSqliteConnection(statsFileConn);
 			try (Statement stmt = statsFileConn.createStatement()) {
-				stmt.execute(createCheckpointTableSql);
-				try (ResultSet rs = stmt.executeQuery(selectCheckpointTableSql.replace("$", this.dstAlias))) {
+				stmt.execute(createDeviceStatisticsTableSql);
+				try (ResultSet rs = stmt.executeQuery(selectDeviceStatisticsTableSql.replace("$", this.dstAlias))) {
 					if (rs.next()) {
 						this.lastStatsCollectedLogSegmentSeqNum = rs.getLong(1);
 						this.hasInitializationStatsCollected = rs.getLong(2);
 						device.incrTotalProcessedLogSegmentCount(this.lastStatsCollectedLogSegmentSeqNum + 1);
 						device.incrTotalProcessedOperCount(rs.getLong(3));
 						device.incrTotalProcessedTxnCount(rs.getLong(4));
-						device.incrTotalProcessedLogSize(rs.getLong(5));			
+						device.incrTotalProcessedLogSize(rs.getLong(5));
 					} else {
-						String insertSql = insertCheckpointTableSql.replace("$", this.dstAlias);
+						String insertSql = insertDeviceStatisticsTableSql.replace("$", this.dstAlias);
 						stmt.execute(insertSql);
 						this.lastStatsCollectedLogSegmentSeqNum = -1;
 						this.hasInitializationStatsCollected = 0;
@@ -125,16 +125,16 @@ public class DeviceStatsCollector {
 		}
 		String statsUrl = "jdbc:sqlite:" + this.statsFilePath;
 		try (Connection statsFileConn = DriverManager.getConnection(statsUrl);
-				PreparedStatement updateLogSegmentCheckpointTablePstmt = statsFileConn.prepareStatement(updateLogSegmentCheckpointTableSql);
+				PreparedStatement updateLogSegmentDeviceStatisticsTablePstmt = statsFileConn.prepareStatement(updateLogSegmentDeviceStatisticsTableSql);
 				Statement statsStmt = statsFileConn.createStatement())
 		{
 			configureSqliteConnection(statsFileConn);
-			updateLogSegmentCheckpointTablePstmt.setLong(1, logSegmentSeqNumber);
-			updateLogSegmentCheckpointTablePstmt.setLong(2, operCount);
-			updateLogSegmentCheckpointTablePstmt.setLong(3, txnCount);
-			updateLogSegmentCheckpointTablePstmt.setLong(4, logSize);
-			updateLogSegmentCheckpointTablePstmt.setString(5, this.dstAlias);
-			updateLogSegmentCheckpointTablePstmt.execute();
+			updateLogSegmentDeviceStatisticsTablePstmt.setLong(1, logSegmentSeqNumber);
+			updateLogSegmentDeviceStatisticsTablePstmt.setLong(2, operCount);
+			updateLogSegmentDeviceStatisticsTablePstmt.setLong(3, txnCount);
+			updateLogSegmentDeviceStatisticsTablePstmt.setLong(4, logSize);
+			updateLogSegmentDeviceStatisticsTablePstmt.setString(5, this.dstAlias);
+			updateLogSegmentDeviceStatisticsTablePstmt.execute();
 			device.incrTotalProcessedLogSegmentCount(1);
 			device.incrTotalProcessedOperCount(operCount);
 			device.incrTotalProcessedTxnCount(txnCount);
@@ -154,7 +154,7 @@ public class DeviceStatsCollector {
 		try (Connection statsFileConn = DriverManager.getConnection(statsUrl);
 				PreparedStatement insertStatsTablePstmt = statsFileConn.prepareStatement(insertStatsTableSql);
 				PreparedStatement updateStatsTablePstmt = statsFileConn.prepareStatement(updateStatsTableSql);
-				PreparedStatement updateCDCLogSegmentCheckpointTablePstmt = statsFileConn.prepareStatement(updateLogSegmentCheckpointTableSql);
+				PreparedStatement updateCDCLogSegmentDeviceStatisticsTablePstmt = statsFileConn.prepareStatement(updateLogSegmentDeviceStatisticsTableSql);
 				Statement statsStmt = statsFileConn.createStatement()
 				) {			
 			configureSqliteConnection(statsFileConn);
@@ -263,12 +263,12 @@ public class DeviceStatsCollector {
 				updateStatsTablePstmt.executeBatch();
 			}
 
-			updateCDCLogSegmentCheckpointTablePstmt.setLong(1, logSegmentSeqNumber);
-			updateCDCLogSegmentCheckpointTablePstmt.setLong(2, totalOperCount);
-			updateCDCLogSegmentCheckpointTablePstmt.setLong(3, txnCount);
-			updateCDCLogSegmentCheckpointTablePstmt.setLong(4, logSize);
-			updateCDCLogSegmentCheckpointTablePstmt.setString(5, this.dstAlias);
-			updateCDCLogSegmentCheckpointTablePstmt.execute();
+			updateCDCLogSegmentDeviceStatisticsTablePstmt.setLong(1, logSegmentSeqNumber);
+			updateCDCLogSegmentDeviceStatisticsTablePstmt.setLong(2, totalOperCount);
+			updateCDCLogSegmentDeviceStatisticsTablePstmt.setLong(3, txnCount);
+			updateCDCLogSegmentDeviceStatisticsTablePstmt.setLong(4, logSize);
+			updateCDCLogSegmentDeviceStatisticsTablePstmt.setString(5, this.dstAlias);
+			updateCDCLogSegmentDeviceStatisticsTablePstmt.execute();
 			statsFileConn.commit();
 			statsFileConn.setAutoCommit(true);
 			device.incrTotalProcessedLogSegmentCount(1);
@@ -356,7 +356,7 @@ public class DeviceStatsCollector {
 			if (insertBatchIsFilled) {
 				insertStatsTablePstmt.executeBatch();
 			}
-			String updateSql = updateInitializationStatsCheckpointTableSql.replace("$1", String.valueOf(totalInitializationRowCount));
+			String updateSql = updateInitializationStatsDeviceStatisticsTableSql.replace("$1", String.valueOf(totalInitializationRowCount));
 			updateSql = updateSql.replace("$2", String.valueOf(consolidatorControlPropMgr.getInitializedTables().entrySet().size()));
 			updateSql = updateSql.replace("$3", String.valueOf(totalInitializationSnapshotSize));
 			updateSql = updateSql.replace("$4", this.dstAlias);
@@ -388,7 +388,7 @@ public class DeviceStatsCollector {
 				Statement stmt = statsFileConn.createStatement()
 				) {			
 			configureSqliteConnection(statsFileConn);
-			String updateSql = updateInitializationStatsCheckpointTableSql.replace("$1", String.valueOf(operCount));
+			String updateSql = updateInitializationStatsDeviceStatisticsTableSql.replace("$1", String.valueOf(operCount));
 			updateSql = updateSql.replace("$2", String.valueOf(txnCount));
 			updateSql = updateSql.replace("$3", String.valueOf(size));
 			updateSql = updateSql.replace("$4", this.dstAlias);

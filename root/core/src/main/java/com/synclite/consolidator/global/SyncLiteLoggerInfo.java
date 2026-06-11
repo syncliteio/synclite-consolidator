@@ -31,13 +31,11 @@ public final class SyncLiteLoggerInfo {
         return ".sqllog";
     }
 
-    public static Path getCommandLogSegmentPath(Path dbPath, String dbName, long dbID, long seqNum) {
-        //return Path.of(getCommandLogSegmentPrefix(dbPath, dbName) + dbID + "." + seqNum);
+    public static Path getCommandLogSegmentPath(Path dbPath, String dbName, long seqNum) {
     	return dbPath.resolve(seqNum + getCommandLogSegmentSuffix());
     }
 
-    public static Path getEventLogSegmentPath(Path dbPath, String dbName, long dbID, long seqNum) {
-        //return Path.of(getEventLogSegmentPrefix(dbPath, dbName) + dbID + "." + seqNum);
+    public static Path getEventLogSegmentPath(Path dbPath, String dbName, long seqNum) {
     	return dbPath.resolve(seqNum + getEventLogSegmentSuffix());
     }
 
