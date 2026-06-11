@@ -537,10 +537,8 @@ public class Device {
 	private Path remoteCommandPath;
 	private HashMap<Integer, Path> failedLogSegmentsDirectoryPaths = new HashMap<Integer, Path>();
 	private String dbName;
-	private long dbID;
 	private String deviceName;
 	private DeviceType deviceType;
-	private int allowsConcurrentWriters;
 	private DeviceStatus status;
 	private String statusDescription;
 	private String detectionTime;
@@ -548,7 +546,6 @@ public class Device {
 	private String lastStatusUpdateTime;
 	private long lastHeartbeatTS;
 	private MetadataManager loggerMetadataMgr;
-	private MetadataManager deviceMetadataMgr;
 	private HashMap<Integer, ConsolidatorMetadataManager> consolidatorMetadataMgrs = new HashMap<Integer, ConsolidatorMetadataManager>();
 	private volatile long lastReplicatedCommitID;
 	private volatile long lastConsolidatedCommitID;
@@ -599,7 +596,7 @@ public class Device {
 
 		initializeDstIndexes();    
 		initializeConsolidatorMetadataFile();
-		initializeDeviceMetadataFile();
+		initializeDeviceMetadata();
 		initializeDeviceStatsCollector();
 		if (this.status != DeviceStatus.UNREGISTERED) {
 			Monitor.getInstance().incrRegisteredDeviceCnt(1L);
@@ -612,7 +609,7 @@ public class Device {
 
 		initializeCommandDirectory();	
 		initializeFailedLogDirectory();
-		Monitor.getInstance().incrResynchronizationCnt(this.dbID);
+		Monitor.getInstance().incrResynchronizationCnt(1);
 		this.tracer.info("Device initialized with status : " + this.status);
 	}
 
@@ -804,7 +801,13 @@ public class Device {
 	}
 
 	public Boolean allowsConcurrentWriters() {
-		return (this.allowsConcurrentWriters == 1);
+		switch (this.deviceType) {
+		case SQLITE:
+		case SQLITE_STORE:
+			return false;
+		default:
+			return true;
+		}
 	}
 	
 	public Path getDeviceDataRoot() {
@@ -847,12 +850,59 @@ public class Device {
 		return this.loggerMetadataMgr;
 	}
 
-	public MetadataManager getDeviceMetadataMgr() {
-		return this.deviceMetadataMgr;
-	}
-
 	public ConsolidatorMetadataManager getConsolidatorMetadataMgr(int dstIndex) {
 		return this.consolidatorMetadataMgrs.get(dstIndex);
+	}
+
+	/**
+	 * Device-level metadata is folded into every consolidator metadata file (one
+	 * per destination). Writes go to all dsts so the value stays consistent; reads
+	 * come from the first dst.
+	 */
+	public void upsertDeviceMetadataProperty(String key, Object value) throws SQLException {
+		SQLException firstFailure = null;
+		for (int dstIndex : allDstIndexes) {
+			try {
+				consolidatorMetadataMgrs.get(dstIndex).upsertProperty(key, value);
+			} catch (SQLException e) {
+				if (firstFailure == null) {
+					firstFailure = e;
+				}
+			}
+		}
+		if (firstFailure != null) {
+			throw firstFailure;
+		}
+	}
+
+	public void deleteDeviceMetadataProperty(String key) throws SQLException {
+		SQLException firstFailure = null;
+		for (int dstIndex : allDstIndexes) {
+			try {
+				consolidatorMetadataMgrs.get(dstIndex).deleteProperty(key);
+			} catch (SQLException e) {
+				if (firstFailure == null) {
+					firstFailure = e;
+				}
+			}
+		}
+		if (firstFailure != null) {
+			throw firstFailure;
+		}
+	}
+
+	public String getDeviceMetadataStringProperty(String key) throws SQLException {
+		if (allDstIndexes.isEmpty()) {
+			return null;
+		}
+		return consolidatorMetadataMgrs.get(allDstIndexes.get(0)).getStringProperty(key);
+	}
+
+	public Long getDeviceMetadataLongProperty(String key) throws SQLException {
+		if (allDstIndexes.isEmpty()) {
+			return null;
+		}
+		return consolidatorMetadataMgrs.get(allDstIndexes.get(0)).getLongProperty(key);
 	}
 
 	private boolean disablePeriodicSnapshots() {
@@ -979,76 +1029,70 @@ public class Device {
 		}
 	}
 
-	private final void initializeDeviceMetadataFile() throws SyncLiteException {
-		Path deviceMetadataFile = Path.of(rootPath.toString(), SyncLiteDeviceInfo.getMetadataFileName());
-		try {
-			deviceMetadataMgr = MetadataManager.getInstance(deviceMetadataFile);
-		} catch (SQLException e) {
-			throw new SyncLiteException("Bad device. Failed to open device metadata file : " + deviceMetadataFile, e);
-		}
-
+	private final void initializeDeviceMetadata() throws SyncLiteException {
 		try {
 
-			String strVal = deviceMetadataMgr.getStringProperty("database_name");
+			String strVal = getDeviceMetadataStringProperty("database_name");
 			if (strVal != null) {
 				this.dbName = strVal;
 			}
 
-			strVal = deviceMetadataMgr.getStringProperty("device_type");
+			strVal = getDeviceMetadataStringProperty("device_type");
 			if (strVal != null) {
 				this.deviceType = DeviceType.valueOf(strVal);
 			}
 
-			strVal = deviceMetadataMgr.getStringProperty("device_name");
+			strVal = getDeviceMetadataStringProperty("device_name");
 			if (strVal != null) {
 				if (!this.deviceName.equals(strVal)) {
-					throw new SyncLiteException("Bad device. Device name mismatch in device root and metadata file : " + deviceMetadataFile);
+					throw new SyncLiteException("Bad device. Device name mismatch in device root and consolidator metadata for device : " + this.deviceName);
 				}
 			}
 
-			strVal = deviceMetadataMgr.getStringProperty("allow_concurrent_writers");
-			if (strVal != null) {
-				this.allowsConcurrentWriters = Integer.valueOf(strVal);
-			} else {
-				this.allowsConcurrentWriters = 0;
-			}
-
-			strVal = deviceMetadataMgr.getStringProperty("registered_time");
+			strVal = getDeviceMetadataStringProperty("registered_time");
 			if (strVal != null) {
 				this.registeredTime = strVal;
 			}
 
-			strVal = deviceMetadataMgr.getStringProperty("detection_time");
+			strVal = getDeviceMetadataStringProperty("detection_time");
 			if (strVal != null) {
 				this.detectionTime = strVal;
 			}
 
-			strVal = deviceMetadataMgr.getStringProperty("last_status_update_time");
+			strVal = getDeviceMetadataStringProperty("last_status_update_time");
 			if (strVal != null) {
 				this.lastStatusUpdateTime = strVal;
 			}
 
-			strVal = deviceMetadataMgr.getStringProperty("status_description");
+			strVal = getDeviceMetadataStringProperty("status_description");
 			if (strVal != null) {
 				this.statusDescription = strVal;
 			}
 
-			strVal = deviceMetadataMgr.getStringProperty("status");
+			// Status is metadata, not statistics. Source of truth lives in the
+			// consolidator metadata store so it survives a missing/corrupt
+			// stats file. The mirror in device_statistics.status is for GUI
+			// rendering only.
+			strVal = getDeviceMetadataStringProperty("device_status");
 			if (strVal != null) {
-				this.status = DeviceStatus.valueOf(strVal);
+				try {
+					this.status = DeviceStatus.valueOf(strVal);
+				} catch (IllegalArgumentException ignored) {
+					this.status = DeviceStatus.UNREGISTERED;
+				}
 			} else {
-				this.status = DeviceStatus.valueOf("UNREGISTERED");
+				this.status = DeviceStatus.UNREGISTERED;
 			}
 
-			strVal = deviceMetadataMgr.getStringProperty("data_backup_snapshot");
+			strVal = getDeviceMetadataStringProperty("data_backup_snapshot");
 			if (strVal != null) {
 				this.backupSnapshot = Path.of(strVal);
 			} else {
 				this.backupSnapshot = null;
 			}
-			
+
 		} catch (SQLException e) {
-			throw new SyncLiteException("Bad device. Failed to read/write records in metadata file.", e);
+			throw new SyncLiteException("Bad device. Failed to read records from consolidator metadata.", e);
 		}
 	}
 
@@ -1224,35 +1268,6 @@ public class Device {
 		}
 
 		try {
-			String allowConcurrentWritersStr = loggerMetadataMgr.getStringProperty("allow_concurrent_writers");
-			if (allowConcurrentWritersStr == null) {
-				updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Allow Concurrent Writers property missing in the metadata file : " + loggerMetadataMgr.getMetadataFilePath());
-				return false;
-			} else {
-				this.allowsConcurrentWriters = Integer.valueOf(allowConcurrentWritersStr);
-				if (deviceType == null) {
-					updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Allow Concurrent Writers property missing in the metadata file : " + loggerMetadataMgr.getMetadataFilePath());
-					return false;
-				}
-			}
-		} catch (SQLException e) {
-			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to read device_type record in the metadata file");
-			return false;
-		}
-
-		try {
-			Long databaseID = loggerMetadataMgr.getLongProperty("database_id");
-			if (databaseID == null) {
-				updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to find database_id record in the metadata file");
-				return false;
-			}
-			this.dbID = databaseID;
-		} catch (SQLException e) {
-			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to read database_id record in the metadata file");
-			return false;
-		}
-
-		try {
 			Long backupShipped = loggerMetadataMgr.getLongProperty("backup_shipped");
 			if (backupShipped == null) {
 				updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to find backup status record in the metadata file");
@@ -1267,41 +1282,28 @@ public class Device {
 		}
 
 		try {
-			deviceMetadataMgr.upsertProperty("database_name", this.dbName);
+			upsertDeviceMetadataProperty("database_name", this.dbName);
 		} catch (SQLException e) {
-			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write database_name record in the replicator metadata file");
+			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write database_name record in the consolidator metadata file");
 		}
 
 		try {
-			deviceMetadataMgr.upsertProperty("device_name", this.deviceName);
+			upsertDeviceMetadataProperty("device_name", this.deviceName);
 		} catch (SQLException e) {
-			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write database_name record in the replicator metadata file");
+			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write device_name record in the consolidator metadata file");
 		}
 
 		try {
-			deviceMetadataMgr.upsertProperty("device_type", this.deviceType);
+			upsertDeviceMetadataProperty("device_type", this.deviceType);
 		} catch (SQLException e) {
-			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write device_type record in the replicator metadata file");
+			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write device_type record in the consolidator metadata file");
 		}
 
-		try {
-			deviceMetadataMgr.upsertProperty("allow_concurrent_writers", this.allowsConcurrentWriters);
-		} catch (SQLException e) {
-			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write allow_concurrent_writers record in the replicator metadata file");
-		}
-
-		try {
-			deviceMetadataMgr.upsertProperty("database_id", this.dbID);
-		} catch (SQLException e) {
-			updateDeviceStatus(DeviceStatus.REGISTRATION_FAILED, "Bad device. Unable to write database_id record in the replicator metadata file");
-		}
-		
 		for(int dstIndex : allDstIndexes) {
 			HashMap<String, Object> identity = new HashMap<>();
 			identity.put("database_name", this.dbName);
 			identity.put("device_name", this.deviceName);
 			identity.put("device_type", this.deviceType);
-			identity.put("database_id", this.dbID);
 			try {
 				MetadataRetry.retry(dstIndex, tracer, "seed_consolidator_identity",
 						() -> consolidatorMetadataMgrs.get(dstIndex).upsertProperties(identity));
@@ -1341,21 +1343,21 @@ public class Device {
 	public final void updateDeviceStatus(DeviceStatus status, String statusDescription) throws SyncLiteException {
 		try {
 			this.status = status;
-			deviceMetadataMgr.upsertProperty("status", this.status.toString());
+			String statusStr = this.status.toString();
+			upsertDeviceMetadataProperty("device_status", statusStr);
 			this.statusDescription = statusDescription;
-			deviceMetadataMgr.upsertProperty("status_description", this.statusDescription);
+			upsertDeviceMetadataProperty("status_description", this.statusDescription);
 			if (status == DeviceStatus.UNREGISTERED) {
 				this.detectionTime = Instant.now().toString();
-				deviceMetadataMgr.upsertProperty("detection_time", this.detectionTime);
+				upsertDeviceMetadataProperty("detection_time", this.detectionTime);
 			} else if (status == DeviceStatus.REGISTERED) {
 				this.registeredTime = Instant.now().toString();
-				deviceMetadataMgr.upsertProperty("registered_time", this.registeredTime);
+				upsertDeviceMetadataProperty("registered_time", this.registeredTime);
 			}
 			this.lastStatusUpdateTime = Instant.now().toString();
-			deviceMetadataMgr.upsertProperty("last_status_update_time", this.lastStatusUpdateTime);
+			upsertDeviceMetadataProperty("last_status_update_time", this.lastStatusUpdateTime);
 		} catch (SQLException e) {
-			//throw new SyncLiteException("Bad device. Failed to update device status in metadata file", e);
-			//Ignore this is not fatal
+			//Ignore: not fatal.
 		}
 		Monitor.getInstance().registerChangedDevice(this);
 	}
@@ -1373,7 +1375,7 @@ public class Device {
 
 
 	public CDCLogSegment getNewCDCLogSegment(long sequenceNumber) throws SyncLiteException {
-		CDCLogSegment segment = new CDCLogSegment(this, sequenceNumber, SyncLiteDeviceInfo.getCDCLogSegmentPath(this.rootPath, this.dbName, this.dbID, sequenceNumber));
+		CDCLogSegment segment = new CDCLogSegment(this, sequenceNumber, SyncLiteDeviceInfo.getCDCLogSegmentPath(this.rootPath, this.dbName, sequenceNumber));
 		if (segment.path.toFile().exists()) {
 			segment.path.toFile().delete();
 		}
@@ -1394,7 +1396,7 @@ public class Device {
 
 	public CDCLogSegment getNextCDCLogSegmentToProcess(CDCLogSegment logSegment) throws SyncLiteException {
 		long nextLogSegmentSeqNum = logSegment.sequenceNumber + 1;
-		Path nextLogSegmentPath = SyncLiteDeviceInfo.getCDCLogSegmentPath(rootPath, dbName, this.dbID, nextLogSegmentSeqNum);
+		Path nextLogSegmentPath = SyncLiteDeviceInfo.getCDCLogSegmentPath(rootPath, dbName, nextLogSegmentSeqNum);
 		CDCLogSegment nextLogSegment = new CDCLogSegment(this, nextLogSegmentSeqNum, nextLogSegmentPath);
 		if (nextLogSegmentPath.toFile().exists()) {
 			//Check if the next to next cdc log segment is already created then only return this
@@ -1419,7 +1421,7 @@ public class Device {
 
 	public CDCLogSegment getNextCDCLogSegment(CDCLogSegment logSegment) {
 		long nextLogSegmentSeqNum = logSegment.sequenceNumber + 1;
-		Path nextLogSegmentPath = SyncLiteDeviceInfo.getCDCLogSegmentPath(rootPath, dbName, this.dbID, nextLogSegmentSeqNum);
+		Path nextLogSegmentPath = SyncLiteDeviceInfo.getCDCLogSegmentPath(rootPath, dbName, nextLogSegmentSeqNum);
 		if (nextLogSegmentPath.toFile().exists()) {
 			return new CDCLogSegment(this, logSegment.sequenceNumber + 1, nextLogSegmentPath);
 		}
@@ -1474,11 +1476,11 @@ public class Device {
 	}
 
 	public Path getCommandLogSegmentPath(long commandLogSegmentSequenceNumber) {
-		return SyncLiteLoggerInfo.getCommandLogSegmentPath(rootPath, dbName, dbID, commandLogSegmentSequenceNumber);
-	}    
+		return SyncLiteLoggerInfo.getCommandLogSegmentPath(rootPath, dbName, commandLogSegmentSequenceNumber);
+	}
 
 	public Path getCommandLogSegmentPathInUploadDir(long commandLogSegmentSequenceNumber) {
-		return SyncLiteLoggerInfo.getCommandLogSegmentPath(uploadPath, dbName, dbID, commandLogSegmentSequenceNumber);
+		return SyncLiteLoggerInfo.getCommandLogSegmentPath(uploadPath, dbName, commandLogSegmentSequenceNumber);
 	}
 
 	public CommandLogSegment getCommandLogSegment(long commandLogSegmentSequenceNumber) throws SyncLiteException {        
@@ -1493,7 +1495,7 @@ public class Device {
 				if (segment.isReadyToApply()) {
 					
 					//Now download the associated txn Files if needed
-					if (allowsConcurrentWriters == 1) {
+					if (allowsConcurrentWriters()) {
 						List<Path> txnFiles = getStageManager().findObjectsWithSuffixPrefix(uploadPath, segment.path.getFileName().toString(), SyncLiteLoggerInfo.getCommandLogTxnFileSuffix(), SyncLiteObjectType.LOG);
 						if ((txnFiles != null) && !txnFiles.isEmpty()) {
 							for (Path f : txnFiles) {
@@ -1519,7 +1521,7 @@ public class Device {
 	}
 
 	public Path getCDCLogSegmentPath(long cdcLogSegmentSequenceNumber) {
-		return SyncLiteDeviceInfo.getCDCLogSegmentPath(rootPath, dbName, this.dbID, cdcLogSegmentSequenceNumber);
+		return SyncLiteDeviceInfo.getCDCLogSegmentPath(rootPath, dbName, cdcLogSegmentSequenceNumber);
 	}
 
 	public CDCLogSegment getCDCLogSegment(long cdcLogSegmentSequenceNumber) {
@@ -1531,11 +1533,11 @@ public class Device {
 	}
 
 	public Path getEventLogSegmentPath(long eventLogSegmentSequenceNumber) {
-		return SyncLiteLoggerInfo.getEventLogSegmentPath(rootPath, dbName, dbID, eventLogSegmentSequenceNumber);
+		return SyncLiteLoggerInfo.getEventLogSegmentPath(rootPath, dbName, eventLogSegmentSequenceNumber);
 	}
 
 	public Path getEventLogSegmentPathInUploadDir(long eventLogSegmentSequenceNumber) {
-		return SyncLiteLoggerInfo.getEventLogSegmentPath(uploadPath, dbName, dbID, eventLogSegmentSequenceNumber);
+		return SyncLiteLoggerInfo.getEventLogSegmentPath(uploadPath, dbName, eventLogSegmentSequenceNumber);
 	}
 
 	public EventLogSegment getEventLogSegment(long eventLogSegmentSequenceNumber) throws SyncLiteException {
@@ -1550,7 +1552,7 @@ public class Device {
 				if (segment.isReadyToApply()) {
 					
 					//Now download the associated txn Files if needed
-					if (allowsConcurrentWriters == 1) {
+					if (allowsConcurrentWriters()) {
 						List<Path> txnFiles = getStageManager().findObjectsWithSuffixPrefix(uploadPath, segment.path.getFileName().toString(), SyncLiteLoggerInfo.getEventLogTxnFileSuffix(), SyncLiteObjectType.LOG);
 						if ((txnFiles != null) && !txnFiles.isEmpty()) {
 							for (Path f : txnFiles) {
@@ -1772,14 +1774,14 @@ public class Device {
 			}
 
 			if (this.backupSnapshot != null) {
-				deviceMetadataMgr.deleteProperty("data_backup_snapshot");
+				deleteDeviceMetadataProperty("data_backup_snapshot");
 				this.backupSnapshot = null;
 			}
 
 			Path snapshotPath = SyncLiteDeviceInfo.getDataBackupSnapshotPath(this.rootPath, this.dbName);
 			Files.copy(backup, snapshotPath, StandardCopyOption.REPLACE_EXISTING);
 		
-			deviceMetadataMgr.upsertProperty("data_backup_snapshot",snapshotPath);
+			upsertDeviceMetadataProperty("data_backup_snapshot",snapshotPath);
 			this.backupSnapshot = snapshotPath;
 			
 		} catch (Exception e) {

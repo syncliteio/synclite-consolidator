@@ -24,13 +24,8 @@ public class SyncLiteDeviceInfo {
         return ".cdclog";
     }
 
-    public static Path getCDCLogSegmentPath(Path dbPath, String dbName, long dbID, long seqNum) {
-        //return Path.of(getCDCLogSegmentPrefix(dbPath, dbName) + dbID + "." + seqNum);
+    public static Path getCDCLogSegmentPath(Path dbPath, String dbName, long seqNum) {
     	return dbPath.resolve(seqNum + getCDCLogSegmentPrefix());
-    }
-
-    public static String getMetadataFileName() {
-        return "synclite_device_metadata.db";
     }
 
 	public static Path getDataBackupSnapshotPath(Path dbPath, String dbName) {
