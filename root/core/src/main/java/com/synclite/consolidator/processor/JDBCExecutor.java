@@ -113,6 +113,19 @@ public abstract class JDBCExecutor extends SQLExecutor {
 		}
 	}
 
+	/**
+	 * Returns a schema-qualified table name for use in raw SQL strings that bypass
+	 * the system table mapper, so PostgreSQL resolves them in the configured schema
+	 * instead of following search_path. Mirrors DeviceSyncProcessor.qualifiedDstTableName.
+	 */
+	protected String qualifiedDstTableName(String tableName) {
+		String schema = ConfLoader.getInstance().getDstSchema(dstIndex);
+		if (schema != null && !schema.trim().isEmpty()) {
+			return "\"" + schema.replace("\"", "\"\"") + "\".\"" + tableName.replace("\"", "\"\"") + "\"";
+		}
+		return tableName;
+	}
+
 
 	protected void bindInsertArgs(Insert oper) throws SQLException {
 		int i = 1;
@@ -1523,18 +1536,22 @@ public abstract class JDBCExecutor extends SQLExecutor {
 
 	@Override
 	protected CDCLogPosition readCDCLogPosition(String deviceUUID, String deviceName, ConsolidatorDstTable dstControlTable) throws DstExecutionException {
-		try (Statement stmt = conn.createStatement()) {
-			try (ResultSet rs = stmt.executeQuery(sqlGenerator.getCheckpointTableSelectSql(deviceUUID, deviceName, dstControlTable))) {
-				if (rs.next()) {
-					CDCLogPosition logPos = new CDCLogPosition(0, -1, 0, 0);
-					logPos.commitId = rs.getLong(1);
-					logPos.changeNumber = rs.getLong(2);
-					logPos.logSegmentSequenceNumber = rs.getLong(3);
-					logPos.txnCount = rs.getLong(4);
-					return logPos;
-				}
-				throw new DstExecutionException("No checkpoint log position found in the destination");
+		String uuid = deviceUUID.replace("'", "''");
+		String dname = deviceName.replace("'", "''");
+		String sql = "SELECT commit_id, cdc_change_number, cdc_log_segment_sequence_number, txn_count FROM "
+				+ qualifiedDstTableName("synclite_checkpoint")
+				+ " WHERE synclite_device_id = '" + uuid + "' AND synclite_device_name = '" + dname + "'"
+				+ " LIMIT 1";
+		try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+			if (rs.next()) {
+				CDCLogPosition logPos = new CDCLogPosition(0, -1, 0, 0);
+				logPos.commitId = rs.getLong(1);
+				logPos.changeNumber = rs.getLong(2);
+				logPos.logSegmentSequenceNumber = rs.getLong(3);
+				logPos.txnCount = rs.getLong(4);
+				return logPos;
 			}
+			throw new DstExecutionException("No checkpoint log position found in the destination");
 		} catch (SQLException e) {
 			throw new DstExecutionException("Failed to read checkpoint log position from destination : " + e.getMessage(), e);
 		}
@@ -1543,8 +1560,9 @@ public abstract class JDBCExecutor extends SQLExecutor {
 	@Override
 	public List<String[]> readTableSchemas(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
 		List<String[]> schemas = new ArrayList<>();
-		String sql = "SELECT database_name, table_name, prop_value FROM synclite_consolidator_table_metadata WHERE device_uuid = '"
-				+ deviceUUID.replace("'", "''") + "' AND device_name = '"
+		String sql = "SELECT database_name, table_name, prop_value FROM " + qualifiedDstTableName("synclite_consolidator_table_metadata")
+				+ " WHERE synclite_device_id = '"
+				+ deviceUUID.replace("'", "''") + "' AND synclite_device_name = '"
 				+ deviceName.replace("'", "''") + "' AND prop_key = 'create_sql'";
 		try (Statement stmt = conn.createStatement();
 				ResultSet rs = stmt.executeQuery(sql)) {
@@ -1561,7 +1579,8 @@ public abstract class JDBCExecutor extends SQLExecutor {
 	public long readInitializationStatus(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
 		String uuid = deviceUUID.replace("'", "''");
 		String dname = deviceName.replace("'", "''");
-		String sql = "SELECT initialization_status FROM synclite_checkpoint WHERE synclite_device_id = '"
+		String sql = "SELECT initialization_status FROM " + qualifiedDstTableName("synclite_checkpoint")
+				+ " WHERE synclite_device_id = '"
 				+ uuid + "' AND synclite_device_name = '" + dname + "' ORDER BY commit_id DESC LIMIT 1";
 		try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
 			if (rs.next()) {
@@ -1569,6 +1588,12 @@ public abstract class JDBCExecutor extends SQLExecutor {
 			}
 			return -1;
 		} catch (SQLException e) {
+			// Table may not exist yet (first time this device is seen on a fresh destination).
+			// Return -1 so caller treats it as "not initialized" and proceeds to initialize.
+			String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+			if (msg.contains("does not exist") || msg.contains("no such table") || msg.contains("unknown table")) {
+				return -1;
+			}
 			throw new DstExecutionException("Failed to read initialization status from destination : " + e.getMessage(), e);
 		}
 	}

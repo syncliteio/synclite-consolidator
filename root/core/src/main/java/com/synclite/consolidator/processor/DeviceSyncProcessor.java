@@ -34,6 +34,7 @@ import com.synclite.consolidator.global.ConfLoader;
 import com.synclite.consolidator.global.MetadataRetry;
 import com.synclite.consolidator.global.ConsolidatorMetadataManager;
 import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
+import com.synclite.consolidator.oper.Delete;
 import com.synclite.consolidator.oper.Insert;
 import com.synclite.consolidator.oper.NativeOper;
 import com.synclite.consolidator.oper.Oper;
@@ -94,6 +95,8 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 
 	protected TableMapper userTableMapper;
 	protected TableMapper systemTableMapper;
+	protected final ConsolidatorSrcTable checkpointSystemTable;
+	protected final ConsolidatorSrcTable dstSchemaSystemTable;
 	protected final ConsolidatorMetadataManager consolidatorMetadataMgr;
 	protected DeviceStatsCollector statsCollector;
 	protected DeviceDstInitializer dstInitializer;
@@ -111,15 +114,31 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 		super(device, dstIndex);
 		this.userTableMapper = TableMapper.getUserTableMapperInstance(dstIndex);
 		this.systemTableMapper = TableMapper.getSystemTableMapperInstance(dstIndex);
+		this.checkpointSystemTable = SyncLiteConsolidatorInfo.getCheckpointTableSchema(device.getDeviceUUID(), device.getDeviceName(), dstIndex);
+		this.dstSchemaSystemTable = SyncLiteConsolidatorInfo.getConsolidatorTableMetadataTableSchema(device.getDeviceUUID(), device.getDeviceName(), dstIndex);
 		this.consolidatorMetadataMgr = device.getConsolidatorMetadataMgr(dstIndex);
+		device.tracer.debug("[BOOT] Consolidator metadata manager initialized for device: " + device.getDeviceName());
 		this.statsCollector = device.getDeviceStatsCollector(dstIndex);
 		this.dstInitializer = new DeviceDstInitializer(device, userTableMapper, systemTableMapper, statsCollector, dstIndex);
 		this.dstInitializer.setSyncProcessor(this);
 		this.applyInsertIdempotently = ConfLoader.getInstance().getDstIdempotentDataIngestion(dstIndex);
 		String modeStr = ConfLoader.getInstance().getMetadataStore(dstIndex);
 		this.metadataStore = "LOCAL".equalsIgnoreCase(modeStr) ? MetadataStore.LOCAL : MetadataStore.DESTINATION;
+		device.tracer.debug("[BOOT] Metadata store mode set to: " + this.metadataStore);
 		ensureWorkDirExists();
 		initInMemoryReplica();
+	}
+
+	/**
+	 * Returns a schema-qualified table name for use in NativeOper SQL strings
+	 * that bypass the system table mapper. Matches ConsolidatorMetadataManager.qualifiedDstTableName.
+	 */
+	protected String qualifiedDstTableName(String tableName) {
+		String schema = ConfLoader.getInstance().getDstSchema(dstIndex);
+		if (schema != null && !schema.trim().isEmpty()) {
+			return "\"" + schema.replace("\"", "\"\"") + "\".\"" + tableName.replace("\"", "\"\"") + "\"";
+		}
+		return tableName;
 	}
 
 	// ── Abstract hook: return sequence number of current log segment ───────────
@@ -136,6 +155,7 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 		try {
 			this.inMemoryReplicaConn = DriverManager.getConnection("jdbc:sqlite::memory:");
 			this.inMemoryReplicaConn.setAutoCommit(true);
+			device.tracer.debug("[BOOT] In-memory replica connection initialized");
 		} catch (SQLException e) {
 			throw new SyncLiteException("Failed to initialize in-memory replica connection", e);
 		}
@@ -146,7 +166,9 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 			java.nio.file.Path root = device.getDeviceDataRoot();
 			if (!Files.exists(root)) {
 				Files.createDirectories(root);
-				device.tracer.info("Created fresh workDir at : " + root);
+				device.tracer.info("[BOOT] Created fresh workDir at: " + root);
+			} else {
+				device.tracer.debug("[BOOT] WorkDir already exists at: " + root);
 			}
 		} catch (IOException e) {
 			throw new SyncLiteException("Failed to create workDir : " + device.getDeviceDataRoot(), e);
@@ -154,11 +176,14 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	}
 
 	protected final void seedInMemoryReplicaFromSchemas() throws SyncLiteException {
+		device.tracer.debug("[BOOT] Seeding in-memory replica from stored schemas");
 		try (Statement stmt = inMemoryReplicaConn.createStatement()) {
+			int tableCount = 0;
 			for (ConsolidatorSrcTable srcTable : consolidatorMetadataMgr.getConsolidatorSrcTables()) {
 				if (srcTable.sql != null && !srcTable.sql.isEmpty()) {
 					try {
 						stmt.execute(srcTable.sql);
+						tableCount++;
 					} catch (SQLException e) {
 						if (!e.getMessage().contains("already exists")) throw e;
 					}
@@ -188,11 +213,13 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 					sb.append(")");
 					try {
 						stmt.execute(sb.toString());
+						tableCount++;
 					} catch (SQLException e) {
 						if (!e.getMessage().contains("already exists")) throw e;
 					}
 				}
 			}
+			device.tracer.info("[BOOT] Seeded in-memory replica with " + tableCount + " tables");
 		} catch (SQLException e) {
 			throw new SyncLiteException("Failed to seed in-memory replica from stored schemas", e);
 		}
@@ -200,6 +227,11 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 
 	/** Populates checkpointTable.columns from the in-memory replica DDL when empty. */
 	protected final void reloadCheckpointTableColumns() throws SyncLiteException {
+		if (this.checkpointTable == null) {
+			this.checkpointTable = ConsolidatorSrcTable.from(
+					SyncLiteConsolidatorInfo.getCheckpointTableID(device.getDeviceUUID(), device.getDeviceName(), this.dstIndex));
+			this.checkpointTable.setIsSystemTable();
+		}
 		if (this.checkpointTable.columns.isEmpty()) {
 			try (Statement _stmt = inMemoryReplicaConn.createStatement()) {
 				_stmt.execute(createTxnTableSql);
@@ -220,16 +252,17 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 
 	// ── Initialization status on destination metadata ───────────────────────────
 
-	protected void ensureDstMetadataInitStatusColumn(SQLExecutor dstExecutor) throws DstExecutionException {
+	protected void ensureDstMetadataInitStatusColumn(SQLExecutor dstExecutor) throws DstExecutionException, SyncLiteException {
 		if (dstInitStatusColumnInitialized) return;
-		dstExecutor.execute(new NativeOper(null, createDstTxnTableSql));
+		dstExecutor.execute(systemTableMapper.mapOper(new com.synclite.consolidator.oper.CreateTable(checkpointSystemTable)));
 		boolean recreate = false;
+		String qcheckpoint = qualifiedDstTableName("synclite_checkpoint");
 		try {
 			dstExecutor.execute(new NativeOper(null,
-					"SELECT synclite_device_id, synclite_device_name, initialization_status FROM synclite_checkpoint WHERE 1 = 0"));
+					"SELECT synclite_device_id, synclite_device_name, initialization_status FROM " + qcheckpoint + " WHERE 1 = 0"));
 		} catch (DstExecutionException e) {
 			String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
-			if (msg.contains("no such column") || msg.contains("unknown column") || msg.contains("invalid identifier")) {
+			if (msg.contains("no such column") || msg.contains("unknown column") || msg.contains("invalid identifier") || msg.contains("does not exist")) {
 				recreate = true;
 			} else {
 				throw e;
@@ -238,33 +271,38 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 		if (!recreate) {
 			try {
 				dstExecutor.execute(new NativeOper(null,
-						"SELECT command_log_change_number FROM synclite_checkpoint WHERE 1 = 0"));
+						"SELECT command_log_change_number FROM " + qcheckpoint + " WHERE 1 = 0"));
 				recreate = true;
 			} catch (DstExecutionException e) {
 				String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
-				if (!(msg.contains("no such column") || msg.contains("unknown column") || msg.contains("invalid identifier"))) {
+				if (!(msg.contains("no such column") || msg.contains("unknown column") || msg.contains("invalid identifier") || msg.contains("does not exist"))) {
 					throw e;
 				}
 			}
 		}
 		if (recreate) {
 			// Recreate incompatible or legacy checkpoint table schema in one shot (no ALTER path).
-			dstExecutor.execute(new NativeOper(null, "DROP TABLE IF EXISTS synclite_checkpoint"));
-			dstExecutor.execute(new NativeOper(null, createDstTxnTableSql));
+			dstExecutor.execute(new NativeOper(null, "DROP TABLE IF EXISTS " + qcheckpoint));
+			dstExecutor.execute(systemTableMapper.mapOper(new com.synclite.consolidator.oper.CreateTable(checkpointSystemTable)));
 		}
 		dstExecutor.commitTran();
 		dstExecutor.beginTran();
 		dstInitStatusColumnInitialized = true;
 	}
 
-	protected void persistInitializationStatusToDst(SQLExecutor dstExecutor, long status) throws DstExecutionException {
+	protected void persistInitializationStatusToDst(SQLExecutor dstExecutor, long status) throws DstExecutionException, SyncLiteException {
 		ensureDstMetadataInitStatusColumn(dstExecutor);
-		String uuid  = device.getDeviceUUID().replace("'", "''");
-		String dname = device.getDeviceName().replace("'", "''");
-		dstExecutor.execute(new NativeOper(null,
-				"UPDATE synclite_checkpoint SET initialization_status = " + status
-				+ " WHERE synclite_device_id = '" + uuid
-				+ "' AND synclite_device_name = '" + dname + "'"));
+		reloadCheckpointTableColumns();
+		List<Object> beforeValues = new ArrayList<Object>(1);
+		beforeValues.add(this.lastConsolidatedCommitId);
+		List<Object> afterValues = new ArrayList<Object>(1);
+		afterValues.add(status);
+		Update initStatusUpdate = new Update(checkpointSystemTable, beforeValues, afterValues);
+		initStatusUpdate.whereColumns = new ArrayList<Column>();
+		initStatusUpdate.whereColumns.add(getCheckpointColumn("commit_id"));
+		initStatusUpdate.setColumns = new ArrayList<Column>();
+		initStatusUpdate.setColumns.add(getCheckpointColumn("initialization_status"));
+		dstExecutor.execute(systemTableMapper.mapOper(initStatusUpdate));
 	}
 
 	/**
@@ -293,11 +331,12 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	 * Per-table source DDL is stored as {@code prop_key='create_sql'} rows in
 	 * {@code synclite_consolidator_table_metadata}.
 	 */
-	protected void ensureDstSchemaTableExists(SQLExecutor dstExecutor) throws DstExecutionException {
+	protected void ensureDstSchemaTableExists(SQLExecutor dstExecutor) throws DstExecutionException, SyncLiteException {
 		if (dstSchemaTableInitialized) return;
-		dstExecutor.execute(new NativeOper(null, SyncLiteConsolidatorInfo.getCreateConsolidatorTableMetadataTableSql()));
-		dstExecutor.commitTran();
-		dstExecutor.beginTran();
+		// synclite_consolidator_table_metadata is already bootstrapped once per device
+		// by ConsolidatorMetadataManager.initializeConsolidatorMetadataFile() (DESTINATION
+		// mode) via raw JDBC. Re-issuing CREATE TABLE IF NOT EXISTS here is redundant
+		// and shows up as per-DeviceSyncProcessor DDL spam in device traces.
 		dstSchemaTableInitialized = true;
 	}
 
@@ -345,39 +384,47 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 		}
 	}
 
-	protected void persistSchemaToDst(SQLExecutor dstExecutor, ConsolidatorSrcTable srcTable) throws DstExecutionException {
+	protected void persistSchemaToDst(SQLExecutor dstExecutor, ConsolidatorSrcTable srcTable) throws DstExecutionException, SyncLiteException {
 		ensureDstSchemaTableExists(dstExecutor);
-		String uuid  = device.getDeviceUUID().replace("'", "''");
-		String dname = device.getDeviceName().replace("'", "''");
-		String dbname = (srcTable.id.database == null || srcTable.id.database.isEmpty() ? "main" : srcTable.id.database).replace("'", "''");
-		String tname = srcTable.id.table.replace("'", "''");
+		String dbname = (srcTable.id.database == null || srcTable.id.database.isEmpty() ? "main" : srcTable.id.database);
+		String tname = srcTable.id.table;
 		// Always derive the DDL from the current column model — srcTable.sql is set once
 		// from the original CREATE on restart and never refreshed by apply*Column, so it
 		// would drift after any ADDCOLUMN / DROPCOLUMN / ALTERCOLUMN / RENAMECOLUMN.
-		String csql  = buildCreateSqlFromColumns(srcTable).replace("'", "''");
-		dstExecutor.execute(new NativeOper(null,
-				"DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = '" + uuid
-				+ "' AND device_name = '" + dname
-				+ "' AND database_name = '" + dbname
-				+ "' AND table_name = '" + tname
-				+ "' AND prop_key = 'create_sql'"));
-		dstExecutor.execute(new NativeOper(null,
-				"INSERT INTO synclite_consolidator_table_metadata(device_uuid, device_name, database_name, table_name, prop_key, prop_value) VALUES('"
-				+ uuid + "', '" + dname + "', '" + dbname + "', '" + tname + "', 'create_sql', '" + csql + "')"));
+		String csql  = buildCreateSqlFromColumns(srcTable);
+		List<Object> beforeValues = new ArrayList<Object>(3);
+		beforeValues.add(dbname);
+		beforeValues.add(tname);
+		beforeValues.add(SyncLiteConsolidatorInfo.getCreateSqlPropKey());
+		Delete deleteCreateSql = new Delete(dstSchemaSystemTable, beforeValues);
+		deleteCreateSql.whereColumns = new ArrayList<Column>();
+		deleteCreateSql.whereColumns.add(dstSchemaSystemTable.colMap.get("database_name"));
+		deleteCreateSql.whereColumns.add(dstSchemaSystemTable.colMap.get("table_name"));
+		deleteCreateSql.whereColumns.add(dstSchemaSystemTable.colMap.get("prop_key"));
+		dstExecutor.execute(systemTableMapper.mapOper(deleteCreateSql));
+
+		List<Object> afterValues = new ArrayList<Object>(4);
+		afterValues.add(dbname);
+		afterValues.add(tname);
+		afterValues.add(SyncLiteConsolidatorInfo.getCreateSqlPropKey());
+		afterValues.add(csql);
+		dstExecutor.execute(systemTableMapper.mapOper(new Insert(dstSchemaSystemTable, afterValues, false)));
 	}
 
-	protected void deleteSchemaFromDst(SQLExecutor dstExecutor, ConsolidatorSrcTable srcTable) throws DstExecutionException {
+	protected void deleteSchemaFromDst(SQLExecutor dstExecutor, ConsolidatorSrcTable srcTable) throws DstExecutionException, SyncLiteException {
 		if (!dstSchemaTableInitialized) return;
-		String uuid  = device.getDeviceUUID().replace("'", "''");
-		String dname = device.getDeviceName().replace("'", "''");
-		String dbname = (srcTable.id.database == null || srcTable.id.database.isEmpty() ? "main" : srcTable.id.database).replace("'", "''");
-		String tname = srcTable.id.table.replace("'", "''");
-		dstExecutor.execute(new NativeOper(null,
-				"DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = '" + uuid
-				+ "' AND device_name = '" + dname
-				+ "' AND database_name = '" + dbname
-				+ "' AND table_name = '" + tname
-				+ "' AND prop_key = 'create_sql'"));
+		String dbname = (srcTable.id.database == null || srcTable.id.database.isEmpty() ? "main" : srcTable.id.database);
+		String tname = srcTable.id.table;
+		List<Object> beforeValues = new ArrayList<Object>(3);
+		beforeValues.add(dbname);
+		beforeValues.add(tname);
+		beforeValues.add(SyncLiteConsolidatorInfo.getCreateSqlPropKey());
+		Delete deleteCreateSql = new Delete(dstSchemaSystemTable, beforeValues);
+		deleteCreateSql.whereColumns = new ArrayList<Column>();
+		deleteCreateSql.whereColumns.add(dstSchemaSystemTable.colMap.get("database_name"));
+		deleteCreateSql.whereColumns.add(dstSchemaSystemTable.colMap.get("table_name"));
+		deleteCreateSql.whereColumns.add(dstSchemaSystemTable.colMap.get("prop_key"));
+		dstExecutor.execute(systemTableMapper.mapOper(deleteCreateSql));
 	}
 
 	protected String buildCreateSqlFromColumns(ConsolidatorSrcTable srcTable) {
@@ -442,6 +489,7 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	protected final List<Oper> prepareCheckpointUpdate(long commitIDToCheckpoint,
 			long changeNumberToCheckpoint,
 			List<Object> beforeValues, List<Object> afterValues) throws SyncLiteException {
+		reloadCheckpointTableColumns();
 		List<Object> checkpointBeforeValues = new ArrayList<Object>(1);
 		checkpointBeforeValues.add(this.lastConsolidatedCommitId);
 
@@ -463,6 +511,7 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	}
 
 	private Column getCheckpointColumn(String columnName) throws SyncLiteException {
+		reloadCheckpointTableColumns();
 		Column col = checkpointTable.colMap.get(columnName);
 		if (col == null) {
 			throw new SyncLiteException("Missing checkpoint column in synclite_checkpoint: " + columnName);
@@ -471,6 +520,7 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	}
 
 	protected final List<Oper> prepareCheckpointInsert() throws SyncLiteException {
+		reloadCheckpointTableColumns();
 		List<Object> afterValues = new ArrayList<Object>();
 		afterValues.add(this.lastConsolidatedCommitId);
 		afterValues.add(this.lastConsolidatedChangeNumber);

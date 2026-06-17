@@ -19,10 +19,14 @@ package com.synclite.consolidator.schema;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.log4j.Logger;
 
 import com.synclite.consolidator.exception.SyncLiteException;
 import com.synclite.consolidator.global.ConfLoader;
+import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
 import com.synclite.consolidator.oper.AddColumn;
 import com.synclite.consolidator.oper.AlterColumn;
 import com.synclite.consolidator.oper.BeginTran;
@@ -52,8 +56,12 @@ import com.synclite.consolidator.oper.UpdateIfPredicate;
 import com.synclite.consolidator.oper.Upsert;
 
 public abstract class TableMapper {
-		
-	private static final class InstanceHolder {
+
+    private static final Logger LOG = Logger.getLogger(TableMapper.class);
+    // One-shot per (dstIndex, table) WARN guard so we don't spam the trace.
+    private static final Set<String> MISSING_PK_WARNED = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+
+    private static final class InstanceHolder {
 		private static final TableMapper USER_TM_INSTANCES[] = createUserTableMappers();
 		private static final TableMapper SYSTEM_TM_INSTANCES[] = createSystemTableMappers();
 
@@ -165,7 +173,10 @@ public abstract class TableMapper {
     }
 
     public Column mapColumn(TableID srcTableID, Column srcColumn) {
-		String mappedColumnName = ConfLoader.getInstance().getMappedColumnName(dstIndex, srcTableID.table, srcColumn.column);
+        if (SyncLiteConsolidatorInfo.isSystemMetadataTable(srcTableID.table)) {
+            return mapSystemColumn(srcColumn);
+        }
+        String mappedColumnName = ConfLoader.getInstance().getMappedColumnName(dstIndex, srcTableID.table, srcColumn.column);
     	Column dstColumn = new Column(
                 srcColumn.cid,
                 mappedColumnName,
@@ -372,9 +383,23 @@ public abstract class TableMapper {
         		case DELETE_INSERT:
         			return new DeleteInsert(dstTable, dstValues, dstValues);
         		}
+        	} else {
+        		warnMissingPrimaryKeyOnce(dstTable);
         	}
         }
         return new Insert(dstTable, dstValues, false);
+    }
+
+    private void warnMissingPrimaryKeyOnce(ConsolidatorDstTable dstTable) {
+        String tableKey = (dstTable.id != null) ? dstTable.id.toString() : String.valueOf(dstTable);
+        String guardKey = dstIndex + "::" + tableKey;
+        if (MISSING_PK_WARNED.add(guardKey)) {
+            LOG.warn("dst-idempotent-data-ingestion is enabled for dstIndex=" + dstIndex
+                    + " but destination table '" + tableKey + "' has no primary key; "
+                    + "falling back to plain INSERT. Re-ingesting the same source rows will produce duplicates. "
+                    + "Declare a primary key on the source table to enable "
+                    + ConfLoader.getInstance().getDstIdempotentDataIngestionMethod(dstIndex) + ".");
+        }
     }
     
 }

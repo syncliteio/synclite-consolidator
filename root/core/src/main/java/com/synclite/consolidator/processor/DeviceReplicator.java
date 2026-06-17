@@ -368,8 +368,38 @@ public class DeviceReplicator extends DeviceProcessor {
 					this.processedTxnCount = 0;
 					this.currentCommandLogSegment = device.getCommandLogSegment(commandLogSegmentSequenceNumber);
 					if (this.currentCommandLogSegment == null) {
-						throw new SyncLiteException("Restart recovery failed. Command log segment with sequence number :" + commandLogSegmentSequenceNumber + " missing from the device");
-					}
+						// The persisted checkpoint may still be at the initial first-init state
+						// (seq=0, cdcSeq=0, commitID == replica's initial synclite_txn commit_id)
+						// when the device was registered but no sqllog has been published yet.
+						// In that case, tolerate the missing sqllog — first-init does the same
+						// (it inserts (0, initCommitID, 0) without requiring sqllog 0 to exist)
+						// and the replicator's normal loop waits for the first sqllog to arrive.
+						long replicaInitialCommitID = -1L;
+						try (ResultSet rsInit = stmt.executeQuery(firstCommitIDSql)) {
+							if (rsInit.next()) {
+								replicaInitialCommitID = rsInit.getLong(1);
+							}
+						} catch (SQLException ignored) {
+							// Best-effort: if we can't read the initial commit id we'll fall
+							// through to the strict failure below.
+						}
+						boolean atInitialState =
+								commandLogSegmentSequenceNumber == 0
+								&& cdcLogSegmentSequenceNumber == 0
+								&& this.commitID == replicaInitialCommitID;
+						if (!atInitialState) {
+							throw new SyncLiteException("Restart recovery failed. Command log segment with sequence number :" + commandLogSegmentSequenceNumber + " missing from the device");
+						}
+						device.tracer.info("Replay checkpoint at initial first-init state (no sqllog published yet) for device : " + device + "; waiting for first sqllog to arrive");
+						if (!isReplicationToSQLite()) {
+							this.currentCDCLogSegment = device.getCDCLogSegment(0);
+							if (this.currentCDCLogSegment == null) {
+								this.currentCDCLogSegment = device.getNewCDCLogSegment(0);
+							}
+							this.currentCDCLogSegment.load(this.commitID);
+						}
+						Monitor.getInstance().incrTotalSyncLiteTxnCnt(this.processedTxnCount);
+					} else {
 					device.tracer.info("Replay checkpoint recovered : commandlogSeq=" + commandLogSegmentSequenceNumber + " commitID=" + this.commitID + " cdclogSeq=" + cdcLogSegmentSequenceNumber);
 					if (!isReplicationToSQLite()) {
 						this.currentCDCLogSegment = device.getCDCLogSegment(cdcLogSegmentSequenceNumber);
@@ -382,6 +412,7 @@ public class DeviceReplicator extends DeviceProcessor {
 							Monitor.getInstance().incrTotalCommandLogSegmentCnt(this.currentCommandLogSegment.sequenceNumber + 1);
 						}
 						Monitor.getInstance().incrTotalSyncLiteTxnCnt(this.processedTxnCount);
+					}
 					} else {
 						device.tracer.debug("Initializing checkpoint table");
 						try (ResultSet rsFirstCommitID = stmt.executeQuery(firstCommitIDSql)) {

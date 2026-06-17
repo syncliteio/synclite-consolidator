@@ -81,6 +81,7 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 		ConfLoader.getInstance().blockTable(dstIndex, REPLAY_CHECKPOINT_TABLE);
 		initCheckpointTableIfNeeded();
 		device.updateDeviceStatus(DeviceStatus.SYNCING, "");
+		device.tracer.info("[INIT] DeviceConsolidator initialized for device: " + device.getDeviceName());
 	}
 
 	/**
@@ -93,10 +94,12 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 			// LOCAL mode: create checkpoint table in local metadata file
 			try {
 				consolidatorMetadataMgr.executeCheckpointTableSql(createTxnTableSql);
+				device.tracer.debug("[INIT] Checkpoint table created in LOCAL metadata file");
 				HashMap<String, Object> checkpoint = consolidatorMetadataMgr.readCheckpointRecord(selectTxnTableSql);
 				if (checkpoint.isEmpty()) {
 					String insertSql = insertTxnTableSql.replace("$1", String.valueOf(this.lastConsolidatedCommitId));
 					consolidatorMetadataMgr.executeCheckpointTableSql(insertSql);
+					device.tracer.debug("[INIT] Initial checkpoint record inserted in LOCAL metadata file");
 				}
 			} catch (SyncLiteException e) {
 				throw new SyncLiteException("Failed to initialize the checkpoint table in SyncLite consolidator metadata file : ", e);
@@ -105,8 +108,10 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 			ConsolidatorSrcTable replicatorCheckpointTable = ConsolidatorSrcTable.from(
 					SyncLiteConsolidatorInfo.getCheckpointTableID(device.getDeviceUUID(), device.getDeviceName(), this.dstIndex));
 			ConfLoader.getInstance().blockTable(dstIndex, replicatorCheckpointTable.id.table);
+		} else {
+			// DESTINATION mode: synclite_checkpoint lives on destination, created during snapshot consolidation
+			device.tracer.debug("[INIT] DESTINATION metadata mode: checkpoint will be read from/written to destination database");
 		}
-		// DESTINATION mode: synclite_checkpoint lives on destination, created during snapshot consolidation
 	}
 
 	private final void reloadCheckpointInfo() throws SyncLiteException {
@@ -124,7 +129,6 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 				throw new SyncLiteException("Failed to load consolidation src tables from metadata file : ", e);
 			}
 		}
-		seedInMemoryReplicaFromSchemas();
 
 		this.checkpointTable = ConsolidatorSrcTable.from(
 				SyncLiteConsolidatorInfo.getCheckpointTableID(device.getDeviceUUID(), device.getDeviceName(), this.dstIndex));

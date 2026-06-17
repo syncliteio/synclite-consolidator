@@ -80,7 +80,7 @@ public class ConsolidationTableMapper extends TableMapper {
 
         boolean hasPK = false;
         for (Column srcColumn : srcTable.columns) {
-        	if (! ConfLoader.getInstance().isAllowedColumn(dstIndex, srcTable.id.table, srcColumn.column)) {
+            if (!srcTable.getIsSystemTable() && !ConfLoader.getInstance().isAllowedColumn(dstIndex, srcTable.id.table, srcColumn.column)) {
         		continue;
         	}
             Column dstColumn;
@@ -111,6 +111,9 @@ public class ConsolidationTableMapper extends TableMapper {
 
     @Override
     protected TableID mapTableID(TableID srcTableID) {
+		if (SyncLiteConsolidatorInfo.isSystemMetadataTable(srcTableID.table)) {
+			return TableID.from(srcTableID.deviceUUID, srcTableID.deviceName, this.dstIndex, ConfLoader.getInstance().getDstDatabase(dstIndex), ConfLoader.getInstance().getDstSchema(dstIndex), srcTableID.table);
+		}
 		String mappedTableName = ConfLoader.getInstance().getMappedTableName(dstIndex, srcTableID.table);
         return TableID.from(srcTableID.deviceUUID, srcTableID.deviceName, this.dstIndex, ConfLoader.getInstance().getDstDatabase(dstIndex), ConfLoader.getInstance().getDstSchema(dstIndex), mappedTableName);
     }

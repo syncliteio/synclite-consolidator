@@ -168,7 +168,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			}
 		}
 		device.updateLastReplicatedCommitID(this.lastConsolidatedCommitId);
-		device.tracer.info("Event streamer checkpoint recovered : dstIndex=" + dstIndex + " commitID=" + this.lastConsolidatedCommitId + " changeNumber=" + this.lastConsolidatedChangeNumberOnReplica);
+		device.tracer.info("Initial replica checkpoint state : dstIndex=" + dstIndex + " commitID=" + this.lastConsolidatedCommitId + " changeNumber=" + this.lastConsolidatedChangeNumberOnReplica);
 	}
 
 	
@@ -483,10 +483,12 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 				TableID prevTableId = null;
 				PreparedStatement replicaInsertPrepStmt = null;
 				boolean inTransaction = false;
+				boolean txnHasPostCheckpointWork = false;
 				while (log != null) {
 					if (log.isBegin()) {
 						inTransaction = true;
 						emptyTxn = true;
+						txnHasPostCheckpointWork = false;
 						currentInsertBatchCount = 0;
 						currentUpdateBatchCount = 0;
 						currentDeleteBatchCount = 0;
@@ -509,11 +511,20 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 							currentInsertBatchCountOnReplica = 0;
 						}
 
-						updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
-						beforeValues.clear();
-						afterValues.clear();
-						commitDstTran(dstExecutor);
-						updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
+						if (txnHasPostCheckpointWork) {
+							updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
+							beforeValues.clear();
+							afterValues.clear();
+							commitDstTran(dstExecutor);
+							updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
+						} else {
+							// Nothing was issued against dstExecutor for this source txn
+							// (e.g. all records filtered as already-applied on restart).
+							// Skip the no-op ROLLBACK+BEGIN cycle; keep the existing dst
+							// tx open for the next source txn.
+							beforeValues.clear();
+							afterValues.clear();
+						}
 
 						if (replicaConn != null) {
 							bindAndExecuteReplicaCheckpointUpdatePrepStmt(replicaCheckpointUpdatePrepStmt, log.commitId, log.changeNumber);
@@ -523,13 +534,17 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 							this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
 						}
 
-						++currentEventLogSegmentTxnCnt;
-						++consolidatedTxnCount;
-						this.lastConsolidatedCommitId = log.commitId;
-						this.lastConsolidatedChangeNumber = log.changeNumber;
+						if (txnHasPostCheckpointWork) {
+							++currentEventLogSegmentTxnCnt;
+							++consolidatedTxnCount;
+							this.lastConsolidatedCommitId = log.commitId;
+							this.lastConsolidatedChangeNumber = log.changeNumber;
+						}
 						emptyTxn = true;
 						inTransaction = false;
-						dstExecutor.beginTran();
+						if (txnHasPostCheckpointWork) {
+							dstExecutor.beginTran();
+						}
 
 						lastLog = log;
 						log = reader.readNextRecord();
@@ -727,6 +742,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 					
 					//Skip log based on lastConsolidated commitid and changenumber
 					if ((log.commitId > this.lastConsolidatedCommitId) || ((log.commitId == this.lastConsolidatedCommitId) && (log.changeNumber > this.lastConsolidatedChangeNumber))) {
+						txnHasPostCheckpointWork = true;
 						//
 						//Check if prevOper or prevTable is different than this log's oper and table..
 						//If yes then flush the existing batches

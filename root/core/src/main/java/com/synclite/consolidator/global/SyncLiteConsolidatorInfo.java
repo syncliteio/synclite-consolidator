@@ -17,13 +17,30 @@
 package com.synclite.consolidator.global;
 
 import java.nio.file.Path;
+import java.sql.JDBCType;
 
+import com.synclite.consolidator.schema.Column;
+import com.synclite.consolidator.schema.ConsolidatorSrcTable;
+import com.synclite.consolidator.schema.DataType;
+import com.synclite.consolidator.schema.StorageClass;
 import com.synclite.consolidator.schema.TableID;
 
 public class SyncLiteConsolidatorInfo {
 
     public static TableID getCheckpointTableID(String deviceUUID, String deviceName, int dstIndex) {
         return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, getSyncLiteCheckpointTableName());
+    }
+
+    public static ConsolidatorSrcTable getCheckpointTableSchema(String deviceUUID, String deviceName, int dstIndex) {
+        ConsolidatorSrcTable checkpoint = ConsolidatorSrcTable.from(getCheckpointTableID(deviceUUID, deviceName, dstIndex));
+        checkpoint.clearColumns();
+        checkpoint.setIsSystemTable();
+        checkpoint.addColumn(new Column(0, "commit_id", new DataType("LONG", JDBCType.BIGINT, StorageClass.NUMERIC), 1, null, 1, 0));
+        checkpoint.addColumn(new Column(1, "cdc_change_number", new DataType("LONG", JDBCType.BIGINT, StorageClass.NUMERIC), 1, null, 0, 0));
+        checkpoint.addColumn(new Column(2, "cdc_log_segment_sequence_number", new DataType("LONG", JDBCType.BIGINT, StorageClass.NUMERIC), 1, null, 0, 0));
+        checkpoint.addColumn(new Column(3, "initialization_status", new DataType("LONG", JDBCType.BIGINT, StorageClass.NUMERIC), 1, "0", 0, 0));
+        checkpoint.addColumn(new Column(4, "txn_count", new DataType("LONG", JDBCType.BIGINT, StorageClass.NUMERIC), 1, null, 0, 0));
+        return checkpoint;
     }
 
     public static String getSyncLiteCheckpointTableName() {
@@ -36,6 +53,47 @@ public class SyncLiteConsolidatorInfo {
      */
     public static String getConsolidatorTableMetadataTableName() {
     	return "synclite_consolidator_table_metadata";
+    }
+
+    public static TableID getConsolidatorTableMetadataTableID(String deviceUUID, String deviceName, int dstIndex) {
+        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, getConsolidatorTableMetadataTableName());
+    }
+
+    public static ConsolidatorSrcTable getConsolidatorTableMetadataTableSchema(String deviceUUID, String deviceName, int dstIndex) {
+        ConsolidatorSrcTable tableMetadata = ConsolidatorSrcTable.from(getConsolidatorTableMetadataTableID(deviceUUID, deviceName, dstIndex));
+        tableMetadata.clearColumns();
+        tableMetadata.setIsSystemTable();
+        tableMetadata.addColumn(new Column(0, "database_name", new DataType("varchar(255)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
+        tableMetadata.addColumn(new Column(1, "table_name", new DataType("varchar(255)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
+        tableMetadata.addColumn(new Column(2, "prop_key", new DataType("varchar(255)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
+        tableMetadata.addColumn(new Column(3, "prop_value", new DataType("text", JDBCType.LONGVARCHAR, StorageClass.TEXT), 0, null, 0, 0));
+        return tableMetadata;
+    }
+
+    public static String getConsolidatorMetadataTableName() {
+        return "synclite_consolidator_metadata";
+    }
+
+    public static boolean isSystemMetadataTable(String tableName) {
+        if (tableName == null) {
+            return false;
+        }
+        return getSyncLiteCheckpointTableName().equalsIgnoreCase(tableName)
+                || getConsolidatorTableMetadataTableName().equalsIgnoreCase(tableName)
+                || getConsolidatorMetadataTableName().equalsIgnoreCase(tableName);
+    }
+
+    public static TableID getConsolidatorMetadataTableID(String deviceUUID, String deviceName, int dstIndex) {
+        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, getConsolidatorMetadataTableName());
+    }
+
+    public static ConsolidatorSrcTable getConsolidatorMetadataTableSchema(String deviceUUID, String deviceName, int dstIndex) {
+        ConsolidatorSrcTable metadata = ConsolidatorSrcTable.from(getConsolidatorMetadataTableID(deviceUUID, deviceName, dstIndex));
+        metadata.clearColumns();
+        metadata.setIsSystemTable();
+        metadata.addColumn(new Column(0, "prop_key", new DataType("varchar(255)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
+        metadata.addColumn(new Column(1, "prop_value", new DataType("text", JDBCType.LONGVARCHAR, StorageClass.TEXT), 0, null, 0, 0));
+        return metadata;
     }
 
     public static String getCreateConsolidatorTableMetadataTableSql() {

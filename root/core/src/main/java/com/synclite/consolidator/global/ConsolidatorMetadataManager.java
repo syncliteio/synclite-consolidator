@@ -36,10 +36,15 @@ import com.synclite.consolidator.connector.JDBCConnector;
 import com.synclite.consolidator.device.Device;
 import com.synclite.consolidator.exception.DstExecutionException;
 import com.synclite.consolidator.exception.SyncLiteException;
+import com.synclite.consolidator.oper.CreateTable;
+import com.synclite.consolidator.oper.Delete;
+import com.synclite.consolidator.oper.Insert;
+import com.synclite.consolidator.processor.SQLExecutor;
 import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorSrcTable;
 import com.synclite.consolidator.schema.DataType;
 import com.synclite.consolidator.schema.TableID;
+import com.synclite.consolidator.schema.TableMapper;
 import com.synclite.consolidator.watchdog.Monitor;
 
 public class ConsolidatorMetadataManager extends MetadataManager {
@@ -59,23 +64,21 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     private long initializationCount;
     private volatile long lastConsolidatedCDCLogSegmentSeqNumber = -1;
     private int dstIndex;
-
-    private static final String createDstMetadataTblSql =
-            "CREATE TABLE IF NOT EXISTS synclite_consolidator_metadata(" +
-            "device_uuid VARCHAR(64) NOT NULL, device_name VARCHAR(255) NOT NULL, " +
-            "prop_key VARCHAR(255) NOT NULL, prop_value TEXT, " +
-            "PRIMARY KEY(device_uuid, device_name, prop_key))";
-
-    private static final String createDstTableMetadataTblSql =
-            "CREATE TABLE IF NOT EXISTS synclite_consolidator_table_metadata(" +
-            "device_uuid VARCHAR(64) NOT NULL, device_name VARCHAR(255) NOT NULL, " +
-            "database_name VARCHAR(255) NOT NULL, table_name VARCHAR(255) NOT NULL, prop_key VARCHAR(255) NOT NULL, prop_value TEXT, " +
-            "PRIMARY KEY(device_uuid, device_name, database_name, table_name, prop_key))";
+        private final TableMapper systemTableMapper;
+        private final ConsolidatorSrcTable dstMetadataSystemTable;
+        private final ConsolidatorSrcTable dstTableMetadataSystemTable;
 
     protected ConsolidatorMetadataManager(Path metadataFilePath, Device device, int dstIndex) throws SQLException {
         super(metadataFilePath);
         this.device = device;
         this.dstIndex = dstIndex;
+        try {
+            this.systemTableMapper = TableMapper.getSystemTableMapperInstance(dstIndex);
+        } catch (SyncLiteException e) {
+            throw new SQLException("Failed to initialize system table mapper", e);
+        }
+        this.dstMetadataSystemTable = SyncLiteConsolidatorInfo.getConsolidatorMetadataTableSchema(device.getDeviceUUID(), device.getDeviceName(), dstIndex);
+        this.dstTableMetadataSystemTable = SyncLiteConsolidatorInfo.getConsolidatorTableMetadataTableSchema(device.getDeviceUUID(), device.getDeviceName(), dstIndex);
         initializeSchemaTable();        
     }
 
@@ -101,10 +104,26 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             }
             return null;
         }
-        // DESTINATION mode: read from destination
+        // DESTINATION mode: read from destination using a single autoCommit=true
+        // connection to avoid the two-connection DDL-lock deadlock.
         try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-            ensureDstTableMetadataTable(conn);
-            String sql = "SELECT prop_value FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND database_name = ? AND table_name = ? AND prop_key = ?";
+            conn.setAutoCommit(true);
+            String tblMetaTbl = qualifiedDstTableName("synclite_consolidator_table_metadata");
+            if (!dstTableMetadataTableEnsured) {
+                try (Statement ddl = conn.createStatement()) {
+                    ddl.execute("CREATE TABLE IF NOT EXISTS " + tblMetaTbl
+                            + "(synclite_device_id VARCHAR(64) NOT NULL,"
+                            + " synclite_device_name VARCHAR(255) NOT NULL,"
+                            + " synclite_update_timestamp TEXT,"
+                            + " database_name VARCHAR(255) NOT NULL,"
+                            + " table_name VARCHAR(255) NOT NULL,"
+                            + " prop_key VARCHAR(255) NOT NULL,"
+                            + " prop_value TEXT,"
+                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, database_name, table_name, prop_key))");
+                }
+                dstTableMetadataTableEnsured = true;
+            }
+            String sql = "SELECT prop_value FROM " + tblMetaTbl + " WHERE synclite_device_id = ? AND synclite_device_name = ? AND database_name = ? AND table_name = ? AND prop_key = ?";
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setString(1, this.device.getDeviceUUID());
                 stmt.setString(2, this.device.getDeviceName());
@@ -133,18 +152,15 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             return;
         }
         // DESTINATION mode: delete from destination table
-        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-            conn.setAutoCommit(false);
-            ensureDstTableMetadataTable(conn);
-            seedDstMetadataVersionIfAbsent(conn);
-            try (PreparedStatement stmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ?")) {
-                stmt.setString(1, this.device.getDeviceUUID());
-                stmt.setString(2, this.device.getDeviceName());
-                stmt.execute();
-            }
-            conn.commit();
-        } catch (DstExecutionException e) {
+        try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, dstIndex, device.tracer)) {
+            dstExecutor.beginTran();
+            ensureDstTableMetadataTable(dstExecutor);
+            seedDstMetadataVersionIfAbsent(dstExecutor);
+            Delete deleteAll = new Delete(dstTableMetadataSystemTable, new ArrayList<Object>());
+            deleteAll.whereColumns = new ArrayList<Column>();
+            dstExecutor.execute(systemTableMapper.mapOper(deleteAll));
+            dstExecutor.commitTran();
+        } catch (SyncLiteException e) {
             throw new SQLException("Failed to connect to destination to delete table metadata", e);
         }
     }
@@ -158,18 +174,18 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             }
         } else {
             // DESTINATION mode: delete create_sql rows from unified table_metadata
-            try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-                conn.setAutoCommit(false);
-                ensureDstTableMetadataTable(conn);
-                seedDstMetadataVersionIfAbsent(conn);
-                try (PreparedStatement stmt = conn.prepareStatement(
-                        "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND prop_key = 'create_sql'")) {
-                    stmt.setString(1, this.device.getDeviceUUID());
-                    stmt.setString(2, this.device.getDeviceName());
-                    stmt.execute();
-                }
-                conn.commit();
-            } catch (DstExecutionException e) {
+            try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, dstIndex, device.tracer)) {
+                dstExecutor.beginTran();
+                ensureDstTableMetadataTable(dstExecutor);
+                seedDstMetadataVersionIfAbsent(dstExecutor);
+                ArrayList<Object> beforeValues = new ArrayList<Object>(1);
+                beforeValues.add(SyncLiteConsolidatorInfo.getCreateSqlPropKey());
+                Delete deleteSchemaRows = new Delete(dstTableMetadataSystemTable, beforeValues);
+                deleteSchemaRows.whereColumns = new ArrayList<Column>();
+                deleteSchemaRows.whereColumns.add(dstTableMetadataSystemTable.colMap.get("prop_key"));
+                dstExecutor.execute(systemTableMapper.mapOper(deleteSchemaRows));
+                dstExecutor.commitTran();
+            } catch (SyncLiteException e) {
                 throw new SQLException("Failed to connect to destination to delete schema info", e);
             }
         }
@@ -199,31 +215,30 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             return;
         }
         // DESTINATION mode: write to destination
-        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-            conn.setAutoCommit(false);
-            ensureDstTableMetadataTable(conn);
-            seedDstMetadataVersionIfAbsent(conn);
-            try (PreparedStatement deleteStmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND database_name = ? AND table_name = ? AND prop_key = ?");
-                 PreparedStatement insertStmt = conn.prepareStatement(
-                    "INSERT INTO synclite_consolidator_table_metadata(device_uuid, device_name, database_name, table_name, prop_key, prop_value) VALUES(?, ?, ?, ?, ?, ?)")) {
-                deleteStmt.setString(1, this.device.getDeviceUUID());
-                deleteStmt.setString(2, this.device.getDeviceName());
-                deleteStmt.setString(3, srcTable.id.database);
-                deleteStmt.setString(4, srcTable.id.table);
-                deleteStmt.setString(5, key);
-                deleteStmt.execute();
+        try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, dstIndex, device.tracer)) {
+            dstExecutor.beginTran();
+            ensureDstTableMetadataTable(dstExecutor);
+            seedDstMetadataVersionIfAbsent(dstExecutor);
 
-                insertStmt.setString(1, this.device.getDeviceUUID());
-                insertStmt.setString(2, this.device.getDeviceName());
-                insertStmt.setString(3, srcTable.id.database);
-                insertStmt.setString(4, srcTable.id.table);
-                insertStmt.setString(5, key);
-                insertStmt.setString(6, value == null ? null : value.toString());
-                insertStmt.execute();
-            }
-            conn.commit();
-        } catch (DstExecutionException e) {
+            ArrayList<Object> beforeValues = new ArrayList<Object>(3);
+            beforeValues.add(srcTable.id.database);
+            beforeValues.add(srcTable.id.table);
+            beforeValues.add(key);
+            Delete deleteEntry = new Delete(dstTableMetadataSystemTable, beforeValues);
+            deleteEntry.whereColumns = new ArrayList<Column>();
+            deleteEntry.whereColumns.add(dstTableMetadataSystemTable.colMap.get("database_name"));
+            deleteEntry.whereColumns.add(dstTableMetadataSystemTable.colMap.get("table_name"));
+            deleteEntry.whereColumns.add(dstTableMetadataSystemTable.colMap.get("prop_key"));
+            dstExecutor.execute(systemTableMapper.mapOper(deleteEntry));
+
+            ArrayList<Object> afterValues = new ArrayList<Object>(4);
+            afterValues.add(srcTable.id.database);
+            afterValues.add(srcTable.id.table);
+            afterValues.add(key);
+            afterValues.add(value == null ? null : value.toString());
+            dstExecutor.execute(systemTableMapper.mapOper(new Insert(dstTableMetadataSystemTable, afterValues, false)));
+            dstExecutor.commitTran();
+        } catch (SyncLiteException e) {
             throw new SQLException("Failed to connect to destination for table metadata persistence", e);
         }
     }
@@ -254,11 +269,63 @@ public class ConsolidatorMetadataManager extends MetadataManager {
                     }
                     insertSchemaStmt.executeBatch();
                 }
+
+                // Keep local mode aligned with DESTINATION mode schema persistence:
+                // store source CREATE SQL in table_metadata(key='create_sql').
+                String createSql = buildCreateSqlFromColumns(srcTable);
+                try (PreparedStatement deleteStmt = conn.prepareStatement(deleteTableMetadataTblSql)) {
+                    deleteStmt.setString(1, srcTable.id.database);
+                    deleteStmt.setString(2, srcTable.id.table);
+                    deleteStmt.setString(3, SyncLiteConsolidatorInfo.getCreateSqlPropKey());
+                    deleteStmt.execute();
+                }
+                try (PreparedStatement insertStmt = conn.prepareStatement(insertTableMetadataTblSql)) {
+                    insertStmt.setString(1, srcTable.id.database);
+                    insertStmt.setString(2, srcTable.id.schema);
+                    insertStmt.setString(3, srcTable.id.table);
+                    insertStmt.setString(4, SyncLiteConsolidatorInfo.getCreateSqlPropKey());
+                    insertStmt.setString(5, createSql);
+                    insertStmt.execute();
+                }
                 conn.commit();
             }
         }
         // In DESTINATION mode: actual schema persistence to destination is done by DeviceSyncProcessor.persistSchemaToDst()
         this.deviceSrcTables.put(srcTable.id, srcTable);
+    }
+
+    private String buildCreateSqlFromColumns(ConsolidatorSrcTable srcTable) {
+        StringBuilder sb = new StringBuilder("CREATE TABLE IF NOT EXISTS ").append(srcTable.id.table).append(" (");
+        ArrayList<Column> pkCols = new ArrayList<Column>();
+        boolean first = true;
+        for (Column col : srcTable.columns) {
+            if (!first) {
+                sb.append(", ");
+            }
+            sb.append(col.column).append(" ").append(col.type.dbNativeDataType);
+            if (col.isNotNull != 0) {
+                sb.append(" NOT NULL");
+            }
+            if (col.pkIndex != 0) {
+                pkCols.add(col);
+            }
+            first = false;
+        }
+        if (pkCols.size() == 1) {
+            sb.append(", PRIMARY KEY(").append(pkCols.get(0).column).append(")");
+        } else if (pkCols.size() > 1) {
+            pkCols.sort((a, b) -> Integer.compare(a.pkIndex, b.pkIndex));
+            sb.append(", PRIMARY KEY(");
+            for (int i = 0; i < pkCols.size(); ++i) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append(pkCols.get(i).column);
+            }
+            sb.append(")");
+        }
+        sb.append(")");
+        return sb.toString();
     }
 
     
@@ -288,23 +355,33 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             // which calls upsertSchema() to populate the in-memory cache. Nothing to do here.
             return;
         }
-    	this.deviceSrcTables.clear();
+	this.deviceSrcTables.clear();
+        String sql = "SELECT database_name, table_name, value FROM table_metadata WHERE key = '" + SyncLiteConsolidatorInfo.getCreateSqlPropKey() + "' ORDER BY database_name, table_name";
         try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
             try (Statement stmt = conn.createStatement()) {
-                try (ResultSet rs = stmt.executeQuery(selectSchemaTblSql)) {
-                    TableID currentTableID = null;
-                    ConsolidatorSrcTable currentTable = null;
-                    while (rs.next()) {
-                        TableID tableID = TableID.from(device.getDeviceUUID(), device.getDeviceName(), this.dstIndex, rs.getString(1), rs.getString(2), rs.getString(3));
-                        if (!tableID.equals(currentTableID)) {
-                            currentTableID = tableID;
-                            currentTable = ConsolidatorSrcTable.from(currentTableID);
-                            this.deviceSrcTables.put(tableID, currentTable);
+                try (ResultSet rs = stmt.executeQuery(sql)) {
+                    try (Connection schemaConn = DriverManager.getConnection("jdbc:sqlite::memory:")) {
+                        while (rs.next()) {
+                            String dbName = rs.getString(1);
+                            String tableName = rs.getString(2);
+                            String createSql = rs.getString(3);
+                            if (createSql == null || createSql.isBlank()) {
+                                continue;
+                            }
+                            try (Statement schemaStmt = schemaConn.createStatement()) {
+                                schemaStmt.execute(createSql);
+                            }
+                            TableID tableID = TableID.from(device.getDeviceUUID(), device.getDeviceName(), this.dstIndex, dbName, null, tableName);
+                            ConsolidatorSrcTable currentTable = ConsolidatorSrcTable.from(tableID);
+                            currentTable.sql = createSql;
                             currentTable.clearColumns();
+                            for (Column c : device.schemaReader.fetchColumns(schemaConn, tableID)) {
+                                currentTable.addColumn(c);
+                            }
+                            this.deviceSrcTables.put(tableID, currentTable);
                         }
-                        DataType dataType = new DataType(rs.getString(6), device.schemaReader.getJavaSqlType(rs.getString(6)), device.schemaReader.getStorageClass(rs.getString(6)));
-                        Column c = new Column(rs.getLong(4), rs.getString(5), dataType, rs.getInt(7), rs.getString(8), rs.getInt(9), rs.getInt(10));
-                        currentTable.addColumn(c);
+                    } catch (SyncLiteException e) {
+                        throw new SQLException("Failed to load schema columns from local create_sql metadata", e);
                     }
                 }
             }
@@ -334,58 +411,72 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         return JDBCConnector.getInstance(dstIndex).isJdbcCapable();
     }
 
-    private void ensureDstMetadataTable(Connection conn) throws SQLException {
-        try (Statement stmt = conn.createStatement()) {
-            stmt.execute(createDstMetadataTblSql);
+    private volatile boolean dstMetadataTableEnsured = false;
+    private volatile boolean dstTableMetadataTableEnsured = false;
+
+    private void ensureDstMetadataTable(SQLExecutor dstExecutor) throws DstExecutionException {
+        if (dstMetadataTableEnsured) {
+            return;
         }
+        device.tracer.debug("[BOOT] Ensuring consolidator metadata table exists on destination");
+        dstExecutor.execute(systemTableMapper.mapOper(new CreateTable(dstMetadataSystemTable)));
+        dstMetadataTableEnsured = true;
+        device.tracer.debug("[BOOT] Consolidator metadata table ensured on destination");
     }
 
     private volatile boolean dstVersionSeeded = false;
 
     /**
      * Seed the {@code synclite_metadata_version} row inline on the caller's connection.
-     * Must be called on a writer path: the caller's subsequent {@code commit()} makes the
-     * insert durable. Opening a second pool connection here would deadlock against the
-     * caller's open transaction on the same SQLite file (SQLITE_BUSY).
+     * Uses DELETE+INSERT on the same dstExecutor transaction to avoid a separate
+     * SELECT connection which would deadlock on PostgreSQL: the dstExecutor holds an
+     * open AccessExclusiveLock from the preceding CREATE TABLE, and a SELECT on a
+     * second autoCommit=false connection from the same pool waits indefinitely.
      */
-    private void seedDstMetadataVersionIfAbsent(Connection conn) throws SQLException {
+    private void seedDstMetadataVersionIfAbsent(SQLExecutor dstExecutor) throws SQLException, SyncLiteException {
         if (dstVersionSeeded) {
+            device.tracer.debug("[BOOT] Metadata version already seeded, skipping");
             return;
         }
-        // The seed targets synclite_consolidator_metadata; ensure that table exists
-        // regardless of which writer path (property vs. table-metadata) reached us first.
-        try (Statement stmt = conn.createStatement()) {
-            stmt.execute(createDstMetadataTblSql);
-        }
-        try (PreparedStatement sel = conn.prepareStatement(
-                "SELECT 1 FROM synclite_consolidator_metadata "
-                + "WHERE device_uuid = ? AND device_name = ? AND prop_key = ?")) {
-            sel.setString(1, this.device.getDeviceUUID());
-            sel.setString(2, this.device.getDeviceName());
-            sel.setString(3, SYNCLITE_METADATA_VERSION_KEY);
-            try (ResultSet rs = sel.executeQuery()) {
-                if (rs.next()) {
-                    dstVersionSeeded = true;
-                    return;
-                }
-            }
-        }
-        try (PreparedStatement ins = conn.prepareStatement(
-                "INSERT INTO synclite_consolidator_metadata(device_uuid, device_name, prop_key, prop_value) "
-                + "VALUES(?, ?, ?, ?)")) {
-            ins.setString(1, this.device.getDeviceUUID());
-            ins.setString(2, this.device.getDeviceName());
-            ins.setString(3, SYNCLITE_METADATA_VERSION_KEY);
-            ins.setString(4, Long.toString(SYNCLITE_METADATA_VERSION));
-            ins.execute();
-        }
+        device.tracer.debug("[BOOT] Seeding destination metadata version");
+        ensureDstMetadataTable(dstExecutor);
+        // Delete-then-insert (idempotent) on the same transaction to avoid opening
+        // a second connection for a SELECT check.
+        ArrayList<Object> delVals = new ArrayList<Object>(1);
+        delVals.add(SYNCLITE_METADATA_VERSION_KEY);
+        Delete deleteProp = new Delete(dstMetadataSystemTable, delVals);
+        deleteProp.whereColumns = new ArrayList<Column>();
+        deleteProp.whereColumns.add(dstMetadataSystemTable.colMap.get("prop_key"));
+        dstExecutor.execute(systemTableMapper.mapOper(deleteProp));
+        ArrayList<Object> vals = new ArrayList<Object>(2);
+        vals.add(SYNCLITE_METADATA_VERSION_KEY);
+        vals.add(Long.toString(SYNCLITE_METADATA_VERSION));
+        dstExecutor.execute(systemTableMapper.mapOper(new Insert(dstMetadataSystemTable, vals, false)));
         dstVersionSeeded = true;
+        device.tracer.info("[BOOT] Destination metadata version seeded successfully");
     }
 
-    private void ensureDstTableMetadataTable(Connection conn) throws SQLException {
-        try (Statement stmt = conn.createStatement()) {
-            stmt.execute(createDstTableMetadataTblSql);
+    private void ensureDstTableMetadataTable(SQLExecutor dstExecutor) throws DstExecutionException {
+        if (dstTableMetadataTableEnsured) {
+            return;
         }
+        dstExecutor.execute(systemTableMapper.mapOper(new CreateTable(dstTableMetadataSystemTable)));
+        dstTableMetadataTableEnsured = true;
+    }
+
+    /**
+     * Returns a schema-qualified reference to a destination system metadata table name
+     * (e.g. "myschema"."synclite_consolidator_metadata") when dst-schema is configured,
+     * or the bare name when no schema is configured. Used for raw JDBC SQL strings that
+     * bypass the system table mapper so PostgreSQL resolves them in the right schema
+     * instead of following search_path (which defaults to public).
+     */
+    private String qualifiedDstTableName(String tableName) {
+        String schema = ConfLoader.getInstance().getDstSchema(dstIndex);
+        if (schema != null && !schema.trim().isEmpty()) {
+            return "\"" + schema.replace("\"", "\"\"") + "\".\"" + tableName.replace("\"", "\"\"") + "\"";
+        }
+        return tableName;
     }
 
     @Override
@@ -394,64 +485,91 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             super.upsertProperties(values);
             return;
         }
-        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-            conn.setAutoCommit(false);
-            ensureDstMetadataTable(conn);
-            seedDstMetadataVersionIfAbsent(conn);
-            try (PreparedStatement deleteStmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND prop_key = ?");
-                 PreparedStatement insertStmt = conn.prepareStatement(
-                    "INSERT INTO synclite_consolidator_metadata(device_uuid, device_name, prop_key, prop_value) VALUES(?, ?, ?, ?)")) {
-                for (Map.Entry<String, Object> entry : values.entrySet()) {
-                    String val = entry.getValue() == null ? null : entry.getValue().toString();
-                    deleteStmt.setString(1, this.device.getDeviceUUID());
-                    deleteStmt.setString(2, this.device.getDeviceName());
-                    deleteStmt.setString(3, entry.getKey());
-                    deleteStmt.addBatch();
+        try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, dstIndex, device.tracer)) {
+            dstExecutor.beginTran();
+            ensureDstMetadataTable(dstExecutor);
+            seedDstMetadataVersionIfAbsent(dstExecutor);
+            for (Map.Entry<String, Object> entry : values.entrySet()) {
+                ArrayList<Object> beforeValues = new ArrayList<Object>(1);
+                beforeValues.add(entry.getKey());
+                Delete deleteProp = new Delete(dstMetadataSystemTable, beforeValues);
+                deleteProp.whereColumns = new ArrayList<Column>();
+                deleteProp.whereColumns.add(dstMetadataSystemTable.colMap.get("prop_key"));
+                dstExecutor.execute(systemTableMapper.mapOper(deleteProp));
 
-                    insertStmt.setString(1, this.device.getDeviceUUID());
-                    insertStmt.setString(2, this.device.getDeviceName());
-                    insertStmt.setString(3, entry.getKey());
-                    insertStmt.setString(4, val);
-                    insertStmt.addBatch();
-                }
-                deleteStmt.executeBatch();
-                insertStmt.executeBatch();
+                ArrayList<Object> afterValues = new ArrayList<Object>(2);
+                afterValues.add(entry.getKey());
+                afterValues.add(entry.getValue() == null ? null : entry.getValue().toString());
+                dstExecutor.execute(systemTableMapper.mapOper(new Insert(dstMetadataSystemTable, afterValues, false)));
             }
-            conn.commit();
-        } catch (DstExecutionException e) {
+            dstExecutor.commitTran();
+        } catch (SyncLiteException e) {
             throw new SQLException("Failed to connect to destination for consolidator metadata persistence", e);
         }
     }
 
+    /**
+     * Boot-time: Insert device metadata property if absent (called once per device boot).
+     */
+    public void insertPropertyIfAbsent(String key, Object value) throws SQLException {
+        if (!isDestinationMetadataMode()) {
+            super.upsertProperty(key, value);
+            return;
+        }
+
+        // Fast read path to avoid unnecessary transaction churn when property already exists.
+        if (getStringProperty(key) != null) {
+            device.tracer.debug("[BOOT] Device metadata property already exists: " + key);
+            return;
+        }
+
+        try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, dstIndex, device.tracer)) {
+            dstExecutor.beginTran();
+            ensureDstMetadataTable(dstExecutor);
+            seedDstMetadataVersionIfAbsent(dstExecutor);
+
+            ArrayList<Object> afterValues = new ArrayList<Object>(2);
+            afterValues.add(key);
+            afterValues.add(value == null ? null : value.toString());
+            dstExecutor.execute(systemTableMapper.mapOper(new Insert(dstMetadataSystemTable, afterValues, false)));
+
+            dstExecutor.commitTran();
+            device.tracer.info("[BOOT] Device metadata property inserted: " + key + "=" + value);
+        } catch (SyncLiteException e) {
+            throw new SQLException("Failed to insert device metadata property at boot", e);
+        }
+    }
+
+    /**
+     * Runtime: upsert device metadata property (during segment apply).
+     */
     @Override
     public void upsertProperty(String key, Object value) throws SQLException {
         if (!isDestinationMetadataMode()) {
             super.upsertProperty(key, value);
             return;
         }
-        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-            conn.setAutoCommit(false);
-            ensureDstMetadataTable(conn);
-            seedDstMetadataVersionIfAbsent(conn);
-            try (PreparedStatement deleteStmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND prop_key = ?");
-                 PreparedStatement insertStmt = conn.prepareStatement(
-                    "INSERT INTO synclite_consolidator_metadata(device_uuid, device_name, prop_key, prop_value) VALUES(?, ?, ?, ?)")) {
-                deleteStmt.setString(1, this.device.getDeviceUUID());
-                deleteStmt.setString(2, this.device.getDeviceName());
-                deleteStmt.setString(3, key);
-                deleteStmt.execute();
+        try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, dstIndex, device.tracer)) {
+            dstExecutor.beginTran();
+            ensureDstMetadataTable(dstExecutor);
+            seedDstMetadataVersionIfAbsent(dstExecutor);
 
-                insertStmt.setString(1, this.device.getDeviceUUID());
-                insertStmt.setString(2, this.device.getDeviceName());
-                insertStmt.setString(3, key);
-                insertStmt.setString(4, value == null ? null : value.toString());
-                insertStmt.execute();
-            }
-            conn.commit();
-        } catch (DstExecutionException e) {
-            throw new SQLException("Failed to connect to destination for consolidator metadata persistence", e);
+            ArrayList<Object> beforeValues = new ArrayList<Object>(1);
+            beforeValues.add(key);
+            Delete deleteProp = new Delete(dstMetadataSystemTable, beforeValues);
+            deleteProp.whereColumns = new ArrayList<Column>();
+            deleteProp.whereColumns.add(dstMetadataSystemTable.colMap.get("prop_key"));
+            dstExecutor.execute(systemTableMapper.mapOper(deleteProp));
+
+            ArrayList<Object> afterValues = new ArrayList<Object>(2);
+            afterValues.add(key);
+            afterValues.add(value == null ? null : value.toString());
+            dstExecutor.execute(systemTableMapper.mapOper(new Insert(dstMetadataSystemTable, afterValues, false)));
+
+            dstExecutor.commitTran();
+            device.tracer.debug("[RUNTIME] Device metadata property upserted: " + key + "=" + value);
+        } catch (SyncLiteException e) {
+            throw new SQLException("Failed to update device metadata property", e);
         }
     }
 
@@ -461,19 +579,19 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             super.deleteProperty(key);
             return;
         }
-        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-            conn.setAutoCommit(false);
-            ensureDstMetadataTable(conn);
-            seedDstMetadataVersionIfAbsent(conn);
-            try (PreparedStatement deleteStmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND prop_key = ?")) {
-                deleteStmt.setString(1, this.device.getDeviceUUID());
-                deleteStmt.setString(2, this.device.getDeviceName());
-                deleteStmt.setString(3, key);
-                deleteStmt.execute();
-            }
-            conn.commit();
-        } catch (DstExecutionException e) {
+        try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, dstIndex, device.tracer)) {
+            dstExecutor.beginTran();
+            ensureDstMetadataTable(dstExecutor);
+            seedDstMetadataVersionIfAbsent(dstExecutor);
+
+            ArrayList<Object> beforeValues = new ArrayList<Object>(1);
+            beforeValues.add(key);
+            Delete deleteProp = new Delete(dstMetadataSystemTable, beforeValues);
+            deleteProp.whereColumns = new ArrayList<Column>();
+            deleteProp.whereColumns.add(dstMetadataSystemTable.colMap.get("prop_key"));
+            dstExecutor.execute(systemTableMapper.mapOper(deleteProp));
+            dstExecutor.commitTran();
+        } catch (SyncLiteException e) {
             throw new SQLException("Failed to connect to destination for consolidator metadata persistence", e);
         }
     }
@@ -483,9 +601,27 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         if (!isDestinationMetadataMode()) {
             return super.getStringProperty(key);
         }
+        // Use a single autoCommit=true connection so that:
+        // (a) the bootstrap CREATE TABLE IF NOT EXISTS commits immediately, and
+        // (b) the subsequent SELECT does not wait for the DDL's AccessExclusiveLock
+        //     (which would deadlock when DDL and SELECT are on separate autoCommit=false
+        //     connections from the same HikariCP pool on the same thread).
         try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-            ensureDstMetadataTable(conn);
-            String sql = "SELECT prop_value FROM synclite_consolidator_metadata WHERE device_uuid = ? AND device_name = ? AND prop_key = ?";
+            conn.setAutoCommit(true);
+            String metaTbl = qualifiedDstTableName("synclite_consolidator_metadata");
+            if (!dstMetadataTableEnsured) {
+                try (Statement ddl = conn.createStatement()) {
+                    ddl.execute("CREATE TABLE IF NOT EXISTS " + metaTbl
+                            + "(synclite_device_id VARCHAR(64) NOT NULL,"
+                            + " synclite_device_name VARCHAR(255) NOT NULL,"
+                            + " synclite_update_timestamp TEXT,"
+                            + " prop_key VARCHAR(255) NOT NULL,"
+                            + " prop_value TEXT,"
+                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, prop_key))");
+                }
+                dstMetadataTableEnsured = true;
+            }
+            String sql = "SELECT prop_value FROM " + metaTbl + " WHERE synclite_device_id = ? AND synclite_device_name = ? AND prop_key = ?";
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setString(1, this.device.getDeviceUUID());
                 stmt.setString(2, this.device.getDeviceName());
@@ -519,18 +655,18 @@ public class ConsolidatorMetadataManager extends MetadataManager {
                 }
             }
         } else {
-            try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-                conn.setAutoCommit(false);
-                ensureDstTableMetadataTable(conn);
-                seedDstMetadataVersionIfAbsent(conn);
-                try (PreparedStatement stmt = conn.prepareStatement(
-                        "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ? AND prop_key = 'create_sql'")) {
-                    stmt.setString(1, this.device.getDeviceUUID());
-                    stmt.setString(2, this.device.getDeviceName());
-                    stmt.execute();
-                }
-                conn.commit();
-            } catch (DstExecutionException e) {
+            try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, dstIndex, device.tracer)) {
+                dstExecutor.beginTran();
+                ensureDstTableMetadataTable(dstExecutor);
+                seedDstMetadataVersionIfAbsent(dstExecutor);
+                ArrayList<Object> beforeValues = new ArrayList<Object>(1);
+                beforeValues.add(SyncLiteConsolidatorInfo.getCreateSqlPropKey());
+                Delete deleteSchemaRows = new Delete(dstTableMetadataSystemTable, beforeValues);
+                deleteSchemaRows.whereColumns = new ArrayList<Column>();
+                deleteSchemaRows.whereColumns.add(dstTableMetadataSystemTable.colMap.get("prop_key"));
+                dstExecutor.execute(systemTableMapper.mapOper(deleteSchemaRows));
+                dstExecutor.commitTran();
+            } catch (SyncLiteException e) {
                 throw new SQLException("Failed to connect to destination to reset schemas", e);
             }
         }
@@ -546,18 +682,15 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             }
             return;
         }
-        try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
-            conn.setAutoCommit(false);
-            ensureDstTableMetadataTable(conn);
-            seedDstMetadataVersionIfAbsent(conn);
-            try (PreparedStatement stmt = conn.prepareStatement(
-                    "DELETE FROM synclite_consolidator_table_metadata WHERE device_uuid = ? AND device_name = ?")) {
-                stmt.setString(1, this.device.getDeviceUUID());
-                stmt.setString(2, this.device.getDeviceName());
-                stmt.execute();
-            }
-            conn.commit();
-        } catch (DstExecutionException e) {
+        try (SQLExecutor dstExecutor = SQLExecutor.getInstance(device, dstIndex, device.tracer)) {
+            dstExecutor.beginTran();
+            ensureDstTableMetadataTable(dstExecutor);
+            seedDstMetadataVersionIfAbsent(dstExecutor);
+            Delete deleteAll = new Delete(dstTableMetadataSystemTable, new ArrayList<Object>());
+            deleteAll.whereColumns = new ArrayList<Column>();
+            dstExecutor.execute(systemTableMapper.mapOper(deleteAll));
+            dstExecutor.commitTran();
+        } catch (SyncLiteException e) {
             throw new SQLException("Failed to connect to destination to reset table metadata", e);
         }
     }
@@ -623,6 +756,58 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     }
 
     public final void initializeConsolidatorMetadataFile() throws SyncLiteException {
+        // For DESTINATION metadata mode, create both system metadata tables and commit
+        // them upfront before any property reads open a second connection from the pool.
+        // We use a plain autoCommit JDBC connection here instead of SQLExecutor so that:
+        // (a) the DDL commits immediately on the same connection, and
+        // (b) we avoid SQLExecutor construction overhead during Device.<init> which can
+        //     cause connection pool timeouts before the device is registered.
+        if (isDestinationMetadataMode()) {
+            try (Connection ddlConn = JDBCConnector.getInstance(dstIndex).connect()) {
+                ddlConn.setAutoCommit(true);
+                try (Statement ddlStmt = ddlConn.createStatement()) {
+                    // Build schema-qualified CREATE TABLE IF NOT EXISTS SQL directly so
+                    // PostgreSQL creates the tables in the configured schema, not search_path.
+                    String metaTbl = qualifiedDstTableName("synclite_consolidator_metadata");
+                    String tblMetaTbl = qualifiedDstTableName("synclite_consolidator_table_metadata");
+                    ddlStmt.execute("CREATE TABLE IF NOT EXISTS " + metaTbl
+                            + "(synclite_device_id VARCHAR(64) NOT NULL,"
+                            + " synclite_device_name VARCHAR(255) NOT NULL,"
+                            + " synclite_update_timestamp TEXT,"
+                            + " prop_key VARCHAR(255) NOT NULL,"
+                            + " prop_value TEXT,"
+                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, prop_key))");
+                    ddlStmt.execute("CREATE TABLE IF NOT EXISTS " + tblMetaTbl
+                            + "(synclite_device_id VARCHAR(64) NOT NULL,"
+                            + " synclite_device_name VARCHAR(255) NOT NULL,"
+                            + " synclite_update_timestamp TEXT,"
+                            + " database_name VARCHAR(255) NOT NULL,"
+                            + " table_name VARCHAR(255) NOT NULL,"
+                            + " prop_key VARCHAR(255) NOT NULL,"
+                            + " prop_value TEXT,"
+                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, database_name, table_name, prop_key))");
+                    // synclite_checkpoint tracks per-device replication progress on the destination.
+                    // Bootstrap it here so recovery reads/writes never race with the first
+                    // ensureDstMetadataInitStatusColumn call, which runs on an executor thread after
+                    // device discovery and would otherwise find the table missing.
+                    String checkpointTbl = qualifiedDstTableName("synclite_checkpoint");
+                    ddlStmt.execute("CREATE TABLE IF NOT EXISTS " + checkpointTbl
+                            + "(synclite_device_id TEXT NOT NULL,"
+                            + " synclite_device_name TEXT NOT NULL,"
+                            + " synclite_update_timestamp TEXT,"
+                            + " commit_id BIGINT NOT NULL,"
+                            + " cdc_change_number BIGINT NOT NULL,"
+                            + " cdc_log_segment_sequence_number BIGINT NOT NULL,"
+                            + " initialization_status INTEGER NOT NULL DEFAULT 0,"
+                            + " txn_count BIGINT NOT NULL,"
+                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, commit_id))");
+                }
+                dstMetadataTableEnsured = true;
+                dstTableMetadataTableEnsured = true;
+            } catch (SQLException e) {
+                throw new SyncLiteException("Failed to bootstrap destination metadata tables", e);
+            }
+        }
         try {
             String strVal = getStringProperty("initialized_snapshot_name");
             if (strVal != null) {
@@ -708,8 +893,9 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     private void resetDestinationDeviceStatus() throws SQLException {
         try (Connection conn = JDBCConnector.getInstance(dstIndex).connect()) {
             conn.setAutoCommit(false);
+            String qcheckpoint = qualifiedDstTableName("synclite_checkpoint");
             try (Statement stmt = conn.createStatement()) {
-                stmt.execute("CREATE TABLE IF NOT EXISTS synclite_checkpoint("
+                stmt.execute("CREATE TABLE IF NOT EXISTS " + qcheckpoint + "("
                         + "synclite_device_id TEXT NOT NULL, "
                         + "synclite_device_name TEXT NOT NULL, "
                         + "synclite_update_timestamp TEXT, "
@@ -721,7 +907,7 @@ public class ConsolidatorMetadataManager extends MetadataManager {
                         + "PRIMARY KEY(synclite_device_id, synclite_device_name, commit_id))");
             }
             try (PreparedStatement updateStmt = conn.prepareStatement(
-                    "UPDATE synclite_checkpoint SET initialization_status = 0 WHERE synclite_device_id = ? AND synclite_device_name = ?")) {
+                    "UPDATE " + qcheckpoint + " SET initialization_status = 0 WHERE synclite_device_id = ? AND synclite_device_name = ?")) {
                 updateStmt.setString(1, this.device.getDeviceUUID());
                 updateStmt.setString(2, this.device.getDeviceName());
                 updateStmt.execute();
@@ -733,9 +919,11 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     }
 
 	public void executeCheckpointTableSql(String sql) throws SyncLiteException {
+		device.tracer.debug("[CHECKPOINT] Executing SQL on LOCAL checkpoint table: " + sql);
         try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
         	try (Statement stmt = conn.createStatement()) {
         		stmt.execute(sql);
+        		device.tracer.debug("[CHECKPOINT] LOCAL checkpoint table SQL executed successfully");
         	}
         } catch(SQLException e) {
         	throw new DstExecutionException("Failed to execute checkpoint table sql : " + e.getMessage(), e);
@@ -743,6 +931,7 @@ public class ConsolidatorMetadataManager extends MetadataManager {
 	}
 
 	public void executeCheckpointTablePreparedStmt(String sql, ArrayList<Object> args) throws SyncLiteException {
+		device.tracer.debug("[CHECKPOINT] Executing prepared statement on LOCAL checkpoint table with " + args.size() + " args");
         try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + metadataFilePath)) {
         	try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
         		int i = 1;
@@ -751,6 +940,7 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         			++i;
         		}
         		pstmt.execute();
+        		device.tracer.debug("[CHECKPOINT] LOCAL checkpoint prepared statement executed successfully");
         	}
         } catch(SQLException e) {
         	throw new DstExecutionException("Failed to execute checkpoint table sql : " + e.getMessage(), e);
@@ -767,6 +957,9 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             			for (int i=1; i <=colCnt; ++i) {
             				result.put(rs.getMetaData().getColumnName(i).toLowerCase(), rs.getObject(i));
             			}
+            			device.tracer.debug("[READ] Checkpoint record read from LOCAL metadata: " + result);
+            		} else {
+            			device.tracer.debug("[READ] No checkpoint record found in LOCAL metadata");
             		}
             	}
         	}
