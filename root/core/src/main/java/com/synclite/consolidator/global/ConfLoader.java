@@ -296,6 +296,9 @@ public class ConfLoader {
 	}
 	
 	public boolean isAllowedTable(int dstIndex, String tableName) {
+		if (SyncLiteConsolidatorInfo.isSystemMetadataTable(tableName)) {
+			return true;
+		}
 		if (dstTableFilterMapperRules == null) {
 			return true;
 		}
@@ -328,6 +331,9 @@ public class ConfLoader {
 	}
 
 	public String getMappedTableName(int dstIndex, String tableName) {
+		if (SyncLiteConsolidatorInfo.isSystemMetadataTable(tableName)) {
+			return tableName;
+		}
 		if (dstTableFilterMapperRules == null) {
 			return tableName;
 		}
@@ -357,6 +363,9 @@ public class ConfLoader {
 	}
 
 	public boolean isAllowedColumn(int dstIndex, String tableName, String columnName) {
+		if (SyncLiteConsolidatorInfo.isSystemMetadataTable(tableName)) {
+			return true;
+		}
 		if (dstColumnFilterMapperRules == null) {
 			return true;
 		}
@@ -396,6 +405,9 @@ public class ConfLoader {
 	}
 
 	public String getMappedColumnName(int dstIndex, String tableName, String columnName) {		
+		if (SyncLiteConsolidatorInfo.isSystemMetadataTable(tableName)) {
+			return columnName;
+		}
 		if (dstColumnFilterMapperRules == null) {
 			return columnName;
 		}
@@ -2810,8 +2822,10 @@ public class ConfLoader {
 				}
 				line = reader.readLine();
 			}
-			//Always allow synclite_checkpoint table
+			//Always allow consolidator-owned system metadata tables
 			this.dstTableFilterMapperRules[dstIndex].put(SyncLiteConsolidatorInfo.getSyncLiteCheckpointTableName().toUpperCase(), "true");
+			this.dstTableFilterMapperRules[dstIndex].put(SyncLiteConsolidatorInfo.getConsolidatorTableMetadataTableName().toUpperCase(), "true");
+			this.dstTableFilterMapperRules[dstIndex].put(SyncLiteConsolidatorInfo.getConsolidatorMetadataTableName().toUpperCase(), "true");
 		} catch (IOException e) {
 			throw new SyncLitePropsException("Failed to load configuration file : " + filterMapperRulesFile + " : ", e);
 		} finally {
