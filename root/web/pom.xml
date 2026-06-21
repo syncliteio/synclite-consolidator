@@ -4,7 +4,7 @@
 	<artifactId>synclite-consolidator</artifactId>
 	<version>${revision}</version>
 	<properties>
-		<revision>oss</revision>
+		<revision>1.0.0</revision>
 	</properties>
 	<packaging>war</packaging>
 	<parent>

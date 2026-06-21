@@ -33,6 +33,7 @@ import java.util.List;
 import com.synclite.consolidator.device.Device;
 import com.synclite.consolidator.device.DeviceStatus;
 import com.synclite.consolidator.exception.DstDuplicateKeyException;
+import com.synclite.consolidator.exception.DstErrorClassifier;
 import com.synclite.consolidator.exception.DstExecutionException;
 import com.synclite.consolidator.exception.SyncLiteException;
 import com.synclite.consolidator.global.ConfLoader;
@@ -309,7 +310,22 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 						}
 						if (i == (ConfLoader.getInstance().getDstOperRetryCount(dstIndex)-1)) {
 							Boolean skipFailedLogSegments = ConfLoader.getInstance().getDstSkipFailedLogFiles(dstIndex);
-							if (!skipFailedLogSegments) {
+							// dst-skip-failed-log-files is for poison-pill segments (bad data,
+							// missing table/column, syntax). Refuse to honor it for transient
+							// destination outages (connection / deadlock / admin shutdown /
+							// resource exhaustion) — skipping would silently advance past every
+							// subsequent segment and cause data loss. Halt instead; the next
+							// processor cycle retries the same segment when the dst is reachable.
+							boolean transient_ = DstErrorClassifier.isTransientDstError(e);
+							if (!skipFailedLogSegments || transient_) {
+								if (skipFailedLogSegments && transient_) {
+									device.tracer.error("NOT skipping cdc log segment : " + currentCDCLogSegment
+											+ " on dst : " + dstIndex
+											+ " despite dst-skip-failed-log-files=true: error appears to be "
+											+ "a transient / destination-connectivity issue. Skipping would "
+											+ "silently advance past every subsequent segment and lose data. "
+											+ "The same segment will be retried on the next processor cycle.", e);
+								}
 								throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 							} else {
 								skipLogSegment(currentCDCLogSegment);

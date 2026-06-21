@@ -36,6 +36,7 @@ import com.synclite.consolidator.SyncDriver;
 import com.synclite.consolidator.device.Device;
 import com.synclite.consolidator.device.DeviceStatus;
 import com.synclite.consolidator.exception.DstDuplicateKeyException;
+import com.synclite.consolidator.exception.DstErrorClassifier;
 import com.synclite.consolidator.exception.DstExecutionException;
 import com.synclite.consolidator.exception.SyncLiteException;
 import com.synclite.consolidator.global.ConfLoader;
@@ -369,7 +370,19 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 						if (i == (ConfLoader.getInstance().getDstOperRetryCount(dstIndex)-1)) {
 							device.tracer.error("Dst txn failed after all retry attempts : ", e);
 							Boolean skipFailedLogSegments = ConfLoader.getInstance().getDstSkipFailedLogFiles(dstIndex);
-							if (!skipFailedLogSegments) {
+							// See DeviceConsolidator: the skip flag must NOT mask a transient
+							// destination outage, or we silently lose data on every segment
+							// processed while the dst stays unreachable.
+							boolean transient_ = DstErrorClassifier.isTransientDstError(e);
+							if (!skipFailedLogSegments || transient_) {
+								if (skipFailedLogSegments && transient_) {
+									device.tracer.error("NOT skipping event log segment : " + currentEventLogSegment
+											+ " on dst : " + this.dstIndex
+											+ " despite dst-skip-failed-log-files=true: error appears to be "
+											+ "a transient / destination-connectivity issue. Skipping would "
+											+ "silently advance past every subsequent segment and lose data. "
+											+ "The same segment will be retried on the next processor cycle.", e);
+								}
 								throw new SyncLiteException("Dst txn failed after all retry attempts : ", e);
 							} else {
 								skipAndMarkApplied(currentEventLogSegment);
@@ -518,12 +531,18 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 							commitDstTran(dstExecutor);
 							updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
 						} else {
-							// Nothing was issued against dstExecutor for this source txn
-							// (e.g. all records filtered as already-applied on restart).
-							// Skip the no-op ROLLBACK+BEGIN cycle; keep the existing dst
-							// tx open for the next source txn.
+							// Source committed an empty txn (or all records were
+							// filtered as already-applied on restart). Still
+							// advance the destination checkpoint so the source-truth
+							// commit_id from synclite_txn lines up with the
+							// destination's synclite_checkpoint -- otherwise
+							// awaitSync waits forever on a commit_id that no
+							// data row will ever bring.
 							beforeValues.clear();
 							afterValues.clear();
+							updateDstCheckpointIfNeeded(dstExecutor, log.commitId, log.changeNumber, beforeValues, afterValues);
+							commitDstTran(dstExecutor);
+							updateLocalCheckpointIfNeeded(log.commitId, log.changeNumber);
 						}
 
 						if (replicaConn != null) {
@@ -534,17 +553,13 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 							this.lastConsolidatedChangeNumberOnReplica = log.changeNumber;
 						}
 
-						if (txnHasPostCheckpointWork) {
-							++currentEventLogSegmentTxnCnt;
-							++consolidatedTxnCount;
-							this.lastConsolidatedCommitId = log.commitId;
-							this.lastConsolidatedChangeNumber = log.changeNumber;
-						}
+						++currentEventLogSegmentTxnCnt;
+						++consolidatedTxnCount;
+						this.lastConsolidatedCommitId = log.commitId;
+						this.lastConsolidatedChangeNumber = log.changeNumber;
 						emptyTxn = true;
 						inTransaction = false;
-						if (txnHasPostCheckpointWork) {
-							dstExecutor.beginTran();
-						}
+						dstExecutor.beginTran();
 
 						lastLog = log;
 						log = reader.readNextRecord();

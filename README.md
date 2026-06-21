@@ -77,7 +77,7 @@ Default credentials (Tomcat manager): `synclite` / `synclite`
 
 ```bash
 cd synclite-consolidator/root
-mvn -Drevision=oss clean install
+mvn -Drevision=1.0.0 clean install
 ```
 
 Built WAR: `root/web/target/synclite-consolidator-oss.war`
