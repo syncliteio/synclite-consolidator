@@ -165,11 +165,15 @@ public abstract class SQLGenerator {
         return builder.toString();
     }
     
-    private String quoteObjectNameIfNeeded(String item) {
-    	if (ConfLoader.getInstance().getDstQuoteObjectNames(dstIndex)) {
+protected String quoteObjectNameIfNeeded(String item) {
+     	if (ConfLoader.getInstance().getDstQuoteObjectNames(dstIndex)) {
     		return quote(item);
     	}  
     	return item;
+    }
+
+    public String getSimpleTableNameSQL(TableID id) {
+        return quoteObjectNameIfNeeded(id.table);
     }
 
     protected String quote(String item) {
