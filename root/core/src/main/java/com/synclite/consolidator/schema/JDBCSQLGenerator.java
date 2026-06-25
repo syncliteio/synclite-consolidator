@@ -399,7 +399,7 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
 
     @Override
     public String getRenameTableSQL(RenameTable renameTable) {
-        return "ALTER TABLE " + getTableNameSQL(renameTable.oldTable.id) + " RENAME TO " + getTableNameSQL(renameTable.newTable.id);
+        return "ALTER TABLE " + getTableNameSQL(renameTable.oldTable.id) + " RENAME TO " + getSimpleTableNameSQL(renameTable.newTable.id);
     }
 
     @Override
