@@ -43,6 +43,7 @@ import com.synclite.consolidator.processor.SQLExecutor;
 import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorSrcTable;
 import com.synclite.consolidator.schema.DataType;
+import com.synclite.consolidator.schema.SQLGenerator;
 import com.synclite.consolidator.schema.TableID;
 import com.synclite.consolidator.schema.TableMapper;
 import com.synclite.consolidator.watchdog.Monitor;
@@ -466,15 +467,13 @@ public class ConsolidatorMetadataManager extends MetadataManager {
 
     /**
      * Returns a schema-qualified reference to a destination system metadata table name
-     * (e.g. "myschema"."synclite_consolidator_metadata") when dst-schema is configured,
-     * or the bare name when no schema is configured. Used for raw JDBC SQL strings that
-     * bypass the system table mapper so PostgreSQL resolves them in the right schema
-     * instead of following search_path (which defaults to public).
+     * using the current destination SQL generator so the quoting style matches the target
+     * backend (e.g. MySQL backticks vs PostgreSQL double quotes).
      */
     private String qualifiedDstTableName(String tableName) {
         String schema = ConfLoader.getInstance().getDstSchema(dstIndex);
         if (schema != null && !schema.trim().isEmpty()) {
-            return "\"" + schema.replace("\"", "\"\"") + "\".\"" + tableName.replace("\"", "\"\"") + "\"";
+            return SQLGenerator.getInstance(dstIndex).getSchemaQualifiedObjectName(schema, tableName);
         }
         return tableName;
     }
