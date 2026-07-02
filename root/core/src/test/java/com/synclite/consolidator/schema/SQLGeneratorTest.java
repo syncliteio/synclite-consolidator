@@ -1,13 +1,16 @@
 package com.synclite.consolidator.schema;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.sql.JDBCType;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.synclite.consolidator.global.ConfLoader;
+import com.synclite.consolidator.oper.CreateTable;
 import com.synclite.consolidator.oper.RenameTable;
 
 class SQLGeneratorTest {
@@ -19,6 +22,7 @@ class SQLGeneratorTest {
         setBooleanArray(confLoader, "dstQuoteColumnNames", new Boolean[] { false, false });
         setBooleanArray(confLoader, "dstUseCatalogScopeResolution", new Boolean[] { false, true });
         setBooleanArray(confLoader, "dstUseSchemaScopeResolution", new Boolean[] { false, true });
+        setStringArray(confLoader, "dstCreateTableSuffix", new String[] { "", "" });
     }
 
     @Test
@@ -35,7 +39,42 @@ class SQLGeneratorTest {
         assertEquals("ALTER TABLE newdb.newschema.t1 RENAME TO t2", generator.getRenameTableSQL(renameTable));
     }
 
+    @Test
+    void schemaQualifiedObjectNamesUseDestinationSpecificQuoting() throws Exception {
+        ConfLoader confLoader = ConfLoader.getInstance();
+        setBooleanArray(confLoader, "dstQuoteObjectNames", new Boolean[] { false, true });
+
+        MySQLSQLGenerator mysqlGenerator = new MySQLSQLGenerator(1);
+        PGSQLGenerator postgresGenerator = new PGSQLGenerator(1);
+
+        assertEquals("`myschema`.`synclite_consolidator_metadata`",
+                mysqlGenerator.getSchemaQualifiedObjectName("myschema", "synclite_consolidator_metadata"));
+        assertEquals("\"myschema\".\"synclite_consolidator_metadata\"",
+                postgresGenerator.getSchemaQualifiedObjectName("myschema", "synclite_consolidator_metadata"));
+    }
+
+    @Test
+    void postgresCreateTableKeepsAutoincrementPrimaryKeyConstraint() {
+        PGSQLGenerator generator = new PGSQLGenerator(1);
+        Table table = new Table();
+        table.id = TableID.from("device-uuid", "device-name", 1, "newdb", "newschema", "items");
+        table.addColumn(new Column(1, "id", new DataType("INTEGER", JDBCType.INTEGER, StorageClass.INTEGER), 0, null, 1, 1));
+        table.addColumn(new Column(2, "name", new DataType("VARCHAR", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 0, 0));
+
+        CreateTable createTable = new CreateTable(table);
+        String sql = generator.getCreateTableSQL(createTable);
+
+        assertTrue(sql.contains("PRIMARY KEY(id)"));
+        assertTrue(sql.contains("id INTEGER"));
+    }
+
     private static void setBooleanArray(ConfLoader confLoader, String fieldName, Boolean[] values) throws Exception {
+        Field field = ConfLoader.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(confLoader, values);
+    }
+
+    private static void setStringArray(ConfLoader confLoader, String fieldName, String[] values) throws Exception {
         Field field = ConfLoader.class.getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(confLoader, values);
