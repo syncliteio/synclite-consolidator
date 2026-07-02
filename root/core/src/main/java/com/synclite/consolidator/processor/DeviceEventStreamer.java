@@ -608,12 +608,17 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 						tableId =  TableID.from(device.getDeviceUUID(), device.getDeviceName(),  this.dstIndex, log.databaseName, null, log.tableName);						
 					}
 					srcTable = ConsolidatorSrcTable.from(tableId);
+					// Rename-table stats should be attributed to the original table identity so the existing row is updated.
+					TableID statsTableId = tableId;
+					if (log.opType == OperType.RENAMETABLE && log.ddlInfo != null && log.ddlInfo.oldTableName != null) {
+						statsTableId = DeviceStatsCollector.resolveStatsTableId(tableId, log.opType, log.ddlInfo.oldTableName);
+					}
 					TableMapper tableMapper = srcTable.getIsSystemTable() ? this.systemTableMapper : this.userTableMapper;
 					ValueMapper valueMapper = tableMapper.getValueMapper();
-					HashMap<OperType, Long> opStats = tableStats.get(tableId);
+					HashMap<OperType, Long> opStats = tableStats.get(statsTableId);
 					if (opStats == null) {
 						opStats = new HashMap<OperType, Long>();
-						tableStats.put(tableId, opStats);
+						tableStats.put(statsTableId, opStats);
 					}
 					// In consolidation mode, DROP COLUMN and DROP TABLE are intentionally ignored
 					// (other devices may still use the column/table). Skip stats and log INFO.

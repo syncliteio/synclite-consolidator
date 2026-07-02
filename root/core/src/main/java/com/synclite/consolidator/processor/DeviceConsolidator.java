@@ -431,10 +431,23 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 									
 									tableMapper = srcTable.getIsSystemTable() ? systemTableMapper : userTableMapper;
 									valueMapper = tableMapper.getValueMapper();
-									HashMap<OperType, Long> opStats = tableStats.get(tableId);										
+									// Rename-table stats should be attributed to the original table identity so the existing row is updated.
+											TableID statsTableId = tableId;
+											if (opType == OperType.RENAMETABLE) {
+												try (PreparedStatement renameTableSchemaReaderPstmt = conn.prepareStatement(CDCLogSegment.cdcLogSchemaReaderSql)) {
+													renameTableSchemaReaderPstmt.setLong(1, changeNumber);
+													try (ResultSet rsSchema = renameTableSchemaReaderPstmt.executeQuery()) {
+														if (rsSchema.next()) {
+															String oldTableName = rsSchema.getString(8);
+															statsTableId = DeviceStatsCollector.resolveStatsTableId(tableId, opType, oldTableName);
+														}
+													}
+												}
+											}
+											HashMap<OperType, Long> opStats = tableStats.get(statsTableId);										
 									if (opStats == null) {
 										opStats = new HashMap<OperType, Long>();
-										tableStats.put(tableId, opStats);
+										tableStats.put(statsTableId, opStats);
 									}
 									boolean ddlIgnoredInConsolidation =
 											(ConfLoader.getInstance().getDstSyncMode() == DstSyncMode.CONSOLIDATION)

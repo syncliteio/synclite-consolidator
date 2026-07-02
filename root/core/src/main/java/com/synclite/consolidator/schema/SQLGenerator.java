@@ -176,10 +176,17 @@ protected String quoteObjectNameIfNeeded(String item) {
         return quoteObjectNameIfNeeded(id.table);
     }
 
-    protected String quote(String item) {
-    	return "\"" + item + "\""; 
+    public String getSchemaQualifiedObjectName(String schema, String objectName) {
+        if (schema == null || schema.trim().isEmpty()) {
+            return quoteObjectNameIfNeeded(objectName);
+        }
+        return quoteObjectNameIfNeeded(schema) + "." + quoteObjectNameIfNeeded(objectName);
     }
-    
+
+    protected String quote(String item) {
+        return "\"" + item + "\"";
+    }
+
     public String getFullColumnNameSQL(TableID tblID, Column c) {
         return getTableNameSQL(tblID) + "." + getColumnNameSQL(c);
     }
