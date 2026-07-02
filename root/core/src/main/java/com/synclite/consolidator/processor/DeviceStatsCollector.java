@@ -56,8 +56,8 @@ public class DeviceStatsCollector {
 	private final String resetInitilizationStatsCollectedSql = "UPDATE device_statistics SET is_initialization_stats_collected = 0 WHERE dst_alias = '$'";
 	private final String createStatsTableSql = "CREATE TABLE IF NOT EXISTS table_statistics(dst_alias TEXT, database_name TEXT, schema_name TEXT, table_name TEXT, initial_rows LONG, insert_rows LONG, update_rows LONG, delete_rows LONG, add_column LONG, drop_column LONG, rename_column LONG, create_table LONG, drop_table LONG, rename_table LONG, PRIMARY KEY(dst_alias, database_name, schema_name, table_name))";
 	private final String insertStatsTableSql = "INSERT OR REPLACE INTO table_statistics(dst_alias, database_name, schema_name, table_name, initial_rows, insert_rows, update_rows, delete_rows, add_column, drop_column, rename_column, create_table, drop_table, rename_table) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-	private final String updateStatsTableSql = "UPDATE table_statistics SET insert_rows = insert_rows + ?, update_rows = update_rows + ?, delete_rows = delete_rows + ?, add_column = add_column + ?, drop_column = drop_column + ?, rename_column = rename_column + ?, create_table = create_table + ?, drop_table = drop_table + ?, rename_table = rename_table + ? WHERE dst_alias = ? AND database_name = ? AND table_name = ?";
-	private final String deleteStatsTableSql = "DELETE FROM table_statistics WHERE dst_alias = ? AND database_name = ? AND table_name = ?";
+	private final String updateStatsTableSql = "UPDATE table_statistics SET insert_rows = insert_rows + ?, update_rows = update_rows + ?, delete_rows = delete_rows + ?, add_column = add_column + ?, drop_column = drop_column + ?, rename_column = rename_column + ?, create_table = create_table + ?, drop_table = drop_table + ?, rename_table = rename_table + ? WHERE dst_alias = ? AND database_name = ? AND schema_name = ? AND table_name = ?";
+	private final String deleteStatsTableSql = "DELETE FROM table_statistics WHERE dst_alias = ? AND database_name = ? AND schema_name = ? AND table_name = ?";
 	private final String selectStatsTableSql = "SELECT database_name, schema_name, table_name FROM table_statistics WHERE dst_alias = '$';";
 	private final String deleteAllStatsTableSql = "DELETE FROM table_statistics WHERE dst_alias = '$'";
 
@@ -219,7 +219,8 @@ public class DeviceStatsCollector {
 
 						updateStatsTablePstmt.setString(10, this.dstAlias);
 						updateStatsTablePstmt.setString(11, database);
-						updateStatsTablePstmt.setString(12, table);
+						updateStatsTablePstmt.setString(12, schema);
+						updateStatsTablePstmt.setString(13, table);
 
 						if (opType == OperType.INSERT) {
 							updateStatsTablePstmt.setLong(1, opCount);
@@ -282,6 +283,13 @@ public class DeviceStatsCollector {
 		}
 	}
 
+	protected static TableID resolveStatsTableId(TableID tableId, OperType opType, String oldTableName) {
+		if (tableId != null && opType == OperType.RENAMETABLE && oldTableName != null && !oldTableName.isEmpty()) {
+			return TableID.from(tableId.deviceUUID, tableId.deviceName, tableId.dstIndex, tableId.database, tableId.schema, oldTableName);
+		}
+		return tableId;
+	}
+
 	private OperType normalizeStatsOperType(OperType opType) {
 		if (ConfLoader.getInstance().getDstSyncMode() == DstSyncMode.CONSOLIDATION) {
 			if (opType == OperType.DROPTABLE || opType == OperType.DROPCOLUMN) {
@@ -323,8 +331,9 @@ public class DeviceStatsCollector {
 				}
 
 				deleteStatsTablePstmt.setString(1, this.dstAlias);
-				deleteStatsTablePstmt.setString(2, entry.getKey().id.database);						
-				deleteStatsTablePstmt.setString(3, entry.getKey().id.table);
+				deleteStatsTablePstmt.setString(2, entry.getKey().id.database);
+				deleteStatsTablePstmt.setString(3, entry.getKey().id.schema);
+				deleteStatsTablePstmt.setString(4, entry.getKey().id.table);
 				deleteStatsTablePstmt.addBatch();
 				deleteBatchIsFilled = true;
 				
