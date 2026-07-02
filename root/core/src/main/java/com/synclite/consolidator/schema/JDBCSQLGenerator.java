@@ -340,16 +340,19 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
 	protected boolean pkHasNullableCols(Table tbl) {
         for (Column c : tbl.columns) {
             if (c.pkIndex > 0) {
-            	if (c.isNotNull == 0) {
-            		return true;
-            	}
+                if (isColumnNullable(c)) {
+                    return true;
+                }
             }
         }
         return false;
 	}
 
+    protected boolean isColumnNullable(Column c) {
+        return c.pkIndex == 0 && c.isNotNull == 0;
+    }
 
-	protected String getPKColList(Table tbl) {
+    protected String getPKColList(Table tbl) {
         StringBuilder builder = new StringBuilder();
         boolean first = true;
         for (Column c : tbl.columns) {
@@ -361,8 +364,7 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
                 first = false;
             }
         }
-        String pkList = builder.toString();
-        return pkList;
+        return builder.toString();
     }
     
     protected String getPrimaryKeySQL(Table tbl) {
@@ -416,8 +418,9 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
 
     protected String getColumnTypeSQLNoConstraint(Column c) {
     	// SQLite allows typeless columns; default to VARCHAR for any SQL destination.
-    	return (c.type.dbNativeDataType != null && !c.type.dbNativeDataType.isBlank())
-    			? c.type.dbNativeDataType : "VARCHAR";
+    	String typeName = (c.type.dbNativeDataType != null && !c.type.dbNativeDataType.isBlank())
+			? c.type.dbNativeDataType : "VARCHAR";
+    	return typeName;
     }
 
     protected String getColumnDefaultConstraint(Column c) {
@@ -434,7 +437,8 @@ public abstract class JDBCSQLGenerator extends SQLGenerator {
     			? c.type.dbNativeDataType : "VARCHAR";
     	builder.append(typeName);
         builder.append(" ");
-        if (c.isNotNull == 0) {
+        boolean notNull = c.isNotNull != 0 || c.pkIndex > 0;
+        if (!notNull) {
             builder.append(" NULL ");
         } else {
             builder.append(" NOT NULL ");
