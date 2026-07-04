@@ -85,6 +85,24 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 		device.tracer.info("[INIT] DeviceConsolidator initialized for device: " + device.getDeviceName());
 	}
 
+	private String normalizeIdentifier(String identifier) {
+		if (identifier == null) {
+			return null;
+		}
+		String trimmed = identifier.trim();
+		if (trimmed.isEmpty()) {
+			return trimmed;
+		}
+		String[] parts = trimmed.split("\\.");
+		for (int i = 0; i < parts.length; ++i) {
+			String part = parts[i].trim();
+			if ((part.startsWith("\"") && part.endsWith("\"")) || (part.startsWith("`") && part.endsWith("`")) || (part.startsWith("[") && part.endsWith("]"))) {
+				parts[i] = part.substring(1, part.length() - 1);
+			}
+		}
+		return String.join(".", parts);
+	}
+
 	/**
 	 * Initialises the local checkpoint table (LOCAL mode only).
 	 * In DESTINATION mode the checkpoint lives on the destination DB and needs no local setup here.
