@@ -102,6 +102,24 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 		device.updateDeviceStatus(DeviceStatus.SYNCING, "");
 	}
 
+	private String normalizeIdentifier(String identifier) {
+		if (identifier == null) {
+			return null;
+		}
+		String trimmed = identifier.trim();
+		if (trimmed.isEmpty()) {
+			return trimmed;
+		}
+		String[] parts = trimmed.split("\\.");
+		for (int i = 0; i < parts.length; ++i) {
+			String part = parts[i].trim();
+			if ((part.startsWith("\"") && part.endsWith("\"")) || (part.startsWith("`") && part.endsWith("`")) || (part.startsWith("[") && part.endsWith("]"))) {
+				parts[i] = part.substring(1, part.length() - 1);
+			}
+		}
+		return String.join(".", parts);
+	}
+
 	@Override
 	protected long getCurrentLogSegmentSequenceNumber() {
 		return this.currentEventLogSegment != null ? this.currentEventLogSegment.sequenceNumber : 0;
@@ -1439,7 +1457,9 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								break;
 							case RENAMECOLUMN:
 								//executeDDLIgnoreException(log.sql);
-								Oper renameColOper= srcTable.generateRenameColumnOper(log.ddlInfo.oldColumnName, log.ddlInfo.columnName);
+								String normalizedOldColumnName = normalizeIdentifier(log.ddlInfo.oldColumnName);
+							String normalizedNewColumnName = normalizeIdentifier(log.ddlInfo.columnName);
+							Oper renameColOper= srcTable.generateRenameColumnOper(normalizedOldColumnName, normalizedNewColumnName);
 								if (renameColOper != null) {
 									dstExecutor.execute(renameColOper.map(tableMapper));
 									tableMapper.remove(srcTable);
@@ -1455,7 +1475,9 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								}
 								break;
 							case RENAMETABLE:
-								Oper renameTableOper = srcTable.generateRenameTableOper(tableMapper, log.ddlInfo.oldTableName, log.ddlInfo.tableName);
+								String normalizedOldTableName = normalizeIdentifier(log.ddlInfo.oldTableName);
+							String normalizedNewTableName = normalizeIdentifier(log.ddlInfo.tableName);
+							Oper renameTableOper = srcTable.generateRenameTableOper(tableMapper, normalizedOldTableName, normalizedNewTableName);
 								if (renameTableOper != null) {
 									dstExecutor.execute(renameTableOper.map(tableMapper));
 									try {
@@ -1595,8 +1617,10 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			//1. Drop column (unlogged)
 			//2. Create Column (unlogged)
 			//
-			String dropColumnSql = "ALTER TABLE " + ddlInfo.tableName + " DROP COLUMN " + ddlInfo.columnName;
-			String addColumnSql = "ALTER TABLE " + ddlInfo.tableName + " ADD COLUMN " + ddlInfo.columnName +  " " + ddlInfo.colDef;
+			String normalizedTableName = normalizeIdentifier(ddlInfo.tableName);
+			String normalizedColumnName = normalizeIdentifier(ddlInfo.columnName);
+			String dropColumnSql = "ALTER TABLE " + normalizedTableName + " DROP COLUMN " + normalizedColumnName;
+			String addColumnSql = "ALTER TABLE " + normalizedTableName + " ADD COLUMN " + normalizedColumnName +  " " + ddlInfo.colDef;
 			try (Statement stmt = replicaConn.createStatement()) {
 				stmt.execute(dropColumnSql);
 				stmt.execute(addColumnSql);

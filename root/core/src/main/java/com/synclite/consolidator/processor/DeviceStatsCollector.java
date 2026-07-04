@@ -106,7 +106,11 @@ public class DeviceStatsCollector {
 			try (Statement stmt = statsFileConn.createStatement()) {
 				try (ResultSet rs = stmt.executeQuery(selectStatsTableSql.replace("$", this.dstAlias))) {
 					while (rs.next()) {
-						TableID tblID = TableID.from(this.device.getDeviceUUID(), this.device.getDeviceName(), this.dstIndex, rs.getString(1), rs.getString(2), rs.getString(3));
+						String dbName = rs.getString(1);
+						String schemaName = rs.getString(2);
+						if (schemaName == null) schemaName = "";
+						String tableName = rs.getString(3);
+						TableID tblID = TableID.from(this.device.getDeviceUUID(), this.device.getDeviceName(), this.dstIndex, dbName, schemaName, tableName);
 						tablesInStats.add(tblID);
 					}
 
@@ -147,6 +151,7 @@ public class DeviceStatsCollector {
 	}
 
 	protected void updateTableAndLogStatsForLogSegment(HashMap<TableID, HashMap<OperType, Long>> stats, long logSegmentSeqNumber, long txnCount, long logSize) throws SyncLiteException {
+		// Simplified logic: Create missing stats rows first, then update all rows with accumulated operation counts
 		if (this.lastStatsCollectedLogSegmentSeqNum >= logSegmentSeqNumber) {
 			return;
 		}
@@ -160,107 +165,84 @@ public class DeviceStatsCollector {
 			configureSqliteConnection(statsFileConn);
 			statsFileConn.setAutoCommit(false);
 			long totalOperCount = 0;
-			boolean hasInsertBatch = false;
-			boolean hasUpdateBatch = false;
-			insertStatsTablePstmt.clearBatch();
-			updateStatsTablePstmt.clearBatch();
+			HashSet<TableID> newTablesInThisSegment = new HashSet<>();
+			
+			// Pass 1: Identify new tables and create rows for them
+			for (TableID tableID : stats.keySet()) {
+				if (!shouldTrackTableStats(tableID) || this.tablesInStats.contains(tableID)) {
+					continue;
+				}
+				
+				String schema1 = (tableID.schema != null) ? tableID.schema : "";
+				insertStatsTablePstmt.setString(1, this.dstAlias);
+				insertStatsTablePstmt.setString(2, tableID.database);
+				insertStatsTablePstmt.setString(3, schema1);
+				insertStatsTablePstmt.setString(4, tableID.table);
+				insertStatsTablePstmt.setLong(5, 0);   // all zero defaults
+				insertStatsTablePstmt.setLong(6, 0);
+				insertStatsTablePstmt.setLong(7, 0);
+				insertStatsTablePstmt.setLong(8, 0);
+				insertStatsTablePstmt.setLong(9, 0);
+				insertStatsTablePstmt.setLong(10, 0);
+				insertStatsTablePstmt.setLong(11, 0);
+				insertStatsTablePstmt.setLong(12, 0);
+				insertStatsTablePstmt.setLong(13, 0);
+				insertStatsTablePstmt.setLong(14, 0);
+				insertStatsTablePstmt.addBatch();
+				newTablesInThisSegment.add(tableID);
+				this.tablesInStats.add(tableID);
+			}
+			if (!newTablesInThisSegment.isEmpty()) {
+				insertStatsTablePstmt.executeBatch();
+			}
+			
+			// Pass 2: Update all tables with accumulated operation counts
 			for (HashMap.Entry<TableID, HashMap<OperType, Long>> entry : stats.entrySet()) {
 				TableID tableID = entry.getKey();
 				if (!shouldTrackTableStats(tableID)) {
 					continue;
 				}
+				
+				// Accumulate all operation counts for this table
 				Map<OperType, Long> opCounts = entry.getValue();
+				long insertCount = 0, updateCount = 0, deleteCount = 0, addColCount = 0, dropColCount = 0, renameColCount = 0, createTableCount = 0, dropTableCount = 0, renameTableCount = 0;
 				for (Map.Entry<OperType, Long> opEntry : opCounts.entrySet()) {
 					OperType opType = normalizeStatsOperType(opEntry.getKey());
 					if (opType == null) {
 						continue;
 					}
 					Long opCount = opEntry.getValue();
-
-					String database = tableID.database;
-					String schema = tableID.schema;
-					String table = tableID.table;
-
-					if ((opType == OperType.CREATETABLE) && 
-							(! this.tablesInStats.contains(tableID))
-							) {
-
-						insertStatsTablePstmt.setString(1, this.dstAlias);
-						insertStatsTablePstmt.setString(2, database);
-						insertStatsTablePstmt.setString(3, schema);
-						insertStatsTablePstmt.setString(4, table);
-
-						insertStatsTablePstmt.setLong(5, 0);
-						insertStatsTablePstmt.setLong(6, 0);
-						insertStatsTablePstmt.setLong(7, 0);
-						insertStatsTablePstmt.setLong(8, 0);
-
-						insertStatsTablePstmt.setLong(9, 0);
-						insertStatsTablePstmt.setLong(10, 0);
-						insertStatsTablePstmt.setLong(11, 0);
-
-						insertStatsTablePstmt.setLong(12, opCount);
-						insertStatsTablePstmt.setLong(13, 0);
-						insertStatsTablePstmt.setLong(14, 0);
-
-						insertStatsTablePstmt.addBatch();
-						hasInsertBatch = true;
-						totalOperCount += opCount;
-					} else {
-						updateStatsTablePstmt.setLong(1, 0);
-						updateStatsTablePstmt.setLong(2, 0);
-						updateStatsTablePstmt.setLong(3, 0);
-						updateStatsTablePstmt.setLong(4, 0);
-						updateStatsTablePstmt.setLong(5, 0);
-						updateStatsTablePstmt.setLong(6, 0);
-						updateStatsTablePstmt.setLong(7, 0);
-						updateStatsTablePstmt.setLong(8, 0);
-						updateStatsTablePstmt.setLong(9, 0);
-
-						updateStatsTablePstmt.setString(10, this.dstAlias);
-						updateStatsTablePstmt.setString(11, database);
-						updateStatsTablePstmt.setString(12, schema);
-						updateStatsTablePstmt.setString(13, table);
-
-						if (opType == OperType.INSERT) {
-							updateStatsTablePstmt.setLong(1, opCount);
-							totalOperCount += opCount;
-						} else if (opType == OperType.UPDATE) {
-							updateStatsTablePstmt.setLong(2, opCount);
-							totalOperCount += opCount;
-						} else if (opType == OperType.DELETE || opType == OperType.DELETE_IF_PREDICATE || opType == OperType.MINUS) {
-							updateStatsTablePstmt.setLong(3, opCount);
-							totalOperCount += opCount;
-						} else if (opType == OperType.ADDCOLUMN) {
-							updateStatsTablePstmt.setLong(4, opCount);
-							totalOperCount += opCount;
-						} else if (opType == OperType.DROPCOLUMN) {
-							updateStatsTablePstmt.setLong(5, opCount);
-							totalOperCount += opCount;
-						} else if (opType == OperType.RENAMECOLUMN) {
-							updateStatsTablePstmt.setLong(6, opCount);					
-							totalOperCount += opCount;
-						} else if (opType == OperType.CREATETABLE) {
-							updateStatsTablePstmt.setLong(7, opCount);
-							totalOperCount += opCount;
-						} else if (opType == OperType.DROPTABLE) {
-							updateStatsTablePstmt.setLong(8, opCount);
-							totalOperCount += opCount;
-						} else if (opType == OperType.RENAMETABLE) {
-							updateStatsTablePstmt.setLong(9, opCount);
-							totalOperCount += opCount;
-						}
-						updateStatsTablePstmt.addBatch();
-						hasUpdateBatch = true;
-					}					
+					if (opType == OperType.INSERT) insertCount += opCount;
+					else if (opType == OperType.UPDATE) updateCount += opCount;
+					else if (opType == OperType.DELETE || opType == OperType.DELETE_IF_PREDICATE || opType == OperType.MINUS) deleteCount += opCount;
+					else if (opType == OperType.ADDCOLUMN) addColCount += opCount;
+					else if (opType == OperType.DROPCOLUMN) dropColCount += opCount;
+					else if (opType == OperType.RENAMECOLUMN) renameColCount += opCount;
+					else if (opType == OperType.CREATETABLE) createTableCount += opCount;
+					else if (opType == OperType.DROPTABLE) dropTableCount += opCount;
+					else if (opType == OperType.RENAMETABLE) renameTableCount += opCount;
+					totalOperCount += opCount;
 				}
-				this.tablesInStats.add(tableID);
+				
+				// Execute accumulated update
+				String schema2 = (tableID.schema != null) ? tableID.schema : "";
+				updateStatsTablePstmt.setLong(1, insertCount);
+				updateStatsTablePstmt.setLong(2, updateCount);
+				updateStatsTablePstmt.setLong(3, deleteCount);
+				updateStatsTablePstmt.setLong(4, addColCount);
+				updateStatsTablePstmt.setLong(5, dropColCount);
+				updateStatsTablePstmt.setLong(6, renameColCount);
+				updateStatsTablePstmt.setLong(7, createTableCount);
+				updateStatsTablePstmt.setLong(8, dropTableCount);
+				updateStatsTablePstmt.setLong(9, renameTableCount);
+				updateStatsTablePstmt.setString(10, this.dstAlias);
+				updateStatsTablePstmt.setString(11, tableID.database);
+				updateStatsTablePstmt.setString(12, schema2);
+				updateStatsTablePstmt.setString(13, tableID.table);
+				updateStatsTablePstmt.addBatch();
 			}
-			if (hasInsertBatch) {
-				insertStatsTablePstmt.executeBatch();
-			}
-
-			if (hasUpdateBatch) {
+			
+			if (!stats.isEmpty()) {
 				updateStatsTablePstmt.executeBatch();
 			}
 
@@ -330,16 +312,17 @@ public class DeviceStatsCollector {
 					continue;
 				}
 
+				String initSchema = (entry.getKey().id.schema != null) ? entry.getKey().id.schema : "";
 				deleteStatsTablePstmt.setString(1, this.dstAlias);
 				deleteStatsTablePstmt.setString(2, entry.getKey().id.database);
-				deleteStatsTablePstmt.setString(3, entry.getKey().id.schema);
+				deleteStatsTablePstmt.setString(3, initSchema);
 				deleteStatsTablePstmt.setString(4, entry.getKey().id.table);
 				deleteStatsTablePstmt.addBatch();
 				deleteBatchIsFilled = true;
 				
 				insertStatsTablePstmt.setString(1, this.dstAlias);
 				insertStatsTablePstmt.setString(2, entry.getKey().id.database);
-				insertStatsTablePstmt.setString(3, entry.getKey().id.schema);
+				insertStatsTablePstmt.setString(3, initSchema);
 				insertStatsTablePstmt.setString(4, entry.getKey().id.table);
 
 				insertStatsTablePstmt.setLong(5, entry.getValue());

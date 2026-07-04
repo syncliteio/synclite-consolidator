@@ -134,13 +134,15 @@ public class CommandLogRecord {
                 	ddlInfo = new DDLInfo(OperType.DROPCOLUMN, fullTableName[0], fullTableName[1], null, tokens[4], null, null);                	
                 } else if (tokens[3].equalsIgnoreCase("RENAME") && tokens[4].equalsIgnoreCase("COLUMN") && tokens[6].equalsIgnoreCase("TO")) {
                     //ALTER TABLE main.t1 RENAME COLUMN col1 TO col2
-                    ddlInfo = new DDLInfo(OperType.RENAMECOLUMN, fullTableName[0], fullTableName[1], null, tokens[7], tokens[5], null);
+                    ddlInfo = new DDLInfo(OperType.RENAMECOLUMN, fullTableName[0], fullTableName[1], null,
+                            normalizeIdentifier(tokens[7]), normalizeIdentifier(tokens[5]), null);
                 } else if (tokens[3].equalsIgnoreCase("RENAME") && tokens[5].equalsIgnoreCase("TO")) {
                     //ALTER TABLE main.t1 RENAME col1 TO col2
-                    ddlInfo = new DDLInfo(OperType.RENAMECOLUMN, fullTableName[0], fullTableName[1], null, tokens[6], tokens[4], null);
+                    ddlInfo = new DDLInfo(OperType.RENAMECOLUMN, fullTableName[0], fullTableName[1], null,
+                            normalizeIdentifier(tokens[6]), normalizeIdentifier(tokens[4]), null);
                 } else if (tokens[3].equalsIgnoreCase("RENAME") && tokens[4].equalsIgnoreCase("TO")) {
                     //ALTER TABLE main.t1 RENAME TO t2
-                    ddlInfo = new DDLInfo(OperType.RENAMETABLE, fullTableName[0], tokens[5] , fullTableName[1], null, null, null);
+                    ddlInfo = new DDLInfo(OperType.RENAMETABLE, fullTableName[0], normalizeIdentifier(tokens[5]), fullTableName[1], null, null, null);
                 } else if (tokens[3].equalsIgnoreCase("ALTER") && tokens[4].equalsIgnoreCase("COLUMN")) {
                     //ALTER TABLE main.t1 ALTER COLUMN col1 <NEW COLUMN DEF>
                 	StringBuilder colDef = new StringBuilder();
@@ -186,6 +188,17 @@ public class CommandLogRecord {
         }
     }
 
+    private String normalizeIdentifier(String identifier) {
+        if (identifier == null) {
+            return null;
+        }
+        String normalized = identifier.trim();
+        if (normalized.length() >= 2 && normalized.startsWith("\"") && normalized.endsWith("\"")) {
+            return normalized.substring(1, normalized.length() - 1).replace("\"\"", "\"");
+        }
+        return normalized;
+    }
+
     private String[] getFullTableName(String name) {
     	String[] tbl = new String[2];
     	tbl[0] = "main";
@@ -193,13 +206,13 @@ public class CommandLogRecord {
     	
     	String[] tokens = name.split("\\.");
     	if (tokens.length == 2) {
-    		tbl[0] = tokens[0];
-    		tbl[1] = tokens[1];	
+    		tbl[0] = normalizeIdentifier(tokens[0]);
+    		tbl[1] = normalizeIdentifier(tokens[1]);	
     	} else {
-    		tbl[1] = name;
+    		tbl[1] = normalizeIdentifier(name);
     	}
     	
-    	if (tbl[1].contains("(")) {
+    	if (tbl[1] != null && tbl[1].contains("(")) {
 			tbl[1] = tbl[1].substring(0, tbl[1].indexOf("("));
 		} 
     	
