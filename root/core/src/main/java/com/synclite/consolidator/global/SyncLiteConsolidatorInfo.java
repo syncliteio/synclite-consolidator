@@ -63,9 +63,9 @@ public class SyncLiteConsolidatorInfo {
         ConsolidatorSrcTable tableMetadata = ConsolidatorSrcTable.from(getConsolidatorTableMetadataTableID(deviceUUID, deviceName, dstIndex));
         tableMetadata.clearColumns();
         tableMetadata.setIsSystemTable();
-        tableMetadata.addColumn(new Column(0, "database_name", new DataType("varchar(255)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
-        tableMetadata.addColumn(new Column(1, "table_name", new DataType("varchar(255)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
-        tableMetadata.addColumn(new Column(2, "prop_key", new DataType("varchar(255)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
+        tableMetadata.addColumn(new Column(0, "database_name", new DataType("varchar(128)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
+        tableMetadata.addColumn(new Column(1, "table_name", new DataType("varchar(128)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
+        tableMetadata.addColumn(new Column(2, "prop_key", new DataType("varchar(128)", JDBCType.VARCHAR, StorageClass.TEXT), 1, null, 1, 0));
         tableMetadata.addColumn(new Column(3, "prop_value", new DataType("text", JDBCType.LONGVARCHAR, StorageClass.TEXT), 0, null, 0, 0));
         return tableMetadata;
     }
@@ -100,9 +100,9 @@ public class SyncLiteConsolidatorInfo {
     	return "CREATE TABLE IF NOT EXISTS synclite_consolidator_table_metadata("
     		+ "device_uuid VARCHAR(64) NOT NULL, "
     		+ "device_name VARCHAR(255) NOT NULL, "
-    		+ "database_name VARCHAR(255) NOT NULL, "
-    		+ "table_name VARCHAR(255) NOT NULL, "
-    		+ "prop_key VARCHAR(255) NOT NULL, "
+    		+ "database_name VARCHAR(128) NOT NULL, "
+    		+ "table_name VARCHAR(128) NOT NULL, "
+    		+ "prop_key VARCHAR(128) NOT NULL, "
     		+ "prop_value TEXT, "
     		+ "PRIMARY KEY(device_uuid, device_name, database_name, table_name, prop_key))";
     }

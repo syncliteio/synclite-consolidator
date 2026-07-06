@@ -47,4 +47,9 @@ public class MySQLExecutor extends JDBCExecutor {
 		}
 		return false;
 	}
+
+	@Override
+	public boolean canCreateDatabase() {
+		return true;
+	}
 }

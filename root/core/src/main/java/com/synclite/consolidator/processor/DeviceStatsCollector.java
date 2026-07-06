@@ -108,6 +108,7 @@ public class DeviceStatsCollector {
 					while (rs.next()) {
 						String dbName = rs.getString(1);
 						String schemaName = rs.getString(2);
+						// Normalize schema to empty string (NULL from DB is normalized to "")
 						if (schemaName == null) schemaName = "";
 						String tableName = rs.getString(3);
 						TableID tblID = TableID.from(this.device.getDeviceUUID(), this.device.getDeviceName(), this.dstIndex, dbName, schemaName, tableName);
@@ -396,18 +397,20 @@ public class DeviceStatsCollector {
 	}
 
 	public final void resetTableStats() throws SyncLiteException {
+		// Preserve historical per-table counters across re-initialization/restarts.
+		// The old behavior deleted table_statistics and reset initialization flags,
+		// which caused all table rows/counters to appear as zero after restart.
 		String url = "jdbc:sqlite:" + this.statsFilePath;
-		try (Connection statsFileConn = DriverManager.getConnection(url)) {
+		try (Connection statsFileConn = DriverManager.getConnection(url);
+				 Statement stmt = statsFileConn.createStatement()) {
 			configureSqliteConnection(statsFileConn);
-			statsFileConn.setAutoCommit(false);
-			try (Statement stmt = statsFileConn.createStatement()) {
-				stmt.execute(deleteAllStatsTableSql.replace("$", this.dstAlias));
-				stmt.execute(resetInitilizationStatsCollectedSql.replace("$", this.dstAlias));
+			try (ResultSet rs = stmt.executeQuery(selectDeviceStatisticsTableSql.replace("$", this.dstAlias))) {
+				if (rs.next()) {
+					this.hasInitializationStatsCollected = rs.getLong(2);
+				}
 			}
-			statsFileConn.commit();
-			statsFileConn.setAutoCommit(true);
 		} catch (SQLException e) {
-			throw new SyncLiteException("Failed to delete table stats in stats file : " + statsFilePath, e);
+			throw new SyncLiteException("Failed to preserve table stats in stats file : " + statsFilePath, e);
 		}
 	}
 

@@ -50,6 +50,10 @@ public class PGExecutor extends JDBCExecutor {
 		return false;
 	}
 
+	@Override
+	public boolean canCreateDatabase() {
+		return true;
+	}
 	
 	protected void setDate(PreparedStatement pstmt, int i, Object o) throws SQLException {
 		try {

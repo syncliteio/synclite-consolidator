@@ -44,4 +44,9 @@ public class RedshiftExecutor extends JDBCExecutor {
 		}
 		return false;
 	}
+
+	@Override
+	public boolean canCreateDatabase() {
+		return true;
+	}
 }

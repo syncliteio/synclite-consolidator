@@ -16,6 +16,7 @@
 
 package com.synclite.consolidator.log;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.synclite.consolidator.exception.SyncLiteException;
@@ -23,7 +24,7 @@ import com.synclite.consolidator.oper.OperType;
 
 public class CommandLogRecord {
 
-    public class DDLInfo {
+    public static class DDLInfo {
         public OperType ddlType;
         public String databaseName;
         public String tableName;
@@ -255,5 +256,19 @@ public class CommandLogRecord {
     @Override
     public String toString() {
         return "commit id : " + commitId + ", change number : " + changeNumber + ", sql : " + sql;
+    }
+
+    /**
+     * Static helper method to parse DDL from a SQL string without creating a full CommandLogRecord.
+     * Used for fallback DDL parsing when the event log SQL is not initially available.
+     */
+    public static DDLInfo parseDDLFromSQL(String sql) throws SyncLiteException {
+        if (sql == null || sql.trim().isEmpty()) {
+            return null;
+        }
+        
+        // Create a temporary instance and parse the SQL
+        CommandLogRecord tempRecord = new CommandLogRecord(0, 0, 0, sql, 0, new ArrayList<Object>());
+        return tempRecord.ddlInfo;
     }
 }
