@@ -36,6 +36,8 @@ import com.synclite.consolidator.connector.JDBCConnector;
 import com.synclite.consolidator.device.Device;
 import com.synclite.consolidator.exception.DstExecutionException;
 import com.synclite.consolidator.exception.SyncLiteException;
+import com.synclite.consolidator.oper.CreateDatabase;
+import com.synclite.consolidator.oper.CreateSchema;
 import com.synclite.consolidator.oper.CreateTable;
 import com.synclite.consolidator.oper.Delete;
 import com.synclite.consolidator.oper.Insert;
@@ -44,6 +46,7 @@ import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorSrcTable;
 import com.synclite.consolidator.schema.DataType;
 import com.synclite.consolidator.schema.SQLGenerator;
+import com.synclite.consolidator.schema.Table;
 import com.synclite.consolidator.schema.TableID;
 import com.synclite.consolidator.schema.TableMapper;
 import com.synclite.consolidator.watchdog.Monitor;
@@ -112,15 +115,7 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             String tblMetaTbl = qualifiedDstTableName("synclite_consolidator_table_metadata");
             if (!dstTableMetadataTableEnsured) {
                 try (Statement ddl = conn.createStatement()) {
-                    ddl.execute("CREATE TABLE IF NOT EXISTS " + tblMetaTbl
-                            + "(synclite_device_id VARCHAR(64) NOT NULL,"
-                            + " synclite_device_name VARCHAR(255) NOT NULL,"
-                            + " synclite_update_timestamp TEXT,"
-                            + " database_name VARCHAR(255) NOT NULL,"
-                            + " table_name VARCHAR(255) NOT NULL,"
-                            + " prop_key VARCHAR(255) NOT NULL,"
-                            + " prop_value TEXT,"
-                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, database_name, table_name, prop_key))");
+                    ddl.execute(buildSystemCreateTableSql(dstTableMetadataSystemTable));
                 }
                 dstTableMetadataTableEnsured = true;
             }
@@ -466,6 +461,20 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     }
 
     /**
+     * Build a destination-correct {@code CREATE TABLE} statement for a SyncLite system table by
+     * routing its schema through the system table mapper and the per-destination SQL generator.
+     * This guarantees the column types, quoting, schema qualification and composite primary key
+     * are all valid for the target backend, instead of relying on hardcoded, destination-agnostic
+     * DDL. In particular MySQL rejects {@code TEXT}/{@code BLOB} columns inside a primary key and
+     * caps composite key length at 3072 bytes, both of which the mapper handles correctly (device
+     * columns map to bounded {@code char(n)} and numeric columns to {@code bigint}).
+     */
+    private String buildSystemCreateTableSql(ConsolidatorSrcTable systemSchema) {
+        Table dstTbl = systemTableMapper.mapTable(systemSchema);
+        return SQLGenerator.getInstance(dstIndex).getCreateTableSQL(new CreateTable(dstTbl));
+    }
+
+    /**
      * Returns a schema-qualified reference to a destination system metadata table name
      * using the current destination SQL generator so the quoting style matches the target
      * backend (e.g. MySQL backticks vs PostgreSQL double quotes).
@@ -610,13 +619,7 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             String metaTbl = qualifiedDstTableName("synclite_consolidator_metadata");
             if (!dstMetadataTableEnsured) {
                 try (Statement ddl = conn.createStatement()) {
-                    ddl.execute("CREATE TABLE IF NOT EXISTS " + metaTbl
-                            + "(synclite_device_id VARCHAR(64) NOT NULL,"
-                            + " synclite_device_name VARCHAR(255) NOT NULL,"
-                            + " synclite_update_timestamp TEXT,"
-                            + " prop_key VARCHAR(255) NOT NULL,"
-                            + " prop_value TEXT,"
-                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, prop_key))");
+                    ddl.execute(buildSystemCreateTableSql(dstMetadataSystemTable));
                 }
                 dstMetadataTableEnsured = true;
             }
@@ -765,41 +768,20 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             try (Connection ddlConn = JDBCConnector.getInstance(dstIndex).connect()) {
                 ddlConn.setAutoCommit(true);
                 try (Statement ddlStmt = ddlConn.createStatement()) {
-                    // Build schema-qualified CREATE TABLE IF NOT EXISTS SQL directly so
-                    // PostgreSQL creates the tables in the configured schema, not search_path.
-                    String metaTbl = qualifiedDstTableName("synclite_consolidator_metadata");
-                    String tblMetaTbl = qualifiedDstTableName("synclite_consolidator_table_metadata");
-                    ddlStmt.execute("CREATE TABLE IF NOT EXISTS " + metaTbl
-                            + "(synclite_device_id VARCHAR(64) NOT NULL,"
-                            + " synclite_device_name VARCHAR(255) NOT NULL,"
-                            + " synclite_update_timestamp TEXT,"
-                            + " prop_key VARCHAR(255) NOT NULL,"
-                            + " prop_value TEXT,"
-                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, prop_key))");
-                    ddlStmt.execute("CREATE TABLE IF NOT EXISTS " + tblMetaTbl
-                            + "(synclite_device_id VARCHAR(64) NOT NULL,"
-                            + " synclite_device_name VARCHAR(255) NOT NULL,"
-                            + " synclite_update_timestamp TEXT,"
-                            + " database_name VARCHAR(255) NOT NULL,"
-                            + " table_name VARCHAR(255) NOT NULL,"
-                            + " prop_key VARCHAR(255) NOT NULL,"
-                            + " prop_value TEXT,"
-                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, database_name, table_name, prop_key))");
+                    ensureDestinationNamespace(ddlStmt);
+                    // Route system-table DDL through the mapper + per-destination SQL generator so
+                    // column types, quoting, schema qualification and composite primary keys are all
+                    // valid for the target backend (e.g. MySQL rejects TEXT/BLOB columns in a primary
+                    // key and caps composite key length at 3072 bytes).
+                    ddlStmt.execute(buildSystemCreateTableSql(dstMetadataSystemTable));
+                    ddlStmt.execute(buildSystemCreateTableSql(dstTableMetadataSystemTable));
                     // synclite_checkpoint tracks per-device replication progress on the destination.
                     // Bootstrap it here so recovery reads/writes never race with the first
                     // ensureDstMetadataInitStatusColumn call, which runs on an executor thread after
                     // device discovery and would otherwise find the table missing.
-                    String checkpointTbl = qualifiedDstTableName("synclite_checkpoint");
-                    ddlStmt.execute("CREATE TABLE IF NOT EXISTS " + checkpointTbl
-                            + "(synclite_device_id TEXT NOT NULL,"
-                            + " synclite_device_name TEXT NOT NULL,"
-                            + " synclite_update_timestamp TEXT,"
-                            + " commit_id BIGINT NOT NULL,"
-                            + " cdc_change_number BIGINT NOT NULL,"
-                            + " cdc_log_segment_sequence_number BIGINT NOT NULL,"
-                            + " initialization_status INTEGER NOT NULL DEFAULT 0,"
-                            + " txn_count BIGINT NOT NULL,"
-                            + " PRIMARY KEY(synclite_device_id, synclite_device_name, commit_id))");
+                    ConsolidatorSrcTable checkpointSchema = SyncLiteConsolidatorInfo.getCheckpointTableSchema(
+                            device.getDeviceUUID(), device.getDeviceName(), dstIndex);
+                    ddlStmt.execute(buildSystemCreateTableSql(checkpointSchema));
                 }
                 dstMetadataTableEnsured = true;
                 dstTableMetadataTableEnsured = true;
@@ -846,6 +828,46 @@ public class ConsolidatorMetadataManager extends MetadataManager {
         Monitor.getInstance().incrInitializationCnt(this.initializationCount);
         Monitor.getInstance().registerChangedDevice(device);
 
+    }
+
+    /**
+     * Ensure the configured destination database and schema exist before the metadata /
+     * checkpoint tables are created. This is destination-agnostic: it delegates the actual
+     * existence-check and DDL SQL to the per-destination {@link SQLGenerator}, and honours
+     * each destination's {@code isDatabaseAllowed()} / {@code isSchemaAllowed()} capability
+     * flags (mirroring {@code JDBCExecutor.createDatabase} / {@code createSchema} and
+     * {@code DSTInitializer}), so no destination-specific SQL is hardcoded here.
+     *
+     * <p>Both operations are guarded by an existence check so they are idempotent even for
+     * destinations whose CREATE DATABASE / CREATE SCHEMA syntax has no IF NOT EXISTS clause.
+     */
+    private void ensureDestinationNamespace(Statement ddlStmt) throws SQLException {
+        SQLGenerator sqlGen = SQLGenerator.getInstance(dstIndex);
+        String database = ConfLoader.getInstance().getDstDatabase(dstIndex);
+        String schema = ConfLoader.getInstance().getDstSchema(dstIndex);
+
+        // Mock table carrying the configured destination database/schema so the generator
+        // can emit correctly-scoped existence-check and DDL SQL for this destination type.
+        Table nsTbl = new Table();
+        nsTbl.id = TableID.from(null, null, dstIndex, database, schema, "synclite_consolidator_metadata");
+
+        if (sqlGen.isDatabaseAllowed() && (database != null) && !database.trim().isEmpty()) {
+            if (!objectExists(ddlStmt, sqlGen.getDatabaseExistsCheckSQL(nsTbl))) {
+                ddlStmt.execute(sqlGen.getCreateDatabseSQL(new CreateDatabase(nsTbl)));
+            }
+        }
+
+        if (sqlGen.isSchemaAllowed() && (schema != null) && !schema.trim().isEmpty()) {
+            if (!objectExists(ddlStmt, sqlGen.getSchemaExistsCheckSQL(nsTbl))) {
+                ddlStmt.execute(sqlGen.getCreateSchemaSQL(new CreateSchema(nsTbl)));
+            }
+        }
+    }
+
+    private boolean objectExists(Statement ddlStmt, String checkSql) throws SQLException {
+        try (ResultSet rs = ddlStmt.executeQuery(checkSql)) {
+            return rs.next();
+        }
     }
     
     public void resetInitializedSnapshot() throws SyncLiteException {    	
@@ -894,16 +916,11 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             conn.setAutoCommit(false);
             String qcheckpoint = qualifiedDstTableName("synclite_checkpoint");
             try (Statement stmt = conn.createStatement()) {
-                stmt.execute("CREATE TABLE IF NOT EXISTS " + qcheckpoint + "("
-                        + "synclite_device_id TEXT NOT NULL, "
-                        + "synclite_device_name TEXT NOT NULL, "
-                        + "synclite_update_timestamp TEXT, "
-                        + "commit_id LONG NOT NULL, "
-                        + "cdc_change_number LONG NOT NULL, "
-                        + "cdc_log_segment_sequence_number LONG NOT NULL, "
-                        + "initialization_status INTEGER NOT NULL DEFAULT 0, "
-                        + "txn_count LONG NOT NULL, "
-                        + "PRIMARY KEY(synclite_device_id, synclite_device_name, commit_id))");
+                // Route through the mapper + per-destination SQL generator so the checkpoint DDL is
+                // valid for the target backend (MySQL rejects TEXT columns in a primary key).
+                ConsolidatorSrcTable checkpointSchema = SyncLiteConsolidatorInfo.getCheckpointTableSchema(
+                        device.getDeviceUUID(), device.getDeviceName(), dstIndex);
+                stmt.execute(buildSystemCreateTableSql(checkpointSchema));
             }
             try (PreparedStatement updateStmt = conn.prepareStatement(
                     "UPDATE " + qcheckpoint + " SET initialization_status = 0 WHERE synclite_device_id = ? AND synclite_device_name = ?")) {

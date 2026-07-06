@@ -76,9 +76,13 @@ public class MySQLDataTypeMapper extends DataTypeMapper {
 	@Override
     protected DataType doMapTypeForSystemColumn(DataType srcType) {
 		//
-		//We do this because MySQL does not support text column as PK , hence need to maint the char(n) columns like that only
+		//MySQL does not allow TEXT/BLOB columns in a PRIMARY KEY without a prefix length,
+		//so system columns that participate in composite primary keys must retain a bounded,
+		//fixed-or-variable width character type. Preserve char(n) and varchar(n) as-is instead
+		//of downgrading them to TEXT via best-effort mapping.
 		//
-        if (srcType.dbNativeDataType.toLowerCase().startsWith("char")) {
+        String nativeType = srcType.dbNativeDataType.toLowerCase();
+        if (nativeType.startsWith("char") || nativeType.startsWith("varchar")) {
 			return srcType;
 		} 
         return doMapTypeBestEffort(srcType);

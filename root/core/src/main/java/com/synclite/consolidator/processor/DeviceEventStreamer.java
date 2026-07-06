@@ -45,6 +45,7 @@ import com.synclite.consolidator.global.DstSyncMode;
 import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
 import com.synclite.consolidator.global.SyncLiteLoggerInfo;
 import com.synclite.consolidator.log.CDCLogPosition;
+import com.synclite.consolidator.log.CommandLogRecord;
 import com.synclite.consolidator.log.CommandLogRecord.DDLInfo;
 import com.synclite.consolidator.log.EventLogRecord;
 import com.synclite.consolidator.log.EventLogSegment;
@@ -62,11 +63,14 @@ import com.synclite.consolidator.oper.Minus;
 import com.synclite.consolidator.oper.NativeOper;
 import com.synclite.consolidator.oper.Oper;
 import com.synclite.consolidator.oper.OperType;
+import com.synclite.consolidator.oper.RenameColumn;
+import com.synclite.consolidator.oper.RenameTable;
 import com.synclite.consolidator.oper.Update;
 import com.synclite.consolidator.oper.UpdateIfPredicate;
 import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorDstTable;
 import com.synclite.consolidator.schema.ConsolidatorSrcTable;
+import com.synclite.consolidator.schema.RenameColumnPair;
 import com.synclite.consolidator.schema.Table;
 import com.synclite.consolidator.schema.TableID;
 import com.synclite.consolidator.schema.TableMapper;
@@ -623,7 +627,8 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 					if ((prevTableId != null) && (prevTableId.table.equals(log.tableName)) &&(prevTableId.database.equals(log.databaseName)))  {
 						tableId = prevTableId;
 					} else {
-						tableId =  TableID.from(device.getDeviceUUID(), device.getDeviceName(),  this.dstIndex, log.databaseName, null, log.tableName);						
+						// Normalize schema to empty string for consistency with DeviceStatsCollector stats lookup
+						tableId =  TableID.from(device.getDeviceUUID(), device.getDeviceName(),  this.dstIndex, log.databaseName, "", log.tableName);						
 					}
 					srcTable = ConsolidatorSrcTable.from(tableId);
 					// Rename-table stats should be attributed to the original table identity so the existing row is updated.
@@ -1456,36 +1461,74 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								}
 								break;
 							case RENAMECOLUMN:
-								//executeDDLIgnoreException(log.sql);
-								String normalizedOldColumnName = normalizeIdentifier(log.ddlInfo.oldColumnName);
-							String normalizedNewColumnName = normalizeIdentifier(log.ddlInfo.columnName);
-							Oper renameColOper= srcTable.generateRenameColumnOper(normalizedOldColumnName, normalizedNewColumnName);
-								if (renameColOper != null) {
-									dstExecutor.execute(renameColOper.map(tableMapper));
-									tableMapper.remove(srcTable);
-									tblMappedInsertOpers.remove(srcTable.id);
-									tblMappedUpdateOpers.remove(srcTable.id);
-									tblMappedDeleteOpers.remove(srcTable.id);
-									try {
-										consolidatorMetadataMgr.upsertSchema(srcTable);
-									} catch (SQLException e) {
-										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
+								// First try to use ddlInfo if available (from SQL parsing)
+								String normalizedOldColumnName = null;
+								String normalizedNewColumnName = null;
+								
+								if (log.ddlInfo != null && log.ddlInfo.oldColumnName != null && log.ddlInfo.columnName != null) {
+									// Use parsed DDL info
+									normalizedOldColumnName = normalizeIdentifier(log.ddlInfo.oldColumnName);
+									normalizedNewColumnName = normalizeIdentifier(log.ddlInfo.columnName);
+								} else {
+									// Fall back to detecting rename by comparing schema
+									newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
+									RenameColumnPair renameColPair = srcTable.detectRenameColumn(newTableCols);
+									if (renameColPair != null) {
+										normalizedOldColumnName = renameColPair.getOldColumnName();
+										normalizedNewColumnName = renameColPair.getNewColumnName();
 									}
-									persistSchemaAfterDDL(dstExecutor, srcTable);
+								}
+								
+								if (normalizedOldColumnName != null && normalizedNewColumnName != null) {
+									Oper renameColOper = srcTable.generateRenameColumnOper(normalizedOldColumnName, normalizedNewColumnName);
+									if (renameColOper != null) {
+										dstExecutor.execute(renameColOper.map(tableMapper));
+										tableMapper.remove(srcTable);
+										tblMappedInsertOpers.remove(srcTable.id);
+										tblMappedUpdateOpers.remove(srcTable.id);
+										tblMappedDeleteOpers.remove(srcTable.id);
+										try {
+											consolidatorMetadataMgr.upsertSchema(srcTable);
+										} catch (SQLException e) {
+											throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
+										}
+										persistSchemaAfterDDL(dstExecutor, srcTable);
+									}
 								}
 								break;
 							case RENAMETABLE:
-								String normalizedOldTableName = normalizeIdentifier(log.ddlInfo.oldTableName);
-							String normalizedNewTableName = normalizeIdentifier(log.ddlInfo.tableName);
-							Oper renameTableOper = srcTable.generateRenameTableOper(tableMapper, normalizedOldTableName, normalizedNewTableName);
-								if (renameTableOper != null) {
-									dstExecutor.execute(renameTableOper.map(tableMapper));
+								// First try to use ddlInfo if available (from SQL parsing)
+								String normalizedOldTableName = null;
+								String normalizedNewTableName = null;
+								
+								if (log.ddlInfo != null && log.ddlInfo.oldTableName != null && log.ddlInfo.tableName != null) {
+									// Use parsed DDL info
+									normalizedOldTableName = normalizeIdentifier(log.ddlInfo.oldTableName);
+									normalizedNewTableName = normalizeIdentifier(log.ddlInfo.tableName);
+								} else if (log.sql != null && !log.sql.isBlank()) {
+									// Try to parse SQL if ddlInfo not available
 									try {
-										consolidatorMetadataMgr.upsertSchema(srcTable);
-									} catch (SQLException e) {
-										throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
+										DDLInfo parsedDDL = CommandLogRecord.parseDDLFromSQL(log.sql);
+										if (parsedDDL != null && parsedDDL.oldTableName != null && parsedDDL.tableName != null) {
+											normalizedOldTableName = normalizeIdentifier(parsedDDL.oldTableName);
+											normalizedNewTableName = normalizeIdentifier(parsedDDL.tableName);
+										}
+									} catch (Exception e) {
+										device.tracer.debug("Failed to parse RENAME TABLE SQL: " + log.sql);
 									}
-									persistSchemaAfterDDL(dstExecutor, srcTable);
+								}
+								
+								if (normalizedOldTableName != null && normalizedNewTableName != null) {
+									Oper renameTableOper = srcTable.generateRenameTableOper(tableMapper, normalizedOldTableName, normalizedNewTableName);
+									if (renameTableOper != null) {
+										dstExecutor.execute(renameTableOper.map(tableMapper));
+										try {
+											consolidatorMetadataMgr.upsertSchema(srcTable);
+										} catch (SQLException e) {
+											throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
+										}
+										persistSchemaAfterDDL(dstExecutor, srcTable);
+									}
 								}
 								break;
 							case REFRESHTABLE:
@@ -1493,6 +1536,57 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								dstTable = tableMapper.mapTable(srcTable);
 								ConsolidatorDstTable.remove(dstTable.id);								
 								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
+								// REFRESH TABLE carries a full schema snapshot. Reconcile destination schema
+								// by deriving concrete operations from old->new schema delta.
+								boolean schemaChanged = true;
+								int schemaGuard = 0;
+								int schemaGuardMax = (newTableCols != null ? newTableCols.size() : 0) + (srcTable.columns != null ? srcTable.columns.size() : 0) + 8;
+								if (schemaGuardMax < 16) {
+									schemaGuardMax = 16;
+								}
+
+								while (schemaChanged && (schemaGuard < schemaGuardMax)) {
+									schemaChanged = false;
+									++schemaGuard;
+
+									// Column renames are always delivered explicitly as ALTER TABLE RENAME COLUMN
+									// (OperType.RENAMECOLUMN) before the REFRESH TABLE in the dbreader pipeline, and
+									// are applied in-place preserving data. REFRESH TABLE is only a schema-sync
+									// safety net, so it must NOT re-derive renames heuristically here (doing so
+									// double-processes an already-applied rename and leaves both old and new columns).
+									Oper refreshAddColOper = srcTable.generateAddColumnOper(newTableCols);
+									if (refreshAddColOper != null) {
+										dstExecutor.execute(refreshAddColOper.map(tableMapper));
+										if (refreshAddColOper instanceof AddColumn) {
+											srcTable.applyAddColumn((AddColumn) refreshAddColOper);
+										}
+										schemaChanged = true;
+										continue;
+									}
+
+									Oper refreshDropColOper = srcTable.generateDropColumnOper(newTableCols);
+									if (refreshDropColOper != null) {
+										dstExecutor.execute(refreshDropColOper.map(tableMapper));
+										if (refreshDropColOper instanceof DropColumn) {
+											srcTable.applyDropColumn((DropColumn) refreshDropColOper);
+										}
+										schemaChanged = true;
+										continue;
+									}
+
+									Oper refreshAlterColOper = srcTable.generateAlterColumnOper(newTableCols);
+									if (refreshAlterColOper != null) {
+										dstExecutor.execute(refreshAlterColOper.map(tableMapper));
+										if (refreshAlterColOper instanceof AlterColumn) {
+											srcTable.applyAlterColumn((AlterColumn) refreshAlterColOper);
+										}
+										schemaChanged = true;
+									}
+								}
+
+								if (schemaGuard >= schemaGuardMax) {
+									device.tracer.warn("REFRESH TABLE reconciliation reached guard limit for table " + srcTable.id + ", applying final schema refresh only.");
+								}
 								//refresh schema for srcTable
 								srcTable.refreshColumns(tableMapper, newTableCols);
 								//Reload dst table

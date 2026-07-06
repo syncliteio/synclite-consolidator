@@ -46,4 +46,9 @@ public class MSSQLExecutor extends JDBCExecutor {
 		return false;
 	}
 
+	@Override
+	public boolean canCreateDatabase() {
+		return true;
+	}
+
 }

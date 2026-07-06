@@ -52,6 +52,11 @@ public class OracleExecutor extends JDBCExecutor {
 		return false;
 	}
 
+	@Override
+	public boolean canCreateDatabase() {
+		return true;
+	}
+
 	//For oracle date comes as a timestamp. Try to set a timestamp.
 	@Override
 	protected void setDate(PreparedStatement pstmt, int i, Object o) throws SQLException {

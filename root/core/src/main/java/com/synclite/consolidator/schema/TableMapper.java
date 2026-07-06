@@ -297,17 +297,16 @@ public abstract class TableMapper {
 
     public List<Oper> mapOper(RenameColumn renameColumn) {
         ConsolidatorDstTable dstTable = mapTable((ConsolidatorSrcTable) renameColumn.tbl);
-        List<Column> dstColumnsToRename = new ArrayList<Column>(renameColumn.columns.size());
-        for (Column c : renameColumn.columns) {
-        	if (! ConfLoader.getInstance().isAllowedColumn(dstIndex, renameColumn.tbl.id.table, c.column)) {
-        		continue;
-        	}
-            dstColumnsToRename.add(mapColumn(renameColumn.tbl.id, c));
-        }
-        if (dstColumnsToRename.isEmpty()) {
+        if (! ConfLoader.getInstance().isAllowedColumn(dstIndex, renameColumn.tbl.id.table, renameColumn.oldName)) {
         	return Collections.EMPTY_LIST;
         }
-        return Collections.singletonList(new RenameColumn(dstTable, dstColumnsToRename.get(0), renameColumn.oldName, renameColumn.newName));
+
+        Column dstColumnToRename = dstTable.colMap.get(renameColumn.oldName);
+        if (dstColumnToRename == null) {
+            return Collections.EMPTY_LIST;
+        }
+
+        return Collections.singletonList(new RenameColumn(dstTable, dstColumnToRename, renameColumn.oldName, renameColumn.newName));
     }
 
     public List<Oper> mapOper(BeginTran beginTran) {

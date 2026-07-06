@@ -42,12 +42,47 @@ public class ConsolidatorSrcTable extends Table {
     }
 
     public void refreshColumns(TableMapper tableMapper, List<Column> newSchemaCols) {
+        preservePrimaryKeyMetadataIfMissing(newSchemaCols);
         //Clear off all columns of this table object in case the object is lying around
         //Clear off the table entry from the mapper in case its there from old instances of same table name
         tableMapper.remove(this);
         clearColumns();
         for (Column c : newSchemaCols) {
             addColumn(c);
+        }
+    }
+
+    private void preservePrimaryKeyMetadataIfMissing(List<Column> newSchemaCols) {
+        if (newSchemaCols == null || newSchemaCols.isEmpty()) {
+            return;
+        }
+
+        boolean refreshedHasPrimaryKey = false;
+        for (Column c : newSchemaCols) {
+            if (c.pkIndex > 0) {
+                refreshedHasPrimaryKey = true;
+                break;
+            }
+        }
+        if (refreshedHasPrimaryKey) {
+            return;
+        }
+
+        java.util.HashMap<String, Integer> existingPrimaryKeyIndexes = new java.util.HashMap<String, Integer>();
+        for (Column c : this.columns) {
+            if (c.pkIndex > 0) {
+                existingPrimaryKeyIndexes.put(c.column, c.pkIndex);
+            }
+        }
+        if (existingPrimaryKeyIndexes.isEmpty()) {
+            return;
+        }
+
+        for (Column c : newSchemaCols) {
+            Integer pkIndex = existingPrimaryKeyIndexes.get(c.column);
+            if (pkIndex != null) {
+                c.pkIndex = pkIndex;
+            }
         }
     }
 
@@ -121,6 +156,85 @@ public class ConsolidatorSrcTable extends Table {
         }
         renameColumn(renamedCol, newColName);
         return new RenameColumn(this, renamedCol, oldColName, newColName);
+    }
+
+    /**
+     * Detect a column rename by comparing new schema with current schema.
+     * Returns a RenameColumnPair if exactly one column was removed and one was added
+     * with matching types (suggesting a rename), otherwise returns null.
+     */
+    public RenameColumnPair detectRenameColumn(List<Column> newSchemaCols) {
+        if (newSchemaCols == null || newSchemaCols.isEmpty()) {
+            return null;
+        }
+
+        // Find columns that exist in current but not in new (removed columns)
+        java.util.List<Column> removedCols = new java.util.ArrayList<>();
+        for (Column c : this.columns) {
+            if (c.isSystemColumn) {
+                continue; // Skip system columns
+            }
+            boolean found = false;
+            for (Column newCol : newSchemaCols) {
+                if (newCol.column.equalsIgnoreCase(c.column)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                removedCols.add(c);
+            }
+        }
+
+        // Find columns that exist in new but not in current (added columns)
+        java.util.List<Column> addedCols = new java.util.ArrayList<>();
+        for (Column newCol : newSchemaCols) {
+            if (newCol.isSystemColumn) {
+                continue; // Skip system columns
+            }
+            boolean found = false;
+            for (Column c : this.columns) {
+                if (c.column.equalsIgnoreCase(newCol.column)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                addedCols.add(newCol);
+            }
+        }
+
+        // If exactly one column was removed and one was added, it might be a rename
+        if (removedCols.size() == 1 && addedCols.size() == 1) {
+            Column removed = removedCols.get(0);
+            Column added = addedCols.get(0);
+            
+            // Verify they have compatible column definitions before treating this as a rename.
+            if (isCompatibleRenameCandidate(removed, added)) {
+                return new RenameColumnPair(removed.column, added.column);
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isCompatibleRenameCandidate(Column removed, Column added) {
+        if (removed == null || added == null || removed.type == null || added.type == null) {
+            return false;
+        }
+        if (!removed.type.dbNativeDataType.equalsIgnoreCase(added.type.dbNativeDataType)) {
+            return false;
+        }
+        if (removed.isNotNull != added.isNotNull) {
+            return false;
+        }
+        if (removed.pkIndex != added.pkIndex) {
+            return false;
+        }
+        if (removed.isAutoIncrement != added.isAutoIncrement) {
+            return false;
+        }
+        return true;
     }
 
     public Oper generateRenameTableOper(TableMapper tableMapper, String oldTableName, String newTableName) {
