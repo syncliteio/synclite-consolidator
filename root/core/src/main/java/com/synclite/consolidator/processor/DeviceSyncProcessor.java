@@ -42,6 +42,7 @@ import com.synclite.consolidator.oper.OperType;
 import com.synclite.consolidator.oper.Update;
 import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorSrcTable;
+import com.synclite.consolidator.schema.SQLGenerator;
 import com.synclite.consolidator.schema.TableID;
 import com.synclite.consolidator.schema.TableMapper;
 
@@ -132,11 +133,13 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 	/**
 	 * Returns a schema-qualified table name for use in NativeOper SQL strings
 	 * that bypass the system table mapper. Matches ConsolidatorMetadataManager.qualifiedDstTableName.
+	 * Uses database-specific identifier quoting via SQLGenerator: backticks for MySQL, 
+	 * double-quotes for PostgreSQL/others.
 	 */
 	protected String qualifiedDstTableName(String tableName) {
 		String schema = ConfLoader.getInstance().getDstSchema(dstIndex);
 		if (schema != null && !schema.trim().isEmpty()) {
-			return "\"" + schema.replace("\"", "\"\"") + "\".\"" + tableName.replace("\"", "\"\"") + "\"";
+			return SQLGenerator.getInstance(dstIndex).getSchemaQualifiedObjectName(schema, tableName);
 		}
 		return tableName;
 	}
@@ -457,6 +460,58 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 
 		sb.append(")");
 		return sb.toString();
+	}
+
+	/**
+	 * Returns true when a DDL execution exception is idempotent for the given
+	 * operation type — i.e. the destination is already in the desired state.
+	 * Shared by DeviceConsolidator and DeviceEventStreamer.
+	 */
+	protected static boolean isDDLIdempotentError(DstExecutionException e, OperType opType) {
+		String msg = (e.getMessage() != null) ? e.getMessage().toLowerCase() : "";
+		switch (opType) {
+			case CREATETABLE:
+				return msg.contains("already exists") || msg.contains("duplicate")
+						|| msg.contains("table exists");
+			case DROPTABLE:
+				return msg.contains("unknown table") || msg.contains("no such table")
+						|| msg.contains("does not exist") || msg.contains("table not found")
+						|| msg.contains("can't drop") || msg.contains("doesn't exist");
+			case ADDCOLUMN:
+				return msg.contains("duplicate column") || msg.contains("already exists")
+						|| msg.contains("column exists") || msg.contains("already have a column");
+			case DROPCOLUMN:
+				return msg.contains("can't drop") || msg.contains("unknown column")
+						|| msg.contains("no such column") || msg.contains("does not exist")
+						|| msg.contains("column not found") || msg.contains("doesn't exist");
+			case ALTERCOLUMN:
+				return msg.contains("unknown column") || msg.contains("no such column")
+						|| msg.contains("does not exist") || msg.contains("column not found");
+			case RENAMECOLUMN:
+				return msg.contains("unknown column") || msg.contains("no such column")
+						|| msg.contains("does not exist") || msg.contains("column not found")
+						|| msg.contains("duplicate column") || msg.contains("already exists");
+			case RENAMETABLE:
+				return msg.contains("unknown table") || msg.contains("no such table")
+						|| msg.contains("does not exist") || msg.contains("table not found")
+						|| msg.contains("already exists") || msg.contains("duplicate");
+			default:
+				return false;
+		}
+	}
+
+	/**
+	 * Executes a native DDL statement and tolerates idempotent destination errors.
+	 */
+	protected void executeNativeDDLSafely(SQLExecutor dstExecutor, OperType opType, String sql, String context) throws DstExecutionException {
+		try {
+			dstExecutor.execute(new NativeOper(null, sql));
+		} catch (DstExecutionException ddlEx) {
+			if (!isDDLIdempotentError(ddlEx, opType)) {
+				throw ddlEx;
+			}
+			device.tracer.warn(context + " idempotent skip on dst: " + ddlEx.getMessage());
+		}
 	}
 
 	/**

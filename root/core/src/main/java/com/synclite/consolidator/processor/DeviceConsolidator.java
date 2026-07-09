@@ -52,6 +52,7 @@ import com.synclite.consolidator.oper.Insert;
 import com.synclite.consolidator.oper.NativeOper;
 import com.synclite.consolidator.oper.Oper;
 import com.synclite.consolidator.oper.OperType;
+import com.synclite.consolidator.oper.RenameColumn;
 import com.synclite.consolidator.oper.Update;
 import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorDstTable;
@@ -623,7 +624,12 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 										}
 										Oper createTableOper= srcTable.generateCreateTableOper(tableMapper, newTableCols);
 										if (createTableOper != null) {
-											dstExecutor.execute(createTableOper.map(tableMapper));
+											try {
+												dstExecutor.execute(createTableOper.map(tableMapper));
+											} catch (DstExecutionException ddlEx) {
+												if (!isDDLIdempotentError(ddlEx, OperType.CREATETABLE)) throw ddlEx;
+												device.tracer.warn("CREATETABLE idempotent skip on dst (table already exists): " + ddlEx.getMessage());
+											}
 											try {
 												consolidatorMetadataMgr.upsertSchema(srcTable);
 											} catch (SQLException e) {
@@ -640,7 +646,12 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 									} else {
 										Oper dropTableOper = srcTable.generateDropTableOper(tableMapper);
 										if (dropTableOper != null) {
-											dstExecutor.execute(dropTableOper.map(tableMapper));
+											try {
+												dstExecutor.execute(dropTableOper.map(tableMapper));
+											} catch (DstExecutionException ddlEx) {
+												if (!isDDLIdempotentError(ddlEx, OperType.DROPTABLE)) throw ddlEx;
+												device.tracer.warn("DROPTABLE idempotent skip on dst (table already absent): " + ddlEx.getMessage());
+											}
 											try {
 												consolidatorMetadataMgr.deleteSchema(srcTable);
 											} catch (SQLException e) {
@@ -674,7 +685,12 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 										}
 										AddColumn addColOper= (AddColumn) srcTable.generateAddColumnOper(newTableCols);
 										if (addColOper != null) {
-											dstExecutor.execute(addColOper.map(tableMapper));
+											try {
+												dstExecutor.execute(addColOper.map(tableMapper));
+											} catch (DstExecutionException ddlEx) {
+												if (!isDDLIdempotentError(ddlEx, OperType.ADDCOLUMN)) throw ddlEx;
+												device.tracer.warn("ADDCOLUMN idempotent skip on dst (column already exists): " + ddlEx.getMessage());
+											}
 											srcTable.applyAddColumn(addColOper);
 											try {
 												consolidatorMetadataMgr.upsertSchema(srcTable);
@@ -706,7 +722,12 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 										}
 										AlterColumn alterColOper = (AlterColumn) srcTable.generateAlterColumnOper(newTableCols);
 										if (alterColOper != null) {
-											dstExecutor.execute(alterColOper.map(tableMapper));
+											try {
+												dstExecutor.execute(alterColOper.map(tableMapper));
+											} catch (DstExecutionException ddlEx) {
+												if (!isDDLIdempotentError(ddlEx, OperType.ALTERCOLUMN)) throw ddlEx;
+												device.tracer.warn("ALTERCOLUMN idempotent skip on dst (column absent): " + ddlEx.getMessage());
+											}
 											srcTable.applyAlterColumn(alterColOper);
 											try {
 												consolidatorMetadataMgr.upsertSchema(srcTable);
@@ -741,7 +762,12 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 											}
 											DropColumn dropColOper= (DropColumn) srcTable.generateDropColumnOper(newTableCols);
 											if (dropColOper != null) {
-												dstExecutor.execute(dropColOper.map(tableMapper));
+												try {
+													dstExecutor.execute(dropColOper.map(tableMapper));
+												} catch (DstExecutionException ddlEx) {
+													if (!isDDLIdempotentError(ddlEx, OperType.DROPCOLUMN)) throw ddlEx;
+													device.tracer.warn("DROPCOLUMN idempotent skip on dst (column already absent): " + ddlEx.getMessage());
+												}
 											srcTable.applyDropColumn(dropColOper);
 											tableMapper.remove(srcTable);
 											tblMappedInserts.remove(srcTable.id);
@@ -769,7 +795,15 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 											if (oldColumnName != null) {
 												Oper renameColOper= srcTable.generateRenameColumnOper(oldColumnName, newColumnName);
 												if (renameColOper != null) {
-													dstExecutor.execute(renameColOper.map(tableMapper));												tableMapper.remove(srcTable);													tblMappedInserts.remove(srcTable.id);
+													try {
+														dstExecutor.execute(renameColOper.map(tableMapper));
+													} catch (DstExecutionException ddlEx) {
+														if (!isDDLIdempotentError(ddlEx, OperType.RENAMECOLUMN)) throw ddlEx;
+														device.tracer.warn("RENAMECOLUMN idempotent skip on dst (already renamed or column absent): " + ddlEx.getMessage());
+													}
+													srcTable.applyRenameColumn((RenameColumn) renameColOper);
+													tableMapper.remove(srcTable);
+													tblMappedInserts.remove(srcTable.id);
 													tblMappedUpdates.remove(srcTable.id);
 													tblMappedDeletes.remove(srcTable.id);
 													try {
@@ -794,9 +828,16 @@ public class DeviceConsolidator extends DeviceSyncProcessor {
 											srcTable = ConsolidatorSrcTable.from(tableId);
 											Oper renameTableOper = srcTable.generateRenameTableOper(tableMapper, oldTableName, table);
 											if (renameTableOper != null) {
-												dstExecutor.execute(renameTableOper.map(tableMapper));												tblMappedInserts.remove(srcTable.id);
+												try {
+													dstExecutor.execute(renameTableOper.map(tableMapper));
+												} catch (DstExecutionException ddlEx) {
+													if (!isDDLIdempotentError(ddlEx, OperType.RENAMETABLE)) throw ddlEx;
+													device.tracer.warn("RENAMETABLE idempotent skip on dst (already renamed or table state changed): " + ddlEx.getMessage());
+												}
+												tblMappedInserts.remove(srcTable.id);
 												tblMappedUpdates.remove(srcTable.id);
-												tblMappedDeletes.remove(srcTable.id);												try {
+												tblMappedDeletes.remove(srcTable.id);
+												try {
 													consolidatorMetadataMgr.upsertSchema(srcTable);
 												} catch (SQLException e) {
 													throw new SyncLiteException("Failed to persist schema for table : " + srcTable.id + " in consolidator metadata file : ", e);
