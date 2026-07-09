@@ -154,8 +154,19 @@ public class ConsolidatorSrcTable extends Table {
         if (renamedCol == null) {
             return null;
         }
-        renameColumn(renamedCol, newColName);
         return new RenameColumn(this, renamedCol, oldColName, newColName);
+    }
+
+    public void applyRenameColumn(RenameColumn oper) {
+        Column renamedCol = colMap.get(oper.oldName);
+        if (renamedCol != null) {
+            renameColumn(renamedCol, oper.newName);
+            return;
+        }
+        // If old name is already absent, treat as already-applied rename.
+        if (colMap.containsKey(oper.newName)) {
+            return;
+        }
     }
 
     /**

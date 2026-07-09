@@ -115,13 +115,13 @@ public abstract class JDBCExecutor extends SQLExecutor {
 
 	/**
 	 * Returns a schema-qualified table name for use in raw SQL strings that bypass
-	 * the system table mapper, so PostgreSQL resolves them in the configured schema
-	 * instead of following search_path. Mirrors DeviceSyncProcessor.qualifiedDstTableName.
+	 * the system table mapper. Uses destination-specific quoting so generated SQL is
+	 * valid for MySQL/PostgreSQL and matches DeviceSyncProcessor behavior.
 	 */
 	protected String qualifiedDstTableName(String tableName) {
 		String schema = ConfLoader.getInstance().getDstSchema(dstIndex);
 		if (schema != null && !schema.trim().isEmpty()) {
-			return "\"" + schema.replace("\"", "\"\"") + "\".\"" + tableName.replace("\"", "\"\"") + "\"";
+			return SQLGenerator.getInstance(dstIndex).getSchemaQualifiedObjectName(schema, tableName);
 		}
 		return tableName;
 	}

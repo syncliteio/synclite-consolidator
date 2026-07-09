@@ -71,6 +71,7 @@ import com.synclite.consolidator.schema.Column;
 import com.synclite.consolidator.schema.ConsolidatorDstTable;
 import com.synclite.consolidator.schema.ConsolidatorSrcTable;
 import com.synclite.consolidator.schema.RenameColumnPair;
+import com.synclite.consolidator.schema.SQLGenerator;
 import com.synclite.consolidator.schema.Table;
 import com.synclite.consolidator.schema.TableID;
 import com.synclite.consolidator.schema.TableMapper;
@@ -1372,6 +1373,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 							//Handle all DDLs
 							//Get schema from in-memory replica (already updated by executeDDLOnReplica above)
 							//to construct DDL Oper for dst. No on-disk replica file needed.
+							SQLGenerator sqlGenerator = SQLGenerator.getInstance(dstIndex);
 
 							switch(log.ddlInfo.ddlType) {
 							case CREATETABLE:
@@ -1379,7 +1381,12 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								List<Column> newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
 								Oper createTableOper= srcTable.generateCreateTableOper(tableMapper, newTableCols);
 								if (createTableOper != null) {
-									dstExecutor.execute(createTableOper.map(tableMapper));
+									try {
+										dstExecutor.execute(createTableOper.map(tableMapper));
+									} catch (DstExecutionException ddlEx) {
+										if (!isDDLIdempotentError(ddlEx, OperType.CREATETABLE)) throw ddlEx;
+										device.tracer.warn("CREATETABLE idempotent skip on dst (table already exists): " + ddlEx.getMessage());
+									}
 									try {
 										consolidatorMetadataMgr.upsertSchema(srcTable);
 									} catch (SQLException e) {
@@ -1392,7 +1399,12 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								//executeDDLIgnoreException(log.sql);
 								Oper dropTableOper = srcTable.generateDropTableOper(tableMapper);
 								if (dropTableOper != null) {
-									dstExecutor.execute(dropTableOper.map(tableMapper));
+									try {
+										dstExecutor.execute(dropTableOper.map(tableMapper));
+									} catch (DstExecutionException ddlEx) {
+										if (!isDDLIdempotentError(ddlEx, OperType.DROPTABLE)) throw ddlEx;
+										device.tracer.warn("DROPTABLE idempotent skip on dst (table already absent): " + ddlEx.getMessage());
+									}
 									try {
 										consolidatorMetadataMgr.deleteSchema(srcTable);
 									} catch (SQLException e) {
@@ -1409,9 +1421,29 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								//executeDDLIgnoreException(log.sql);
 								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
 								AddColumn addColOper= (AddColumn) srcTable.generateAddColumnOper(newTableCols);
+								boolean addHandled = false;
 								if (addColOper != null) {
-									dstExecutor.execute(addColOper.map(tableMapper));
+									try {
+										dstExecutor.execute(addColOper.map(tableMapper));
+									} catch (DstExecutionException ddlEx) {
+										if (!isDDLIdempotentError(ddlEx, OperType.ADDCOLUMN)) throw ddlEx;
+										device.tracer.warn("ADDCOLUMN idempotent skip on dst (column already exists): " + ddlEx.getMessage());
+									}
 									srcTable.applyAddColumn(addColOper);
+									addHandled = true;
+								} else if (log.ddlInfo != null && log.ddlInfo.columnName != null && log.ddlInfo.colDef != null) {
+									ConsolidatorDstTable addDstTable = tableMapper.mapTable(srcTable);
+									String addSql = "ALTER TABLE " + sqlGenerator.getTableNameSQL(addDstTable.id)
+											+ " ADD COLUMN " + sqlGenerator.quoteColumnNameIfNeeded(normalizeIdentifier(log.ddlInfo.columnName))
+											+ " " + log.ddlInfo.colDef;
+									executeNativeDDLSafely(dstExecutor, OperType.ADDCOLUMN, addSql, "ADDCOLUMN fallback");
+									newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
+									if (newTableCols != null && !newTableCols.isEmpty()) {
+										srcTable.refreshColumns(tableMapper, newTableCols);
+									}
+									addHandled = true;
+								}
+								if (addHandled) {
 									tblMappedInsertOpers.remove(srcTable.id);
 									tblMappedUpdateOpers.remove(srcTable.id);
 									tblMappedDeleteOpers.remove(srcTable.id);
@@ -1427,9 +1459,28 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								//executeDDLIgnoreException(log.sql);
 								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
 								DropColumn dropColOper= (DropColumn) srcTable.generateDropColumnOper(newTableCols);
+								boolean dropHandled = false;
 								if (dropColOper != null) {
-									dstExecutor.execute(dropColOper.map(tableMapper));
+									try {
+										dstExecutor.execute(dropColOper.map(tableMapper));
+									} catch (DstExecutionException ddlEx) {
+										if (!isDDLIdempotentError(ddlEx, OperType.DROPCOLUMN)) throw ddlEx;
+										device.tracer.warn("DROPCOLUMN idempotent skip on dst (column already absent): " + ddlEx.getMessage());
+									}
 									srcTable.applyDropColumn(dropColOper);
+									dropHandled = true;
+								} else if (log.ddlInfo != null && log.ddlInfo.columnName != null) {
+									ConsolidatorDstTable dropDstTable = tableMapper.mapTable(srcTable);
+									String dropSql = "ALTER TABLE " + sqlGenerator.getTableNameSQL(dropDstTable.id)
+											+ " DROP COLUMN " + sqlGenerator.quoteColumnNameIfNeeded(normalizeIdentifier(log.ddlInfo.columnName));
+									executeNativeDDLSafely(dstExecutor, OperType.DROPCOLUMN, dropSql, "DROPCOLUMN fallback");
+									newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
+									if (newTableCols != null && !newTableCols.isEmpty()) {
+										srcTable.refreshColumns(tableMapper, newTableCols);
+									}
+									dropHandled = true;
+								}
+								if (dropHandled) {
 									tableMapper.remove(srcTable);
 									tblMappedInsertOpers.remove(srcTable.id);
 									tblMappedUpdateOpers.remove(srcTable.id);
@@ -1445,9 +1496,32 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 							case ALTERCOLUMN:
 								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
 								AlterColumn alterColOper= (AlterColumn) srcTable.generateAlterColumnOper(newTableCols);
+								boolean alterHandled = false;
 								if (alterColOper != null) {
-									dstExecutor.execute(alterColOper.map(tableMapper));
+									try {
+										dstExecutor.execute(alterColOper.map(tableMapper));
+									} catch (DstExecutionException ddlEx) {
+										if (!isDDLIdempotentError(ddlEx, OperType.ALTERCOLUMN)) throw ddlEx;
+										device.tracer.warn("ALTERCOLUMN idempotent skip on dst (column absent): " + ddlEx.getMessage());
+									}
 									srcTable.applyAlterColumn(alterColOper);
+									alterHandled = true;
+								} else if (log.ddlInfo != null && log.ddlInfo.columnName != null && log.ddlInfo.colDef != null) {
+									ConsolidatorDstTable alterDstTable = tableMapper.mapTable(srcTable);
+									String alterDropSql = "ALTER TABLE " + sqlGenerator.getTableNameSQL(alterDstTable.id)
+											+ " DROP COLUMN " + sqlGenerator.quoteColumnNameIfNeeded(normalizeIdentifier(log.ddlInfo.columnName));
+									String alterAddSql = "ALTER TABLE " + sqlGenerator.getTableNameSQL(alterDstTable.id)
+											+ " ADD COLUMN " + sqlGenerator.quoteColumnNameIfNeeded(normalizeIdentifier(log.ddlInfo.columnName))
+											+ " " + log.ddlInfo.colDef;
+									executeNativeDDLSafely(dstExecutor, OperType.DROPCOLUMN, alterDropSql, "ALTERCOLUMN fallback-drop");
+									executeNativeDDLSafely(dstExecutor, OperType.ADDCOLUMN, alterAddSql, "ALTERCOLUMN fallback-add");
+									newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
+									if (newTableCols != null && !newTableCols.isEmpty()) {
+										srcTable.refreshColumns(tableMapper, newTableCols);
+									}
+									alterHandled = true;
+								}
+								if (alterHandled) {
 									tableMapper.remove(srcTable);
 									tblMappedInsertOpers.remove(srcTable.id);
 									tblMappedUpdateOpers.remove(srcTable.id);
@@ -1461,28 +1535,55 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								}
 								break;
 							case RENAMECOLUMN:
-								// First try to use ddlInfo if available (from SQL parsing)
+								// Prefer schema-diff detected names so destination casing matches
+								// the source schema state. Fall back to parsed ddlInfo only when
+								// a rename pair cannot be inferred.
 								String normalizedOldColumnName = null;
 								String normalizedNewColumnName = null;
-								
-								if (log.ddlInfo != null && log.ddlInfo.oldColumnName != null && log.ddlInfo.columnName != null) {
-									// Use parsed DDL info
+
+								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
+								RenameColumnPair renameColPair = srcTable.detectRenameColumn(newTableCols);
+								if (renameColPair != null) {
+									normalizedOldColumnName = renameColPair.getOldColumnName();
+									normalizedNewColumnName = renameColPair.getNewColumnName();
+								} else if (log.ddlInfo != null && log.ddlInfo.oldColumnName != null && log.ddlInfo.columnName != null) {
+									// Fallback to parsed DDL info when schema-diff inference is unavailable.
 									normalizedOldColumnName = normalizeIdentifier(log.ddlInfo.oldColumnName);
 									normalizedNewColumnName = normalizeIdentifier(log.ddlInfo.columnName);
-								} else {
-									// Fall back to detecting rename by comparing schema
-									newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
-									RenameColumnPair renameColPair = srcTable.detectRenameColumn(newTableCols);
-									if (renameColPair != null) {
-										normalizedOldColumnName = renameColPair.getOldColumnName();
-										normalizedNewColumnName = renameColPair.getNewColumnName();
-									}
 								}
 								
 								if (normalizedOldColumnName != null && normalizedNewColumnName != null) {
 									Oper renameColOper = srcTable.generateRenameColumnOper(normalizedOldColumnName, normalizedNewColumnName);
+									boolean renameHandled = false;
 									if (renameColOper != null) {
-										dstExecutor.execute(renameColOper.map(tableMapper));
+										try {
+											dstExecutor.execute(renameColOper.map(tableMapper));
+										} catch (DstExecutionException ddlEx) {
+											if (!isDDLIdempotentError(ddlEx, OperType.RENAMECOLUMN)) throw ddlEx;
+											device.tracer.warn("RENAMECOLUMN idempotent skip on dst (already renamed or column absent): " + ddlEx.getMessage());
+										}
+										srcTable.applyRenameColumn((RenameColumn) renameColOper);
+										renameHandled = true;
+									} else {
+										// If in-memory src schema is already advanced (e.g. old column missing),
+										// still execute an explicit destination rename once and then refresh schema.
+										ConsolidatorDstTable renameDstTable = tableMapper.mapTable(srcTable);
+										String renameSql = "ALTER TABLE " + sqlGenerator.getTableNameSQL(renameDstTable.id)
+												+ " RENAME COLUMN " + sqlGenerator.quoteColumnNameIfNeeded(normalizedOldColumnName)
+												+ " TO " + sqlGenerator.quoteColumnNameIfNeeded(normalizedNewColumnName);
+										try {
+											dstExecutor.execute(new NativeOper(null, renameSql));
+										} catch (DstExecutionException ddlEx) {
+											if (!isDDLIdempotentError(ddlEx, OperType.RENAMECOLUMN)) throw ddlEx;
+											device.tracer.warn("RENAMECOLUMN fallback idempotent skip on dst: " + ddlEx.getMessage());
+										}
+										newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
+										if (newTableCols != null && !newTableCols.isEmpty()) {
+											srcTable.refreshColumns(tableMapper, newTableCols);
+										}
+										renameHandled = true;
+									}
+									if (renameHandled) {
 										tableMapper.remove(srcTable);
 										tblMappedInsertOpers.remove(srcTable.id);
 										tblMappedUpdateOpers.remove(srcTable.id);
@@ -1520,8 +1621,23 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								
 								if (normalizedOldTableName != null && normalizedNewTableName != null) {
 									Oper renameTableOper = srcTable.generateRenameTableOper(tableMapper, normalizedOldTableName, normalizedNewTableName);
+									boolean renameTableHandled = false;
 									if (renameTableOper != null) {
-										dstExecutor.execute(renameTableOper.map(tableMapper));
+										try {
+											dstExecutor.execute(renameTableOper.map(tableMapper));
+										} catch (DstExecutionException ddlEx) {
+											if (!isDDLIdempotentError(ddlEx, OperType.RENAMETABLE)) throw ddlEx;
+											device.tracer.warn("RENAMETABLE idempotent skip on dst (already renamed or table state changed): " + ddlEx.getMessage());
+										}
+										renameTableHandled = true;
+									} else {
+										ConsolidatorDstTable renameTableDst = tableMapper.mapTable(srcTable);
+										String renameTableSql = "ALTER TABLE " + sqlGenerator.getTableNameSQL(renameTableDst.id)
+												+ " RENAME TO " + normalizedNewTableName;
+										executeNativeDDLSafely(dstExecutor, OperType.RENAMETABLE, renameTableSql, "RENAMETABLE fallback");
+										renameTableHandled = true;
+									}
+									if (renameTableHandled) {
 										try {
 											consolidatorMetadataMgr.upsertSchema(srcTable);
 										} catch (SQLException e) {
@@ -1532,67 +1648,19 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 								}
 								break;
 							case REFRESHTABLE:
-								//Remove dst tables
+								// REFRESH TABLE only refreshes in-memory schema metadata in the consolidator.
+								// All actual DDL (ADD/DROP/ALTER/RENAME COLUMN etc.) is delivered as explicit
+								// operations by the dbreader pipeline. REFRESH TABLE must not infer or execute
+								// any DDL on the destination — doing so would double-apply already-executed
+								// operations and corrupt data (e.g. nulling out a just-renamed column).
 								dstTable = tableMapper.mapTable(srcTable);
-								ConsolidatorDstTable.remove(dstTable.id);								
+								ConsolidatorDstTable.remove(dstTable.id);
 								newTableCols = device.schemaReader.fetchColumns(inMemoryReplicaConn, srcTable.id);
-								// REFRESH TABLE carries a full schema snapshot. Reconcile destination schema
-								// by deriving concrete operations from old->new schema delta.
-								boolean schemaChanged = true;
-								int schemaGuard = 0;
-								int schemaGuardMax = (newTableCols != null ? newTableCols.size() : 0) + (srcTable.columns != null ? srcTable.columns.size() : 0) + 8;
-								if (schemaGuardMax < 16) {
-									schemaGuardMax = 16;
-								}
-
-								while (schemaChanged && (schemaGuard < schemaGuardMax)) {
-									schemaChanged = false;
-									++schemaGuard;
-
-									// Column renames are always delivered explicitly as ALTER TABLE RENAME COLUMN
-									// (OperType.RENAMECOLUMN) before the REFRESH TABLE in the dbreader pipeline, and
-									// are applied in-place preserving data. REFRESH TABLE is only a schema-sync
-									// safety net, so it must NOT re-derive renames heuristically here (doing so
-									// double-processes an already-applied rename and leaves both old and new columns).
-									Oper refreshAddColOper = srcTable.generateAddColumnOper(newTableCols);
-									if (refreshAddColOper != null) {
-										dstExecutor.execute(refreshAddColOper.map(tableMapper));
-										if (refreshAddColOper instanceof AddColumn) {
-											srcTable.applyAddColumn((AddColumn) refreshAddColOper);
-										}
-										schemaChanged = true;
-										continue;
-									}
-
-									Oper refreshDropColOper = srcTable.generateDropColumnOper(newTableCols);
-									if (refreshDropColOper != null) {
-										dstExecutor.execute(refreshDropColOper.map(tableMapper));
-										if (refreshDropColOper instanceof DropColumn) {
-											srcTable.applyDropColumn((DropColumn) refreshDropColOper);
-										}
-										schemaChanged = true;
-										continue;
-									}
-
-									Oper refreshAlterColOper = srcTable.generateAlterColumnOper(newTableCols);
-									if (refreshAlterColOper != null) {
-										dstExecutor.execute(refreshAlterColOper.map(tableMapper));
-										if (refreshAlterColOper instanceof AlterColumn) {
-											srcTable.applyAlterColumn((AlterColumn) refreshAlterColOper);
-										}
-										schemaChanged = true;
-									}
-								}
-
-								if (schemaGuard >= schemaGuardMax) {
-									device.tracer.warn("REFRESH TABLE reconciliation reached guard limit for table " + srcTable.id + ", applying final schema refresh only.");
-								}
-								//refresh schema for srcTable
+								// Refresh consolidator's in-memory view of the table schema.
 								srcTable.refreshColumns(tableMapper, newTableCols);
-								//Reload dst table
+								// Reload dst table mapping with updated schema.
 								dstTable = tableMapper.mapTable(srcTable);
-								
-								//refresh stored src schema 
+								// Persist refreshed schema to metadata store.
 								try {
 									consolidatorMetadataMgr.upsertSchema(srcTable);
 								} catch (SQLException e) {
