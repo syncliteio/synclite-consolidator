@@ -80,7 +80,7 @@ cd synclite-consolidator/root
 mvn -Drevision=1.0.0 clean install
 ```
 
-Built WAR: `root/web/target/synclite-consolidator-oss.war`
+Built WAR: `root/web/target/synclite-consolidator-1.0.0.war`
 
 ## Related Components
 
