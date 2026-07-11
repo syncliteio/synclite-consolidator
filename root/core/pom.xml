@@ -19,6 +19,13 @@
 		<maven.compiler.target>11</maven.compiler.target>
         <spark.version>3.5.7</spark.version>
         <iceberg.version>1.5.2</iceberg.version>
+        <!--
+          Third-party license download is network-bound and slow, so it is
+          SKIPPED by default. Enable it for release builds that need the
+          licenses/third-party-software/ folder populated by passing
+          -DskipDownloadLicenses=false (e.g. mvn -DskipDownloadLicenses=false package).
+        -->
+        <skipDownloadLicenses>true</skipDownloadLicenses>
 	</properties>
 	<build>
 		<resources>
@@ -187,33 +194,36 @@
 				</executions>
 			</plugin>
 
+			<!--
+				Download the third-party dependency licenses into
+				target/generated-resources/licenses/ (plus a licenses.xml manifest
+				and an aggregated third-party HTML report). The platform assembly
+				(assembly/platform*.xml) packages this folder as
+				licenses/third-party-software/. This step is network-bound and slow,
+				so it is SKIPPED by default (skipDownloadLicenses=true) and only runs
+				for release builds invoked with -DskipDownloadLicenses=false.
+			-->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>license-maven-plugin</artifactId>
+				<version>2.0.0</version>
+				<executions>
+					<execution>
+						<id>generate-third-party-report</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>download-licenses</goal>
+							<goal>third-party-report</goal>
+						</goals>
+					</execution>
+				</executions>
+				<configuration>
+					<skipDownloadLicenses>${skipDownloadLicenses}</skipDownloadLicenses>
+				</configuration>
+			</plugin>
+
 		</plugins>
 	</build>
-
-	<profiles>
-		<profile>
-			<id>license-report</id>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>org.codehaus.mojo</groupId>
-						<artifactId>license-maven-plugin</artifactId>
-						<version>2.0.0</version>
-						<executions>
-							<execution>
-								<id>generate-third-party-report</id>
-								<phase>prepare-package</phase>
-								<goals>
-									<goal>download-licenses</goal>
-									<goal>third-party-report</goal>
-								</goals>
-							</execution>
-						</executions>
-					</plugin>
-				</plugins>
-			</build>
-		</profile>
-	</profiles>
 
 	<dependencies>
 
