@@ -355,11 +355,14 @@ public class ConsolidationTableMapper extends TableMapper {
     public List<Oper> mapOper(RenameColumn renameColumnOper) {
         //In CONSOLIDATION mode, just add the new column without copying data.
         //Old data stays in the old column, new data from this device will go into the new column.
+        //renameColumnOper.columns.get(0) is the OLD column (built from colMap.get(oldName)); the
+        //column to ADD must carry the NEW column name, otherwise we re-add the old column (a no-op
+        //against IF NOT EXISTS) and the new column is never created on the destination.
         Column colToRename = renameColumnOper.columns.get(0);
-        if (!ConfLoader.getInstance().isAllowedColumn(dstIndex, renameColumnOper.tbl.id.table, renameColumnOper.columns.get(0).column)) {
+        if (!ConfLoader.getInstance().isAllowedColumn(dstIndex, renameColumnOper.tbl.id.table, renameColumnOper.newName)) {
         	return Collections.EMPTY_LIST;
         }
-        Column newCol = new Column(colToRename.cid, colToRename.column, colToRename.type, colToRename.isNotNull, colToRename.defaultValue, colToRename.pkIndex, colToRename.isAutoIncrement);
+        Column newCol = new Column(colToRename.cid, renameColumnOper.newName, colToRename.type, colToRename.isNotNull, colToRename.defaultValue, colToRename.pkIndex, colToRename.isAutoIncrement);
         return mapOper(new AddColumn(renameColumnOper.tbl, newCol));
     }
 
