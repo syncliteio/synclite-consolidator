@@ -60,6 +60,11 @@ public class PGDataTypeMapper extends DataTypeMapper {
 	}
 
 	@Override
+	protected DataType getBestEffortTimeDataType() {
+        return new DataType("time", JDBCType.TIME, StorageClass.TIME);
+	}
+
+	@Override
 	protected DataType getBestEffortBooleanDataType() {
         return new DataType("boolean", JDBCType.BOOLEAN, StorageClass.NUMERIC);
 	}

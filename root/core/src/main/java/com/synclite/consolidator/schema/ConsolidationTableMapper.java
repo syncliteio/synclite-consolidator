@@ -246,6 +246,12 @@ public class ConsolidationTableMapper extends TableMapper {
         dstAfterValues.add(getCurrentTS());
         dstAfterValues.addAll(update.afterValues);
 
+		// System tables (synclite_checkpoint / _metadata / _table_metadata) must map their
+		// WHERE/SET columns via best-effort (mapSystemColumn) so the bound parameter types match
+		// the typed DDL. Using the user mapColumn() path would apply ALL_TEXT and bind e.g.
+		// commit_id (BIGINT on destination) as a varchar, causing "operator does not exist:
+		// bigint = character varying" on PostgreSQL.
+		boolean isSystemTable = ((ConsolidatorSrcTable) update.tbl).getIsSystemTable();
 		if (this.sqlGenerator.isUpdateAllowed()) {
 	        Update dstUpdate = new Update(dstTable, dstBeforeValues, dstAfterValues);
 	        if (update.whereColumns != null) {
@@ -253,7 +259,7 @@ public class ConsolidationTableMapper extends TableMapper {
 	            dstWhereColumns.add(dstTable.columns.get(0)); //synclite_device_id
 	            dstWhereColumns.add(dstTable.columns.get(1)); //synclite_device_name
 	            for (Column srcCol : update.whereColumns) {
-	                dstWhereColumns.add(mapColumn(update.tbl.id, srcCol));
+	                dstWhereColumns.add(isSystemTable ? mapSystemColumn(srcCol) : mapColumn(update.tbl.id, srcCol));
 	            }
 	            dstUpdate.whereColumns = dstWhereColumns;
 	        }
@@ -263,7 +269,7 @@ public class ConsolidationTableMapper extends TableMapper {
 	            dstSetColumns.add(dstTable.columns.get(1)); //synclite_device_name
 	            dstSetColumns.add(dstTable.columns.get(2)); //synclite_update_timestamp
 	            for (Column srcCol : update.setColumns) {
-	                dstSetColumns.add(mapColumn(update.tbl.id, srcCol));
+	                dstSetColumns.add(isSystemTable ? mapSystemColumn(srcCol) : mapColumn(update.tbl.id, srcCol));
 	            }
 	            dstUpdate.setColumns = dstSetColumns;
 	        }
@@ -285,11 +291,14 @@ public class ConsolidationTableMapper extends TableMapper {
             dstBeforeValues.add(dstTable.id.deviceName);
             dstBeforeValues.addAll(delete.beforeValues);
 
+            // See mapOper(Update): system-table WHERE columns must use best-effort mapping
+            // (mapSystemColumn) so bound parameter types match the typed DDL under ALL_TEXT.
+            boolean isSystemTable = ((ConsolidatorSrcTable) delete.tbl).getIsSystemTable();
             List<Column> dstWhereColumns = new ArrayList<>(delete.whereColumns.size() + 2);
             dstWhereColumns.add(dstTable.columns.get(0)); //synclite_device_id
             dstWhereColumns.add(dstTable.columns.get(1)); //synclite_device_name
             for (Column srcCol : delete.whereColumns) {
-                dstWhereColumns.add(mapColumn(delete.tbl.id, srcCol));
+                dstWhereColumns.add(isSystemTable ? mapSystemColumn(srcCol) : mapColumn(delete.tbl.id, srcCol));
             }
 
             Delete dstDelete = new Delete(dstTable, dstBeforeValues);

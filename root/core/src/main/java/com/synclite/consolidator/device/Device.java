@@ -18,13 +18,9 @@ package com.synclite.consolidator.device;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.JDBCType;
@@ -554,8 +550,24 @@ public class Device {
 	public Logger tracer;
 	private BlockingQueue<DeviceCommand> deviceCommandQueue = new LinkedBlockingQueue<DeviceCommand>();
 	private static final String PROCESSING_LOCK_FILE_NAME = "synclite_device_processing.lock";
-	private FileChannel processingLockChannel;
-	private FileLock processingFileLock;
+	//
+	//Cross-process, cross-language device processing lock.
+	//
+	//This lock must mutually exclude a Java consolidator and a Rust consolidator
+	//operating on the same device directory. A raw OS advisory lock does NOT achieve
+	//this on POSIX: Java's FileChannel.tryLock() uses fcntl() locks while Rust's fs2
+	//uses flock() locks, and fcntl/flock live in independent lock spaces (they do not
+	//exclude each other on Linux/macOS).
+	//
+	//Instead we use SQLite's file-locking protocol as the lock: both the Java SQLite
+	//driver and Rust's rusqlite implement the identical on-disk locking protocol
+	//(fcntl byte-range locks at fixed offsets on Unix, LockFileEx on Windows). Opening
+	//the same lock DB and issuing "BEGIN IMMEDIATE" acquires SQLite's RESERVED lock;
+	//a second holder gets SQLITE_BUSY. This gives genuine cross-language, cross-platform
+	//mutual exclusion with no new dependency, and the OS releases the lock automatically
+	//if the process dies.
+	//
+	private Connection processingLockConn;
 	private long processedOperCount = 0;
 	private long processedTxnCount = 0;
 	private long processedLogSize = 0;
@@ -1602,30 +1614,52 @@ public class Device {
 	}
 
 	public synchronized boolean aquireProcessingLock() {
+		Connection lockConn = null;
+		Statement lockStmt = null;
 		try {
-			if ((this.processingFileLock != null) && this.processingFileLock.isValid()) {
+			if ((this.processingLockConn != null) && !this.processingLockConn.isClosed()) {
 				return false;
 			}
 
 			Path lockPath = this.rootPath.resolve(PROCESSING_LOCK_FILE_NAME);
-			FileChannel lockChannel = FileChannel.open(lockPath,
-					StandardOpenOption.CREATE,
-					StandardOpenOption.READ,
-					StandardOpenOption.WRITE);
+			//
+			//Use SQLite's RESERVED lock (via BEGIN IMMEDIATE) as a cross-language,
+			//cross-platform device processing lock. Keep the lock DB in the default
+			//rollback-journal mode (NOT WAL) so classic exclusive-writer semantics apply,
+			//and set busy_timeout=0 so contention returns SQLITE_BUSY immediately instead
+			//of blocking. The open transaction (and hence the lock) is held until
+			//releaseProcessingLock() commits and closes the connection.
+			//
+			lockConn = DriverManager.getConnection("jdbc:sqlite:" + lockPath.toString());
+			lockStmt = lockConn.createStatement();
+			lockStmt.execute("PRAGMA busy_timeout = 0");
 			try {
-				FileLock fileLock = lockChannel.tryLock();
-				if (fileLock == null) {
-					lockChannel.close();
-					return false;
-				}
-				this.processingLockChannel = lockChannel;
-				this.processingFileLock = fileLock;
-				return true;
-			} catch (OverlappingFileLockException e) {
-				lockChannel.close();
+				lockStmt.execute("BEGIN IMMEDIATE");
+			} catch (SQLException busy) {
+				//SQLITE_BUSY : the device is already being processed by another
+				//consolidator (Java or Rust). Treat as "lock not acquired".
+				lockStmt.close();
+				lockConn.close();
 				return false;
 			}
-		} catch (IOException e) {
+			lockStmt.close();
+			this.processingLockConn = lockConn;
+			return true;
+		} catch (SQLException e) {
+			try {
+				if (lockStmt != null) {
+					lockStmt.close();
+				}
+			} catch (Exception ignore) {
+				//Ignore
+			}
+			try {
+				if (lockConn != null) {
+					lockConn.close();
+				}
+			} catch (Exception ignore) {
+				//Ignore
+			}
 			if (this.tracer != null) {
 				this.tracer.error("Failed to acquire device processing lock in work-dir : " + this.rootPath, e);
 			}
@@ -1634,22 +1668,21 @@ public class Device {
 	}
 
 	public synchronized void releaseProcessingLock() {
+		if (this.processingLockConn == null) {
+			return;
+		}
 		try {
-			if (this.processingFileLock != null) {
-				this.processingFileLock.release();
+			//Commit the open (BEGIN IMMEDIATE) transaction to release SQLite's RESERVED lock.
+			try (Statement stmt = this.processingLockConn.createStatement()) {
+				stmt.execute("COMMIT");
+			} catch (Exception e) {
+				//Ignore : closing the connection below releases the lock regardless.
 			}
+			this.processingLockConn.close();
 		} catch (Exception e) {
 			//Ignore
 		} finally {
-			this.processingFileLock = null;
-			if (this.processingLockChannel != null) {
-				try {
-					this.processingLockChannel.close();
-				} catch (Exception e) {
-					//Ignore
-				}
-				this.processingLockChannel = null;
-			}
+			this.processingLockConn = null;
 		}
 	}
 

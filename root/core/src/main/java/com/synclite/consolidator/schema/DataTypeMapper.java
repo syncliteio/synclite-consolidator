@@ -286,9 +286,10 @@ public abstract class DataTypeMapper {
         case "date":
             //return new DataType("date", JDBCType.VARCHAR, StorageClass.TEXT);
         	return getBestEffortDateDataType();
+        case "time":
+            return getBestEffortTimeDataType();
         case "datetime":
         case "datetime2":        	
-        case "time":     	
         case "timestamp":	
             //return new DataType("timestamp", JDBCType.VARCHAR, StorageClass.TEXT);
             return getBestEffortDateTimeDataType();
@@ -544,6 +545,16 @@ public abstract class DataTypeMapper {
 	protected abstract DataType getBestEffortDateTimeDataType();
 
 	protected abstract DataType getBestEffortDateDataType();
+
+	/**
+	 * Best-effort mapping for a source {@code time} column. Defaults to the datetime
+	 * mapping to preserve historical behaviour; destinations with a native time type
+	 * (e.g. PostgreSQL) override this so a time-only value is not forced into a
+	 * timestamp target, which cannot represent a bare time and fails to bind.
+	 */
+	protected DataType getBestEffortTimeDataType() {
+		return getBestEffortDateTimeDataType();
+	}
 
 	protected abstract DataType getBestEffortBooleanDataType();
 

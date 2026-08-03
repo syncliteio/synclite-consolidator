@@ -892,14 +892,22 @@ public class SyncDriver implements Runnable{
 			deviceScheduler.submit(this::watchAndScheduleDevices);
 
 			//
-			//The File activity based watched also can miss events at a large scale 
-			//Schedule all devices for at polling interval to check for any missed work
+			//The File activity based watcher also can miss events at a large scale.
+			//The JDK WatchService silently drops ENTRY_CREATE events on buffer
+			//overflow, which strands devices whose newly-shipped, READY_TO_APPLY
+			//log segments never trigger a scheduling event (and, since EVENT_BASED
+			//does not re-queue a caught-up device, nothing else recovers them).
+			//This periodic re-scan is the safety net for such missed events, so it
+			//must always run. A configured value of 0 (or less) must NOT be allowed
+			//to silently disable it - fall back to the default interval instead.
 			//
 			deviceLocator = Executors.newSingleThreadScheduledExecutor();
 			long devicePollingIntervalMs = ConfLoader.getInstance().getDevicePollingIntervalMs();
-			if (devicePollingIntervalMs > 0) {
-				deviceLocator.scheduleWithFixedDelay(this::locateNewAndscheduleAllDevices, ConfLoader.getInstance().getDevicePollingIntervalMs() , ConfLoader.getInstance().getDevicePollingIntervalMs(), TimeUnit.MILLISECONDS);
+			if (devicePollingIntervalMs <= 0) {
+				devicePollingIntervalMs = 30000L;
+				globalTracer.info("STARTUP: device-polling-interval-ms is <= 0; forcing EVENT_BASED safety-net re-scan interval to " + devicePollingIntervalMs + " ms to avoid stranding devices on missed watch events.");
 			}
+			deviceLocator.scheduleWithFixedDelay(this::locateNewAndscheduleAllDevices, devicePollingIntervalMs, devicePollingIntervalMs, TimeUnit.MILLISECONDS);
 		}
 		return null;
 	}

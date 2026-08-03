@@ -515,6 +515,24 @@ public class DeviceReplicator extends DeviceProcessor {
 	}
 
 	private final long doSync() throws SyncLiteException {
+		//
+		//Idempotency guard (mirrors the Rust replicator's "cdclog already produced" skip,
+		//and DeviceConsolidator/DeviceEventStreamer's isApplied() checks).
+		//If the CDC log segment for this command log segment has already been fully
+		//produced (populated + marked READY_TO_APPLY, or already consolidated+APPLIED),
+		//we must NOT re-replay. Re-opening a populated cdclog and re-inserting records
+		//collides on the change_number PRIMARY KEY (e.g. a duplicate BEGINTRAN). This
+		//can happen when the same segment is re-processed (e.g. another consolidator
+		//already produced/consumed the cdclog). Just mark the command log applied and
+		//advance so the next segment is picked up on the following cycle.
+		//
+		if ((currentCDCLogSegment != null)
+				&& (currentCDCLogSegment.isApplied() || currentCDCLogSegment.isReadyToApply())) {
+			device.tracer.info("Skipping replication for command log segment : " + currentCommandLogSegment
+					+ " : CDC log segment already produced : " + currentCDCLogSegment);
+			currentCommandLogSegment.markApplied();
+			return 0;
+		}
 		try {
 			long commandLogOperCount= 0;
 			long currentCommandLogTxnCount = 0;

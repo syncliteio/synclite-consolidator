@@ -579,7 +579,26 @@ public class ValidateDeviceStage extends HttpServlet {
 			if (request.getParameter("device-scheduler-type") != null) {
 				deviceSchedulerTypeStr = request.getParameter("device-scheduler-type");
 			}
-			
+
+			//For EVENT_BASED scheduling, the polling interval drives the safety-net
+			//re-scan that recovers devices whose file-system watch events were missed
+			//(the JDK WatchService silently drops events under load). If it is disabled
+			//(<= 0 or empty) in the GUI, force the default of 30000 ms so devices with
+			//pending READY_TO_APPLY segments cannot get stranded.
+			if (deviceSchedulerTypeStr.equals("EVENT_BASED")) {
+				long parsedPollingIntervalMs = 0;
+				try {
+					if ((devicePollingIntervalMsStr != null) && !devicePollingIntervalMsStr.trim().isEmpty()) {
+						parsedPollingIntervalMs = Long.parseLong(devicePollingIntervalMsStr.trim());
+					}
+				} catch (NumberFormatException e) {
+					parsedPollingIntervalMs = 0;
+				}
+				if (parsedPollingIntervalMs <= 0) {
+					devicePollingIntervalMsStr = "30000";
+				}
+			}
+
 			request.getSession().setAttribute("device-scheduler-type", deviceSchedulerTypeStr);
 			request.getSession().setAttribute("device-polling-interval-ms", devicePollingIntervalMsStr);
 			request.getSession().setAttribute("stage-oper-retry-count", stageOperRetryCountStr);
