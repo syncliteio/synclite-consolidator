@@ -27,6 +27,7 @@ import java.sql.JDBCType;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -1446,13 +1447,66 @@ public abstract class JDBCExecutor extends SQLExecutor {
 		executeUnbatchedSql(oper);
 	}
 
+	/**
+	 * Whether this destination aborts the ENTIRE transaction when a single
+	 * statement fails (PostgreSQL -> SQLSTATE 25P02 "current transaction is
+	 * aborted, commands ignored until end of transaction block"). Such
+	 * destinations need each unbatched (DDL / native) statement wrapped in a
+	 * savepoint so that a benign, idempotently-tolerated failure (e.g. a
+	 * concurrent CREATE TABLE losing the pg_type catalog race) does not poison
+	 * the surrounding transaction and cause the following DML to fail. Engines
+	 * that do statement-level rollback (SQLite/MySQL/MSSQL default) return
+	 * false and skip the savepoint overhead.
+	 */
+	protected boolean abortsTxnOnStatementError() {
+		return false;
+	}
+
 	protected void executeUnbatchedSql(Oper oper) throws DstExecutionException {
 		String sql = oper.getSQL(sqlGenerator);
 		this.currentSql = sql;
 		tracer.debug(oper.tbl + " : SQL : " + sql);
+
+		//For destinations that abort the whole transaction on a single failed
+		//statement, take a savepoint so a caught-and-tolerated failure can be
+		//rolled back to a clean point, keeping the outer transaction alive. The
+		//upper layers (JDBCExecutor DDL idempotency checks and the
+		//DeviceEventStreamer/DeviceConsolidator isDDLIdempotentError skip) then
+		//continue with the following statements instead of hitting 25P02.
+		boolean useSavepoint = false;
+		Savepoint sp = null;
+		try {
+			useSavepoint = abortsTxnOnStatementError() && (conn != null) && !conn.getAutoCommit();
+		} catch (SQLException e) {
+			useSavepoint = false;
+		}
+		if (useSavepoint) {
+			try {
+				sp = conn.setSavepoint();
+			} catch (SQLException e) {
+				sp = null;
+				useSavepoint = false;
+			}
+		}
+
 		try (Statement stmt = conn.createStatement()) {
 			stmt.execute(sql);
+			if (useSavepoint && (sp != null)) {
+				try {
+					conn.releaseSavepoint(sp);
+				} catch (SQLException ignore) {
+					//Non-fatal: savepoint is discarded at commit/rollback anyway.
+				}
+			}
 		} catch (SQLException e) {
+			if (useSavepoint && (sp != null)) {
+				try {
+					//Un-poison the transaction so a tolerated failure upstream can proceed.
+					conn.rollback(sp);
+				} catch (SQLException rbEx) {
+					//If rollback-to-savepoint fails the txn is unrecoverable; surface the original error.
+				}
+			}
 			throw new DstExecutionException("Failed to execute SQL : " + sql + " : " + e.getMessage(), e);
 		}
 	}
