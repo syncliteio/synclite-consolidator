@@ -84,6 +84,14 @@ public class PGExecutor extends JDBCExecutor {
 	 */
 	@Override
 	protected void bindPrepared(PreparedStatement pstmt, int i, Object o, Column c, boolean isConditionArg) throws SQLException {
+		if (isPostgresByteaType(c)) {
+			if (o == null) {
+				pstmt.setNull(i, Types.BINARY);
+			} else {
+				pstmt.setBytes(i, coerceBinaryValue(o));
+			}
+			return;
+		}
 		if (needsUnspecifiedTypeBinding(c)) {
 			if (o == null) {
 				pstmt.setNull(i, Types.OTHER);
@@ -101,6 +109,13 @@ public class PGExecutor extends JDBCExecutor {
 		}
 		String nativeType = c.type.dbNativeDataType.trim().toLowerCase();
 		return nativeType.equals("json") || nativeType.equals("jsonb") || nativeType.equals("uuid");
+	}
+
+	private static boolean isPostgresByteaType(Column c) {
+		if (c == null || c.type == null || c.type.dbNativeDataType == null) {
+			return false;
+		}
+		return c.type.dbNativeDataType.trim().equalsIgnoreCase("bytea");
 	}
 
 	protected void setDate(PreparedStatement pstmt, int i, Object o) throws SQLException {

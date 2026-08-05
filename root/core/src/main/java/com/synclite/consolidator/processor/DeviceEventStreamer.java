@@ -17,6 +17,7 @@
 package com.synclite.consolidator.processor;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -72,6 +73,7 @@ import com.synclite.consolidator.schema.ConsolidatorDstTable;
 import com.synclite.consolidator.schema.ConsolidatorSrcTable;
 import com.synclite.consolidator.schema.RenameColumnPair;
 import com.synclite.consolidator.schema.SQLGenerator;
+import com.synclite.consolidator.schema.StorageClass;
 import com.synclite.consolidator.schema.Table;
 import com.synclite.consolidator.schema.TableID;
 import com.synclite.consolidator.schema.TableMapper;
@@ -1815,8 +1817,9 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 	private final void bindReplicaInsertPrepStmt(Table srcTable, PreparedStatement pStmt, List<Object> argValues, HashMap<String,Integer> colMap) throws SQLException {
 		if (colMap == null) {
 			int index = 1;
-			for (Object o : argValues) {
-				pStmt.setObject(index, o);
+			for (int i = 0; i < argValues.size(); i++) {
+				Column col = i < srcTable.columns.size() ? srcTable.columns.get(i) : null;
+				bindReplicaColumnValue(pStmt, index, argValues.get(i), col);
 				++index;
 			}
 		} else {
@@ -1831,7 +1834,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 				if (colIdx != null) {
 					colVal = argValues.get(colIdx);
 				}
-				pStmt.setObject(index, colVal);
+				bindReplicaColumnValue(pStmt, index, colVal, col);
 				++index;
 			}
 		}
@@ -1935,7 +1938,8 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 		int index = 1;
 		//Bind SET clause with after-values
 		for (int i = 0; i < numCols; i++) {
-			pStmt.setObject(index, argValues.get(numCols + i));
+			Column col = srcTable.columns.get(i);
+			bindReplicaColumnValue(pStmt, index, argValues.get(numCols + i), col);
 			index++;
 		}
 		//Bind WHERE clause with before-values (PK columns only, or all if no PK)
@@ -1945,7 +1949,7 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			if (hasPK && col.pkIndex <= 0) {
 				continue;
 			}
-			pStmt.setObject(index, argValues.get(i));
+			bindReplicaColumnValue(pStmt, index, argValues.get(i), col);
 			index++;
 		}
 	}
@@ -1958,9 +1962,71 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 			if (hasPK && col.pkIndex <= 0) {
 				continue;
 			}
-			pStmt.setObject(index, argValues.get(i));
+			bindReplicaColumnValue(pStmt, index, argValues.get(i), col);
 			index++;
 		}
+	}
+
+	private void bindReplicaColumnValue(PreparedStatement pStmt, int index, Object val, Column col) throws SQLException {
+		if (val == null) {
+			pStmt.setObject(index, null);
+			return;
+		}
+		if (isBlobColumn(col)) {
+			pStmt.setBytes(index, coerceToBytes(val));
+			return;
+		}
+		pStmt.setObject(index, val);
+	}
+
+	private boolean isBlobColumn(Column col) {
+		return col != null
+				&& col.type != null
+				&& col.type.storageClass == StorageClass.BLOB;
+	}
+
+	private byte[] coerceToBytes(Object o) {
+		if (o instanceof byte[]) {
+			return (byte[]) o;
+		}
+		if (o instanceof String) {
+			String s = ((String) o).trim();
+			byte[] fromHex = parseHexBinaryLiteral(s);
+			if (fromHex != null) {
+				return fromHex;
+			}
+			return s.getBytes(StandardCharsets.UTF_8);
+		}
+		return o.toString().getBytes(StandardCharsets.UTF_8);
+	}
+
+	private byte[] parseHexBinaryLiteral(String s) {
+		if (s == null) {
+			return null;
+		}
+		String hex = s;
+		if ((hex.startsWith("\\\\x") || hex.startsWith("\\x")) && hex.length() > 2) {
+			hex = hex.substring(2);
+		} else if ((hex.startsWith("0x") || hex.startsWith("0X")) && hex.length() > 2) {
+			hex = hex.substring(2);
+		} else if ((hex.startsWith("X'") || hex.startsWith("x'")) && hex.endsWith("'") && hex.length() > 3) {
+			hex = hex.substring(2, hex.length() - 1);
+		}
+		if (hex.isEmpty() || (hex.length() % 2 != 0)) {
+			return null;
+		}
+		for (int i = 0; i < hex.length(); i++) {
+			if (Character.digit(hex.charAt(i), 16) < 0) {
+				return null;
+			}
+		}
+		byte[] out = new byte[hex.length() / 2];
+		for (int i = 0; i < hex.length(); i += 2) {
+			int hi = Character.digit(hex.charAt(i), 16);
+			int lo = Character.digit(hex.charAt(i + 1), 16);
+			out[i / 2] = (byte) ((hi << 4) + lo);
+		}
+		return out;
 	}
 
 	/*

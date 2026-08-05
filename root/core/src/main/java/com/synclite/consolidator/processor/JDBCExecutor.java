@@ -20,7 +20,9 @@ import java.io.FileReader;
 import java.io.InputStream;
 import java.io.Reader;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.sql.Array;
+import java.sql.Blob;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.JDBCType;
@@ -782,13 +784,13 @@ public abstract class JDBCExecutor extends SQLExecutor {
 					pstmt.setLong(i, Long.parseLong(o.toString()));
 					break;
 				case BINARY:
-					pstmt.setBytes(i, (byte[]) o);
+					pstmt.setBytes(i, coerceBinaryValue(o));
 					break;
 				case VARBINARY:
-					pstmt.setBytes(i, (byte[]) o);
+					pstmt.setBytes(i, coerceBinaryValue(o));
 					break;
 				case LONGVARBINARY:
-					pstmt.setBytes(i, (byte[]) o);
+					pstmt.setBytes(i, coerceBinaryValue(o));
 					break;
 				case BIT:
 				case BOOLEAN:
@@ -811,8 +813,11 @@ public abstract class JDBCExecutor extends SQLExecutor {
 				case BLOB:
 					if (o instanceof InputStream) {
 						pstmt.setBinaryStream(i, (InputStream) o);
+					} else if (o instanceof Blob) {
+						Blob blob = (Blob) o;
+						pstmt.setBytes(i, blob.getBytes(1, (int) blob.length()));
 					} else {
-						pstmt.setObject(i, o);
+						pstmt.setBytes(i, coerceBinaryValue(o));
 					}
 					break;
 				case CLOB:
@@ -917,6 +922,69 @@ public abstract class JDBCExecutor extends SQLExecutor {
 			}
 		}
 
+	}
+
+	/**
+	 * Coerces runtime values to a stable byte representation for binary destinations.
+	 * Accepts native byte[]/Blob/InputStream and common textual encodings such as
+	 * PostgreSQL bytea hex (\\x...), SQLite hex literals (X'ABCD'), or plain hex.
+	 */
+	protected byte[] coerceBinaryValue(Object o) throws SQLException {
+		if (o == null) {
+			return null;
+		}
+		if (o instanceof byte[]) {
+			return (byte[]) o;
+		}
+		if (o instanceof Blob) {
+			Blob blob = (Blob) o;
+			return blob.getBytes(1, (int) blob.length());
+		}
+		if (o instanceof InputStream) {
+			try {
+				return ((InputStream) o).readAllBytes();
+			} catch (Exception e) {
+				throw new SQLException("Failed to read binary stream value", e);
+			}
+		}
+		if (o instanceof String) {
+			String s = ((String) o).trim();
+			byte[] fromHex = parseHexBinaryLiteral(s);
+			if (fromHex != null) {
+				return fromHex;
+			}
+			return s.getBytes(StandardCharsets.UTF_8);
+		}
+		return o.toString().getBytes(StandardCharsets.UTF_8);
+	}
+
+	protected byte[] parseHexBinaryLiteral(String s) {
+		if (s == null) {
+			return null;
+		}
+		String hex = s;
+		if ((hex.startsWith("\\\\x") || hex.startsWith("\\x")) && hex.length() > 2) {
+			hex = hex.substring(2);
+		} else if ((hex.startsWith("0x") || hex.startsWith("0X")) && hex.length() > 2) {
+			hex = hex.substring(2);
+		} else if ((hex.startsWith("X'") || hex.startsWith("x'")) && hex.endsWith("'") && hex.length() > 3) {
+			hex = hex.substring(2, hex.length() - 1);
+		}
+		if (hex.isEmpty() || (hex.length() % 2 != 0)) {
+			return null;
+		}
+		for (int i = 0; i < hex.length(); i++) {
+			if (Character.digit(hex.charAt(i), 16) < 0) {
+				return null;
+			}
+		}
+		byte[] out = new byte[hex.length() / 2];
+		for (int i = 0; i < hex.length(); i += 2) {
+			int hi = Character.digit(hex.charAt(i), 16);
+			int lo = Character.digit(hex.charAt(i + 1), 16);
+			out[i / 2] = (byte) ((hi << 4) + lo);
+		}
+		return out;
 	}
 
 	protected void setDate(PreparedStatement pstmt, int i, Object o) throws SQLException {		
