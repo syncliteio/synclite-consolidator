@@ -84,6 +84,15 @@ public class PGExecutor extends JDBCExecutor {
 	 */
 	@Override
 	protected void bindPrepared(PreparedStatement pstmt, int i, Object o, Column c, boolean isConditionArg) throws SQLException {
+		if (isPostgresBitStringType(c)) {
+			if (o == null) {
+				pstmt.setNull(i, Types.OTHER);
+			} else {
+				// Let PostgreSQL cast the text representation to BIT/VARBIT.
+				pstmt.setObject(i, o.toString(), Types.OTHER);
+			}
+			return;
+		}
 		if (isPostgresByteaType(c)) {
 			if (o == null) {
 				pstmt.setNull(i, Types.BINARY);
@@ -116,6 +125,15 @@ public class PGExecutor extends JDBCExecutor {
 			return false;
 		}
 		return c.type.dbNativeDataType.trim().equalsIgnoreCase("bytea");
+	}
+
+	private static boolean isPostgresBitStringType(Column c) {
+		if (c == null || c.type == null || c.type.dbNativeDataType == null) {
+			return false;
+		}
+		String nativeType = c.type.dbNativeDataType.trim().toLowerCase();
+		return nativeType.equals("bit") || nativeType.startsWith("bit(")
+				|| nativeType.equals("varbit") || nativeType.startsWith("bit varying");
 	}
 
 	protected void setDate(PreparedStatement pstmt, int i, Object o) throws SQLException {
