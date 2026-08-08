@@ -197,7 +197,6 @@ public abstract class DataTypeMapper {
         case "smallserial" :
         case "serial" :
         case "bigserial" :	
-        case "bit" :
         case "integer" :
         case "int" :
         case "tinyint":
@@ -211,6 +210,11 @@ public abstract class DataTypeMapper {
         case "byteint":	
         case "unsigned":
         	return getBestEffortIntegerDataType();
+        case "bit":
+        case "varbit":
+        	// PostgreSQL BIT and BIT VARYING values are strings, not
+        	// booleans or integers. Preserve their representation.
+        	return getBestEffortTextDataType();
         case "text":
         case "varchar":
         case "varchar2":
