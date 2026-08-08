@@ -275,6 +275,11 @@ public class Device {
 		}
 
 		public StorageClass getStorageClass(String type) {
+			String normalizedType = type.toLowerCase().trim();
+			if (normalizedType.equals("bit") || normalizedType.startsWith("bit(")
+					|| normalizedType.startsWith("bit varying") || normalizedType.startsWith("varbit")) {
+				return StorageClass.TEXT;
+			}
 			String typeToCheck = type.toLowerCase().trim().split("[ (]")[0];
 
 			switch(typeToCheck) {
@@ -368,6 +373,11 @@ public class Device {
 		}
 
 		public JDBCType getJavaSqlType(String type) {
+			String normalizedType = type.toLowerCase().trim();
+			if (normalizedType.equals("bit") || normalizedType.startsWith("bit(")
+					|| normalizedType.startsWith("bit varying") || normalizedType.startsWith("varbit")) {
+				return JDBCType.VARCHAR;
+			}
 			String typeToCheck = type.toLowerCase().trim().split("[ (]")[0];
 
 			switch(typeToCheck) {
