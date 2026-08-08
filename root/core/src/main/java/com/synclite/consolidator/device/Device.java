@@ -282,6 +282,8 @@ public class Device {
 			case "serial" :
 			case "bigserial" :	
 			case "bit" :
+			case "varbit" :
+				return StorageClass.TEXT;
 			case "integer" :
 			case "int" :
 			case "tinyint":
@@ -375,6 +377,8 @@ public class Device {
 			case "serial" :
 			case "bigserial" :	
 			case "bit" :
+			case "varbit" :
+				return JDBCType.VARCHAR;
 			case "integer" :
 			case "int" :
 			case "tinyint":
