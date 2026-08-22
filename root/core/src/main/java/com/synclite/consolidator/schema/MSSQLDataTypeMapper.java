@@ -82,9 +82,13 @@ public class MSSQLDataTypeMapper extends DataTypeMapper {
 	
 	@Override
     protected DataType doMapTypeForSystemColumn(DataType srcType) {
-        if (srcType.dbNativeDataType.toLowerCase().startsWith("char")) {
-			return srcType;
-		} 
+        String nativeType = srcType.dbNativeDataType.toLowerCase();
+        // System tables often participate in composite primary keys, so preserve bounded
+        // character types instead of downgrading them to MAX variants that SQL Server rejects.
+        if (nativeType.startsWith("char") || nativeType.startsWith("varchar")
+                || nativeType.startsWith("nchar") || nativeType.startsWith("nvarchar")) {
+            return srcType;
+        }
         return doMapTypeBestEffort(srcType);
 	}
 

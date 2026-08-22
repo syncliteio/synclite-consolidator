@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 
 import com.synclite.consolidator.device.Device;
 import com.synclite.consolidator.exception.DstExecutionException;
@@ -255,6 +256,18 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 
 	// ── Initialization status on destination metadata ───────────────────────────
 
+	static boolean isMissingColumnError(String message) {
+		String msg = message == null ? "" : message.toLowerCase(Locale.ROOT);
+		return msg.contains("no such column")
+				|| msg.contains("unknown column")
+				|| msg.contains("invalid identifier")
+				|| msg.contains("invalid column name")
+				|| msg.contains("column does not exist")
+				|| msg.contains("column not found")
+				|| msg.contains("could not find column")
+				|| msg.contains("does not exist");
+	}
+
 	protected void ensureDstMetadataInitStatusColumn(SQLExecutor dstExecutor) throws DstExecutionException, SyncLiteException {
 		if (dstInitStatusColumnInitialized) return;
 		dstExecutor.execute(systemTableMapper.mapOper(new com.synclite.consolidator.oper.CreateTable(checkpointSystemTable)));
@@ -264,8 +277,8 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 			dstExecutor.execute(new NativeOper(null,
 					"SELECT synclite_device_id, synclite_device_name, initialization_status FROM " + qcheckpoint + " WHERE 1 = 0"));
 		} catch (DstExecutionException e) {
-			String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
-			if (msg.contains("no such column") || msg.contains("unknown column") || msg.contains("invalid identifier") || msg.contains("does not exist")) {
+			String msg = e.getMessage() != null ? e.getMessage() : "";
+			if (isMissingColumnError(msg)) {
 				recreate = true;
 			} else {
 				throw e;
@@ -274,11 +287,12 @@ public abstract class DeviceSyncProcessor extends DeviceProcessor {
 		if (!recreate) {
 			try {
 				dstExecutor.execute(new NativeOper(null,
-						"SELECT command_log_change_number FROM " + qcheckpoint + " WHERE 1 = 0"));
-				recreate = true;
+						"SELECT cdc_change_number FROM " + qcheckpoint + " WHERE 1 = 0"));
 			} catch (DstExecutionException e) {
-				String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
-				if (!(msg.contains("no such column") || msg.contains("unknown column") || msg.contains("invalid identifier") || msg.contains("does not exist"))) {
+				String msg = e.getMessage() != null ? e.getMessage() : "";
+				if (isMissingColumnError(msg)) {
+					recreate = true;
+				} else {
 					throw e;
 				}
 			}

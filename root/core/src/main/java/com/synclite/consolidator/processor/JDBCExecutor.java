@@ -1660,10 +1660,11 @@ public abstract class JDBCExecutor extends SQLExecutor {
 	protected CDCLogPosition readCDCLogPosition(String deviceUUID, String deviceName, ConsolidatorDstTable dstControlTable) throws DstExecutionException {
 		String uuid = deviceUUID.replace("'", "''");
 		String dname = deviceName.replace("'", "''");
-		String sql = "SELECT commit_id, cdc_change_number, cdc_log_segment_sequence_number, txn_count FROM "
+		String sql = "SELECT " + sqlGenerator.getSelectTopClause(1)
+				+ "commit_id, cdc_change_number, cdc_log_segment_sequence_number, txn_count FROM "
 				+ qualifiedDstTableName("synclite_checkpoint")
 				+ " WHERE synclite_device_id = '" + uuid + "' AND synclite_device_name = '" + dname + "'"
-				+ " LIMIT 1";
+				+ " " + sqlGenerator.getRowLimitClause(1);
 		try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
 			if (rs.next()) {
 				CDCLogPosition logPos = new CDCLogPosition(0, -1, 0, 0);
@@ -1701,9 +1702,11 @@ public abstract class JDBCExecutor extends SQLExecutor {
 	public long readInitializationStatus(String deviceUUID, String deviceName, int dstIdx) throws DstExecutionException {
 		String uuid = deviceUUID.replace("'", "''");
 		String dname = deviceName.replace("'", "''");
-		String sql = "SELECT initialization_status FROM " + qualifiedDstTableName("synclite_checkpoint")
+		String sql = "SELECT " + sqlGenerator.getSelectTopClause(1)
+				+ "initialization_status FROM " + qualifiedDstTableName("synclite_checkpoint")
 				+ " WHERE synclite_device_id = '"
-				+ uuid + "' AND synclite_device_name = '" + dname + "' ORDER BY commit_id DESC LIMIT 1";
+				+ uuid + "' AND synclite_device_name = '" + dname + "' ORDER BY commit_id DESC "
+				+ sqlGenerator.getRowLimitClause(1);
 		try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
 			if (rs.next()) {
 				return rs.getLong(1);

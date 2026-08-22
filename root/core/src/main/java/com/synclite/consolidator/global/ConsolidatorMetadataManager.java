@@ -115,7 +115,7 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             String tblMetaTbl = qualifiedDstTableName("synclite_consolidator_table_metadata");
             if (!dstTableMetadataTableEnsured) {
                 try (Statement ddl = conn.createStatement()) {
-                    ddl.execute(buildSystemCreateTableSql(dstTableMetadataSystemTable));
+                    ensureSystemTableExists(ddl, dstTableMetadataSystemTable);
                 }
                 dstTableMetadataTableEnsured = true;
             }
@@ -461,17 +461,22 @@ public class ConsolidatorMetadataManager extends MetadataManager {
     }
 
     /**
-     * Build a destination-correct {@code CREATE TABLE} statement for a SyncLite system table by
-     * routing its schema through the system table mapper and the per-destination SQL generator.
-     * This guarantees the column types, quoting, schema qualification and composite primary key
-     * are all valid for the target backend, instead of relying on hardcoded, destination-agnostic
-     * DDL. In particular MySQL rejects {@code TEXT}/{@code BLOB} columns inside a primary key and
-     * caps composite key length at 3072 bytes, both of which the mapper handles correctly (device
-     * columns map to bounded {@code char(n)} and numeric columns to {@code bigint}).
+     * Idempotently create a SyncLite system table on the destination using a raw JDBC statement.
+     *
+     * For destinations whose {@code CREATE TABLE} supports an IF NOT EXISTS clause (PostgreSQL,
+     * MySQL, ...), the generated DDL is already idempotent, so it is executed directly. For
+     * destinations that do not (e.g. SQL Server, which raises "There is already an object named
+     * ..." and would otherwise abort {@code Device.getInstance} and skip the device during
+     * discovery), we first probe {@link SQLGenerator#getTableExistsCheckSQL} and skip the CREATE
+     * when the table already exists — matching the PostgreSQL/MySQL bootstrap behavior.
      */
-    private String buildSystemCreateTableSql(ConsolidatorSrcTable systemSchema) {
+    private void ensureSystemTableExists(Statement ddlStmt, ConsolidatorSrcTable systemSchema) throws SQLException {
         Table dstTbl = systemTableMapper.mapTable(systemSchema);
-        return SQLGenerator.getInstance(dstIndex).getCreateTableSQL(new CreateTable(dstTbl));
+        SQLGenerator sqlGen = SQLGenerator.getInstance(dstIndex);
+        if (!sqlGen.supportsIfClause() && objectExists(ddlStmt, sqlGen.getTableExistsCheckSQL(dstTbl))) {
+            return;
+        }
+        ddlStmt.execute(sqlGen.getCreateTableSQL(new CreateTable(dstTbl)));
     }
 
     /**
@@ -619,7 +624,7 @@ public class ConsolidatorMetadataManager extends MetadataManager {
             String metaTbl = qualifiedDstTableName("synclite_consolidator_metadata");
             if (!dstMetadataTableEnsured) {
                 try (Statement ddl = conn.createStatement()) {
-                    ddl.execute(buildSystemCreateTableSql(dstMetadataSystemTable));
+                    ensureSystemTableExists(ddl, dstMetadataSystemTable);
                 }
                 dstMetadataTableEnsured = true;
             }
@@ -773,15 +778,15 @@ public class ConsolidatorMetadataManager extends MetadataManager {
                     // column types, quoting, schema qualification and composite primary keys are all
                     // valid for the target backend (e.g. MySQL rejects TEXT/BLOB columns in a primary
                     // key and caps composite key length at 3072 bytes).
-                    ddlStmt.execute(buildSystemCreateTableSql(dstMetadataSystemTable));
-                    ddlStmt.execute(buildSystemCreateTableSql(dstTableMetadataSystemTable));
+                    ensureSystemTableExists(ddlStmt, dstMetadataSystemTable);
+                    ensureSystemTableExists(ddlStmt, dstTableMetadataSystemTable);
                     // synclite_checkpoint tracks per-device replication progress on the destination.
                     // Bootstrap it here so recovery reads/writes never race with the first
                     // ensureDstMetadataInitStatusColumn call, which runs on an executor thread after
                     // device discovery and would otherwise find the table missing.
                     ConsolidatorSrcTable checkpointSchema = SyncLiteConsolidatorInfo.getCheckpointTableSchema(
                             device.getDeviceUUID(), device.getDeviceName(), dstIndex);
-                    ddlStmt.execute(buildSystemCreateTableSql(checkpointSchema));
+                    ensureSystemTableExists(ddlStmt, checkpointSchema);
                 }
                 dstMetadataTableEnsured = true;
                 dstTableMetadataTableEnsured = true;
@@ -920,7 +925,7 @@ public class ConsolidatorMetadataManager extends MetadataManager {
                 // valid for the target backend (MySQL rejects TEXT columns in a primary key).
                 ConsolidatorSrcTable checkpointSchema = SyncLiteConsolidatorInfo.getCheckpointTableSchema(
                         device.getDeviceUUID(), device.getDeviceName(), dstIndex);
-                stmt.execute(buildSystemCreateTableSql(checkpointSchema));
+                ensureSystemTableExists(stmt, checkpointSchema);
             }
             try (PreparedStatement updateStmt = conn.prepareStatement(
                     "UPDATE " + qcheckpoint + " SET initialization_status = 0 WHERE synclite_device_id = ? AND synclite_device_name = ?")) {
