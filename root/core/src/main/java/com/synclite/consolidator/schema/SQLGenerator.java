@@ -222,6 +222,25 @@ protected String quoteObjectNameIfNeeded(String item) {
 
     public abstract String getCheckpointTableSelectSql(String deviceUUID, String deviceName, ConsolidatorDstTable dstControlTable);
     
+    /**
+     * Row-limiting clause placed immediately after the SELECT keyword (before the
+     * column list). Standard SQL dialects (PostgreSQL, MySQL, SQLite) do not use a
+     * prefix and return an empty string here, limiting rows via {@link #getRowLimitClause(int)}.
+     * SQL Server overrides this to emit {@code TOP n}, since it does not support LIMIT.
+     */
+    public String getSelectTopClause(int numRows) {
+        return "";
+    }
+
+    /**
+     * Row-limiting clause appended at the end of a SELECT statement. Standard SQL
+     * dialects use {@code LIMIT n}. SQL Server returns an empty string here and
+     * limits rows via {@link #getSelectTopClause(int)} instead.
+     */
+    public String getRowLimitClause(int numRows) {
+        return "LIMIT " + numRows;
+    }
+
 	public abstract String getDatabaseExistsCheckSQL(Table tbl);
 
 	public abstract String getSchemaExistsCheckSQL(Table tbl);

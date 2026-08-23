@@ -83,6 +83,23 @@ public class SyncLiteConsolidatorInfo {
                 || getConsolidatorMetadataTableName().equalsIgnoreCase(tableName);
     }
 
+    /**
+     * Returns true for any SyncLite-internal bookkeeping table that must not be counted
+     * as a user-facing consolidated table. This covers the consolidator's own system
+     * tables (checkpoint / metadata / table-metadata) as well as the logger, dbreader and
+     * logreader checkpoint tables that arrive in the replica schema but are never
+     * materialized on the destination.
+     */
+    public static boolean isInternalTable(String tableName) {
+        if (tableName == null) {
+            return false;
+        }
+        return isSystemMetadataTable(tableName)
+                || SyncLiteLoggerInfo.getLoggerCheckpointTableName().equalsIgnoreCase(tableName)
+                || SyncLiteLoggerInfo.getDBReaderCheckpointTableName().equalsIgnoreCase(tableName)
+                || SyncLiteLoggerInfo.getLogReaderCheckpointTableName().equalsIgnoreCase(tableName);
+    }
+
     public static TableID getConsolidatorMetadataTableID(String deviceUUID, String deviceName, int dstIndex) {
         return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, getConsolidatorMetadataTableName());
     }

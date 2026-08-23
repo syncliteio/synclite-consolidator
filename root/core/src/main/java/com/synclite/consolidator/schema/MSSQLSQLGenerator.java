@@ -47,6 +47,16 @@ public class MSSQLSQLGenerator extends JDBCSQLGenerator {
 	}
 
 	@Override
+	public String getSelectTopClause(int numRows) {
+		return "TOP " + numRows + " ";
+	}
+
+	@Override
+	public String getRowLimitClause(int numRows) {
+		return "";
+	}
+
+	@Override
 	public boolean isDatabaseAllowed() {
 		return true;
 	}

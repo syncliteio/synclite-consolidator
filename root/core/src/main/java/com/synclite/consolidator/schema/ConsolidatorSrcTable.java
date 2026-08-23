@@ -20,7 +20,9 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import com.synclite.consolidator.global.SyncLiteConsolidatorInfo;
 import com.synclite.consolidator.oper.AddColumn;
 import com.synclite.consolidator.oper.AlterColumn;
 import com.synclite.consolidator.oper.CreateTable;
@@ -33,12 +35,22 @@ import com.synclite.consolidator.oper.RenameTable;
 public class ConsolidatorSrcTable extends Table {
     private static final ConcurrentHashMap<TableID, ConsolidatorSrcTable> consolidatorSrcTables = new ConcurrentHashMap<TableID, ConsolidatorSrcTable>();
 
+    // O(1) running count of user-facing (non-internal) tables, kept in sync on
+    // insert/remove so the dashboard gauge (getCount) never scans the map.
+    // Internal-ness is decided by table name, which is fixed at creation time.
+    private static final AtomicInteger nonInternalTableCount = new AtomicInteger(0);
+
     private ConsolidatorSrcTable(TableID id) {
         this.id = id;
     }
 
     public static ConsolidatorSrcTable from(TableID id) {
-        return consolidatorSrcTables.computeIfAbsent(id, s -> new ConsolidatorSrcTable(s));
+        return consolidatorSrcTables.computeIfAbsent(id, s -> {
+            if (!SyncLiteConsolidatorInfo.isInternalTable(s.table)) {
+                nonInternalTableCount.incrementAndGet();
+            }
+            return new ConsolidatorSrcTable(s);
+        });
     }
 
     public void refreshColumns(TableMapper tableMapper, List<Column> newSchemaCols) {
@@ -263,15 +275,19 @@ public class ConsolidatorSrcTable extends Table {
     }
 
     public static void remove(TableID id) {
-        consolidatorSrcTables.remove(id);
+        ConsolidatorSrcTable removed = consolidatorSrcTables.remove(id);
+        if (removed != null && !SyncLiteConsolidatorInfo.isInternalTable(id.table)) {
+            nonInternalTableCount.decrementAndGet();
+        }
     }
 
     public static int getCount() {
-        return consolidatorSrcTables.size();
+        return nonInternalTableCount.get();
     }
 
     public static void resetAll() {
         consolidatorSrcTables.clear();
+        nonInternalTableCount.set(0);
     }
 
     public static Collection<ConsolidatorSrcTable> getTables() {

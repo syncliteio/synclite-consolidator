@@ -40,15 +40,27 @@ public final class SyncLiteLoggerInfo {
     }
 
     public static TableID getLoggerCheckpointTableID(String deviceUUID, String deviceName, int dstIndex) {
-        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, "synclite_txn");
+        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, getLoggerCheckpointTableName());
     }
 
     public static TableID getDBReaderCheckpointTableID(String deviceUUID, String deviceName, int dstIndex) {
-        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, "synclite_dbreader_checkpoint");
+        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, getDBReaderCheckpointTableName());
     }
 
     public static TableID getLogReaderCheckpointTableID(String deviceUUID, String deviceName, int dstIndex) {
-        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, "synclite_logreader_checkpoint");
+        return TableID.from(deviceUUID, deviceName, dstIndex, "main", null, getLogReaderCheckpointTableName());
+    }
+
+    public static String getLoggerCheckpointTableName() {
+        return "synclite_txn";
+    }
+
+    public static String getDBReaderCheckpointTableName() {
+        return "synclite_dbreader_checkpoint";
+    }
+
+    public static String getLogReaderCheckpointTableName() {
+        return "synclite_logreader_checkpoint";
     }
 
     public static Path getDataBackupPath(Path dbPath, String dbName) {
