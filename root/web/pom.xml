@@ -4,7 +4,7 @@
 	<artifactId>synclite-consolidator</artifactId>
 	<version>${revision}</version>
 	<properties>
-		<revision>1.0.0</revision>
+		<revision>1.1.0</revision>
 	</properties>
 	<packaging>war</packaging>
 	<parent>
@@ -180,7 +180,7 @@
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
-			<version>42.7.7</version>
+			<version>42.7.13</version>
 		</dependency>
 
 		<!-- https://mvnrepository.com/artifact/com.mysql/mysql-connector-j -->

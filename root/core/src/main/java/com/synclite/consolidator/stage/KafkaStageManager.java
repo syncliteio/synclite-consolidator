@@ -361,7 +361,7 @@ public class KafkaStageManager extends DeviceStageManager {
 
 			//boolean processedMsg = false;
 //			while (true) {
-			ConsumerRecords<String, Map> messages = consumer.poll(100);
+			ConsumerRecords<String, Map> messages = consumer.poll(java.time.Duration.ofMillis(100));
 			for (ConsumerRecord<String, Map> message : messages) {								
 				for (Map.Entry<String, byte[]> entry : ((Map<String,byte[]>) message.value()).entrySet()) {
 					String fileName = entry.getKey();
