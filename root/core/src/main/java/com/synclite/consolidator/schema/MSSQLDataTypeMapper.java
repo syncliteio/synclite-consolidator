@@ -12,6 +12,10 @@ public class MSSQLDataTypeMapper extends DataTypeMapper {
 
 	@Override
 	protected DataType doMapTypeConservative(DataType type) {
+		DataType preservedBoundedStringType = preserveBoundedStringType(type);
+		if (preservedBoundedStringType != null) {
+			return preservedBoundedStringType;
+		}
 		if (type.dbNativeDataType.equalsIgnoreCase("blob")) {
 			return new DataType("VARBINARY(MAX)", JDBCType.BLOB, getStorageClass("VARBINARY(MAX)"));
 		} else if (type.dbNativeDataType.startsWith("NCHAR")){
@@ -22,6 +26,35 @@ public class MSSQLDataTypeMapper extends DataTypeMapper {
 			return new DataType("NVARCHAR(MAX)", JDBCType.NVARCHAR, getStorageClass("NVARCHAR(MAX)"));
 		}		
 		return new DataType("VARCHAR(MAX)", JDBCType.VARCHAR, getStorageClass("VARCHAR(MAX)"));
+	}
+
+	private DataType preserveBoundedStringType(DataType type) {
+		if (type == null || type.dbNativeDataType == null || type.dbNativeDataType.isBlank()) {
+			return null;
+		}
+		String nativeType = type.dbNativeDataType.trim();
+		String normalized = nativeType.toLowerCase();
+		if (normalized.startsWith("char") || normalized.startsWith("varchar")
+				|| normalized.startsWith("nchar") || normalized.startsWith("nvarchar")) {
+			if (nativeType.contains("(") && nativeType.contains(")")) {
+				return new DataType(nativeType, getJavaSqlType(nativeType), getStorageClass(nativeType));
+			}
+			if (nativeType.equalsIgnoreCase("char") || nativeType.equalsIgnoreCase("nchar")
+					|| nativeType.equalsIgnoreCase("varchar") || nativeType.equalsIgnoreCase("nvarchar")) {
+				String boundedType = nativeType.split("\\s+")[0] + "(255)";
+				return new DataType(boundedType, getJavaSqlType(boundedType), getStorageClass(boundedType));
+			}
+		}
+		return null;
+	}
+
+	@Override
+	protected DataType doMapTypeBestEffort(DataType type) {
+		DataType preservedBoundedStringType = preserveBoundedStringType(type);
+		if (preservedBoundedStringType != null) {
+			return preservedBoundedStringType;
+		}
+		return super.doMapTypeBestEffort(type);
 	}
 
 	@Override

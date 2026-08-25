@@ -78,6 +78,16 @@ class SQLGeneratorTest {
         assertEquals("varchar(255)", mappedType.dbNativeDataType);
     }
 
+    @Test
+    void mssqlPreservesExplicitStringLengthsForRegularColumns() {
+        MSSQLDataTypeMapper mapper = new MSSQLDataTypeMapper(1);
+        DataType sourceType = new DataType("varchar(100)", JDBCType.VARCHAR, StorageClass.TEXT);
+
+        DataType mappedType = mapper.doMapTypeBestEffort(sourceType);
+
+        assertEquals("varchar(100)", mappedType.dbNativeDataType);
+    }
+
     private static void setBooleanArray(ConfLoader confLoader, String fieldName, Boolean[] values) throws Exception {
         Field field = ConfLoader.class.getDeclaredField(fieldName);
         field.setAccessible(true);
