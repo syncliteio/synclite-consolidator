@@ -1,10 +1,14 @@
 package com.synclite.consolidator.schema;
 
 import java.sql.JDBCType;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.synclite.consolidator.global.ConfLoader;
 
 public class MSSQLDataTypeMapper extends DataTypeMapper {
+	private static final Pattern STRING_LENGTH_PATTERN = Pattern.compile("\\((\\d+)\\)");
 
 	protected MSSQLDataTypeMapper(int dstIndex) {
 		super(dstIndex);
@@ -28,24 +32,44 @@ public class MSSQLDataTypeMapper extends DataTypeMapper {
 		return new DataType("VARCHAR(MAX)", JDBCType.VARCHAR, getStorageClass("VARCHAR(MAX)"));
 	}
 
+	@Override
+	protected DataType doMapTypeExact(DataType type) {
+		DataType preservedBoundedStringType = preserveBoundedStringType(type);
+		if (preservedBoundedStringType != null) {
+			return preservedBoundedStringType;
+		}
+		return super.doMapTypeExact(type);
+	}
+
 	private DataType preserveBoundedStringType(DataType type) {
 		if (type == null || type.dbNativeDataType == null || type.dbNativeDataType.isBlank()) {
 			return null;
 		}
 		String nativeType = type.dbNativeDataType.trim();
-		String normalized = nativeType.toLowerCase();
-		if (normalized.startsWith("char") || normalized.startsWith("varchar")
-				|| normalized.startsWith("nchar") || normalized.startsWith("nvarchar")) {
-			if (nativeType.contains("(") && nativeType.contains(")")) {
-				return new DataType(nativeType, getJavaSqlType(nativeType), getStorageClass(nativeType));
-			}
-			if (nativeType.equalsIgnoreCase("char") || nativeType.equalsIgnoreCase("nchar")
-					|| nativeType.equalsIgnoreCase("varchar") || nativeType.equalsIgnoreCase("nvarchar")) {
-				String boundedType = nativeType.split("\\s+")[0] + "(255)";
-				return new DataType(boundedType, getJavaSqlType(boundedType), getStorageClass(boundedType));
-			}
+		String normalized = nativeType.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+
+		String canonicalType = null;
+		if (normalized.startsWith("nvarchar") || normalized.startsWith("nchar")
+				|| normalized.startsWith("national character varying")) {
+			canonicalType = normalized.startsWith("nchar") ? "nchar" : "nvarchar";
+		} else if (normalized.startsWith("varchar") || normalized.startsWith("character varying")) {
+			canonicalType = "varchar";
+		} else if (normalized.startsWith("char") || normalized.startsWith("character")) {
+			canonicalType = "char";
 		}
-		return null;
+
+		if (canonicalType == null) {
+			return null;
+		}
+
+		Matcher matcher = STRING_LENGTH_PATTERN.matcher(nativeType);
+		if (matcher.find()) {
+			String boundedType = canonicalType + "(" + matcher.group(1) + ")";
+			return new DataType(boundedType, getJavaSqlType(boundedType), getStorageClass(boundedType));
+		}
+
+		String defaultBoundedType = canonicalType + "(255)";
+		return new DataType(defaultBoundedType, getJavaSqlType(defaultBoundedType), getStorageClass(defaultBoundedType));
 	}
 
 	@Override
