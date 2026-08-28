@@ -6,6 +6,7 @@ import com.synclite.consolidator.oper.AddColumn;
 import com.synclite.consolidator.oper.AlterColumn;
 import com.synclite.consolidator.oper.Delete;
 import com.synclite.consolidator.oper.Insert;
+import com.synclite.consolidator.oper.RenameColumn;
 import com.synclite.consolidator.oper.Replace;
 import com.synclite.consolidator.oper.Update;
 import com.synclite.consolidator.oper.Upsert;
@@ -117,6 +118,12 @@ public class MSSQLSQLGenerator extends JDBCSQLGenerator {
     public String getAlterColumnSQL(AlterColumn alteredColumn) {
         return "ALTER TABLE " + getTableNameSQL(alteredColumn.tbl.id) + " ALTER COLUMN " +        		
         		getColumnNameSQL(alteredColumn.columns.get(0)) + " " + getColumnTypeSQLNoConstraint(alteredColumn.columns.get(0));   
+    }
+
+    @Override
+    public String getRenameColumnSQL(RenameColumn renameColumn) {
+        String tableAndColumn = getTableNameSQL(renameColumn.tbl.id) + "." + quoteColumnNameIfNeeded(renameColumn.oldName);
+        return "EXEC sp_rename '" + tableAndColumn + "', '" + quoteColumnNameIfNeeded(renameColumn.newName) + "', 'COLUMN';";
     }
 
     @Override
