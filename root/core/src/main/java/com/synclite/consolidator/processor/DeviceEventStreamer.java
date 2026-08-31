@@ -1634,8 +1634,11 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 										renameTableHandled = true;
 									} else {
 										ConsolidatorDstTable renameTableDst = tableMapper.mapTable(srcTable);
+										// Create a new TableID with the same schema/db but the new table name, then fully qualify it
+										TableID newTableID = TableID.from(renameTableDst.id.deviceUUID, renameTableDst.id.deviceName, renameTableDst.id.dstIndex, renameTableDst.id.database, renameTableDst.id.schema, normalizedNewTableName);
+										String newTableNameSQL = sqlGenerator.getTableNameSQL(newTableID);
 										String renameTableSql = "ALTER TABLE " + sqlGenerator.getTableNameSQL(renameTableDst.id)
-												+ " RENAME TO " + normalizedNewTableName;
+												+ " RENAME TO " + newTableNameSQL;
 										executeNativeDDLSafely(dstExecutor, OperType.RENAMETABLE, renameTableSql, "RENAMETABLE fallback");
 										renameTableHandled = true;
 									}

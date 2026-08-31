@@ -1418,9 +1418,19 @@ public abstract class JDBCExecutor extends SQLExecutor {
 	public void renameTable(RenameTable oper) throws DstExecutionException {
 		try {
 			//If old table exists then rename
-			//Idempotent way to execute rename        	
-			if (tableExists(oper.tbl)) {
+			//Idempotent way to execute rename
+			//Check if the OLD table (being renamed) exists, not the mapped source table
+			boolean oldTableExists = tableExists(oper.oldTable);
+			boolean operTblExists = tableExists(oper.tbl);
+			
+			this.tracer.info("DEBUG: RENAMETABLE - oper.tbl.id=" + oper.tbl.id + 
+				" exists=" + operTblExists + ", oper.oldTable.id=" + oper.oldTable.id + 
+				" exists=" + oldTableExists + ", oper.newTable.id=" + oper.newTable.id);
+			
+			if (oldTableExists) {
 				executeUnbatchedOper(oper);
+			} else {
+				this.tracer.warn("RENAMETABLE: old table does not exist, skipping rename - " + oper.oldTable.id);
 			}
 		} catch (DstExecutionException e) {
 			throw new DstExecutionException("Failed to execute renameTable dst oper : " + e.getMessage(), e);
