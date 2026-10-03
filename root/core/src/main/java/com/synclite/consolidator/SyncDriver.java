@@ -667,6 +667,33 @@ public class SyncDriver implements Runnable{
 		doSyncInternal(device);
 	}
 
+	private DestinationCycleRunner.Result runDestinationCycle(Device device, Iterable<Integer> dstIndexes) {
+		DestinationCycleRunner.Result result = DestinationCycleRunner.run(
+				dstIndexes,
+				dstIndex -> {
+					DeviceProcessor syncer = DeviceProcessor.getInstance(device, dstIndex);
+					syncer.processDevice();
+					return syncer.hasMoreWork();
+				},
+				() -> DeviceLogCleaner.getInstance(device).markAppliedAndCleanUp());
+
+		for (DestinationCycleRunner.DestinationFailure failure : result.getDestinationFailures()) {
+			int dstIndex = failure.getDstIndex();
+			Exception cause = failure.getCause();
+			String message = "Destination " + dstIndex + " failed for device " + device.getDeviceUUID()
+					+ "; continuing other destinations and retrying this destination in the next cycle";
+			device.tracer.error(message, cause);
+			globalTracer.error(message, cause);
+		}
+		if (result.getCleanupFailure() != null) {
+			String message = "Cleanup deferred for device " + device.getDeviceUUID()
+					+ "; preserving logs until every destination checkpoint is available";
+			device.tracer.error(message, result.getCleanupFailure());
+			globalTracer.error(message, result.getCleanupFailure());
+		}
+		return result;
+	}
+
 	private final void doSyncInternal(Device device) {
 		boolean processingLockAcquired = false;
 		try {
@@ -682,14 +709,8 @@ public class SyncDriver implements Runnable{
 						(device.getStatus() == DeviceStatus.SYNCING_FAILED) ||
 						(device.getStatus() == DeviceStatus.REGISTERED)) {
 
-					DeviceProcessor syncer;
-					boolean hasMoreWork = false;
-					for (int dstIndex : device.getAllDstIndexes()) {
-						syncer = DeviceProcessor.getInstance(device, dstIndex);
-						syncer.processDevice();
-						hasMoreWork = (syncer.hasMoreWork()) ? true : hasMoreWork; 
-					}
-					DeviceLogCleaner.getInstance(device).markAppliedAndCleanUp();
+					DestinationCycleRunner.Result cycleResult = runDestinationCycle(device, device.getAllDstIndexes());
+					boolean hasMoreWork = cycleResult.hasMoreWork();
 
 					boolean scheduleDeviceAgain = true;
 					if (device.getStatus() == DeviceStatus.REMOVED) {
@@ -705,7 +726,7 @@ public class SyncDriver implements Runnable{
 
 					if (scheduleDeviceAgain == true) {
 						if (ConfLoader.getInstance().getDeviceSchedulerType() == DeviceSchedulerType.EVENT_BASED) {
-							if (!hasMoreWork) {
+							if (!hasMoreWork && !cycleResult.requiresRetry()) {
 								scheduleDeviceAgain = false;
 							}
 						}
@@ -753,11 +774,7 @@ public class SyncDriver implements Runnable{
 							}
 							processingLockAcquired = true;
 							if (device.getAllDstIndexes().contains(dstIndex)) {
-								for (int idx : device.getAllDstIndexes()) {
-									DeviceProcessor syncer = DeviceProcessor.getInstance(device, idx);
-									syncer.processDevice();
-								}
-								DeviceLogCleaner.getInstance(device).markAppliedAndCleanUp();
+								runDestinationCycle(device, Collections.singleton(dstIndex));
 							}
 						}
 					} catch (Exception e) {
