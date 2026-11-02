@@ -1001,36 +1001,9 @@ public class DeviceEventStreamer extends DeviceSyncProcessor {
 									}
 									if (allResolved && (resolvedSetColumns.size() + resolvedWhereColumns.size() == log.argCnt)) {
 										usePartialColumns = true;
-										
-										//Check if WHERE columns contain all PK columns → reduce if so
-										if (srcTable.hasPrimaryKey()) {
-											boolean coversAllPKs = true;
-											for (Column c : srcTable.columns) {
-												if (c.pkIndex > 0) {
-													boolean found = false;
-													for (Column wc : resolvedWhereColumns) {
-														if (wc.column.equals(c.column)) {
-															found = true;
-															break;
-														}
-													}
-													if (!found) {
-														coversAllPKs = false;
-														break;
-													}
-												}
-											}
-											if (coversAllPKs) {
-												List<Column> pkCols = new ArrayList<>();
-												resolvedWhereColumns = pkCols;
-												for (Column c : srcTable.columns) {
-													if (c.pkIndex > 0) {
-														pkCols.add(c);
-													}
-												}
-												resolvedWhereColumns = pkCols;
-											}
-										}
+										// Keep the predicate as logged. Replacing it with primary-key columns
+										// changes the column/value contract (for example, WHERE name = ?
+										// would bind "alice" to an INTEGER id column) and corrupts updates.
 									} else {
 										resolvedSetColumns = null;
 										resolvedWhereColumns = null;
