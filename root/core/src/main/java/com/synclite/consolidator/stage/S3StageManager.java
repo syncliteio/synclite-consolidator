@@ -28,28 +28,31 @@ import java.util.List;
 
 import org.apache.log4j.Logger;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
-import com.amazonaws.services.s3.model.ListObjectsV2Result;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.S3Object;
-import com.amazonaws.services.s3.model.S3ObjectInputStream;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
-import com.amazonaws.util.AwsHostNameUtils;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
+import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Utilities;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import com.synclite.consolidator.exception.SyncLiteStageException;
 import com.synclite.consolidator.global.ConfLoader;
 import com.synclite.consolidator.global.SyncLiteLoggerInfo;
 
 public class S3StageManager extends DeviceStageManager {
 
-	private AmazonS3 s3Client; 
+	private S3Client s3Client;
 	private String bucketName;
 	private String writeBucketName;
 	private long requestIntervalMs;
@@ -66,8 +69,8 @@ public class S3StageManager extends DeviceStageManager {
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
 				String objectName = objectPath.getParent().getFileName().toString() + "/" + objectPath.getFileName().toString();
-				return s3Client.doesObjectExist(bucketName, objectName); 
-			} catch (AmazonClientException e) {
+				return objectExists(objectName);
+			} catch (SdkException e) {
 				tracer.error("Exception while checking if object exists in device stage for object : " + objectPath, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -97,8 +100,7 @@ public class S3StageManager extends DeviceStageManager {
 					Files.delete(outputFile);
 				}
 				Files.createFile(outputFile);
-	            S3Object s3Object = s3Client.getObject(bucketName, objectName);	            
-	            try (S3ObjectInputStream inputStream = s3Object.getObjectContent()) {
+	            try (ResponseInputStream<GetObjectResponse> inputStream = s3Client.getObject(request -> request.bucket(bucketName).key(objectName))) {
 	            	try (FileOutputStream outputStream = new FileOutputStream(outputFile.toFile())) {
 	            		int read = 0;
 	            		byte[] bytes = new byte[2048];
@@ -107,11 +109,10 @@ public class S3StageManager extends DeviceStageManager {
 	            		}
 	            		outputStream.flush();
 	            	}
+	                return inputStream.response().lastModified().toEpochMilli();
 	            }
-	            
-	            return s3Object.getObjectMetadata().getLastModified().getTime();			
-			} catch (AmazonS3Exception e) {
-				if (e.getErrorCode().equals("NoSuchKey") && (e.getStatusCode() == 404)) {
+			} catch (S3Exception e) {
+				if (e.statusCode() == 404 && "NoSuchKey".equals(e.awsErrorDetails().errorCode())) {
 					//Object does not exist
 					return 0;
 				} else {
@@ -125,7 +126,7 @@ public class S3StageManager extends DeviceStageManager {
 						Thread.currentThread().interrupt();
 					}					
 				}
-			} catch (IOException e) {				
+			} catch (IOException | SdkException e) {
 				tracer.error("Exception while downloading object from device stage, object : " + objectPath, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -149,13 +150,12 @@ public class S3StageManager extends DeviceStageManager {
 		String objectName = objectPath.getParent().getFileName().toString() + "/" + objectPath.getFileName().toString();
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-				S3Object s3Object = s3Client.getObject(bucketName, objectName);	            
-	            try (InputStream inputStream = s3Object.getObjectContent()) {
+	            try (ResponseInputStream<GetObjectResponse> inputStream = s3Client.getObject(request -> request.bucket(bucketName).key(objectName))) {
 	            	fileDownloader.decryptAndWriteFile(inputStream, outputFile);
-	            }	            
-	            return s3Object.getObjectMetadata().getLastModified().getTime();			
-			} catch (AmazonS3Exception e) {
-				if (e.getErrorCode().equals("NoSuchKey") && (e.getStatusCode() == 404)) {
+	                return inputStream.response().lastModified().toEpochMilli();
+	            }
+			} catch (S3Exception e) {
+				if (e.statusCode() == 404 && "NoSuchKey".equals(e.awsErrorDetails().errorCode())) {
 					//Object does not exist
 					return 0;
 				} else {
@@ -169,7 +169,7 @@ public class S3StageManager extends DeviceStageManager {
 						Thread.currentThread().interrupt();
 					}					
 				}
-			} catch (IOException e) {				
+			} catch (IOException | SdkException e) {
 				tracer.error("Exception while downloading object from device stage, object : " + objectPath, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -189,9 +189,9 @@ public class S3StageManager extends DeviceStageManager {
 		String objectName = objectPath.getParent().getFileName().toString() + "/" + objectPath.getFileName().toString();
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-				s3Client.deleteObject(bucketName, objectName);
+				s3Client.deleteObject(request -> request.bucket(bucketName).key(objectName));
 				return;
-			} catch (AmazonClientException e) {
+			} catch (SdkException e) {
 				tracer.error("Exception while deleting object from device stage, object : " + objectPath, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -214,14 +214,13 @@ public class S3StageManager extends DeviceStageManager {
 		String objectPrefix = container.getFileName().toString() + "/";
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-			     ListObjectsV2Result result = s3Client.listObjectsV2 (bucketName, objectPrefix);
-			     for (S3ObjectSummary objectSummary : result.getObjectSummaries()) {
-					if (objectSummary.getKey().endsWith(suffix)) {
-						return Path.of(objectSummary.getKey());
+			     for (S3Object objectSummary : s3Client.listObjectsV2Paginator(request -> request.bucket(bucketName).prefix(objectPrefix)).contents()) {
+					if (objectSummary.key().endsWith(suffix)) {
+						return Path.of(objectSummary.key());
 					}
 			     }
 			     return null;
-			} catch (AmazonClientException e) {
+			} catch (SdkException e) {
 				tracer.error("Exception while finding an object from device stage with suffix : " + suffix + " in bucket : " + container, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -246,14 +245,13 @@ public class S3StageManager extends DeviceStageManager {
 		List<Path> objects = new ArrayList<Path>();
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-			     ListObjectsV2Result result = s3Client.listObjectsV2 (bucketName, objectPrefix);
-			     for (S3ObjectSummary objectSummary : result.getObjectSummaries()) {
-					if (objectSummary.getKey().startsWith(prefix) && objectSummary.getKey().endsWith(suffix)) {
-						objects.add(Path.of(objectSummary.getKey()));						
+			     for (S3Object objectSummary : s3Client.listObjectsV2Paginator(request -> request.bucket(bucketName).prefix(objectPrefix)).contents()) {
+					if (objectSummary.key().startsWith(prefix) && objectSummary.key().endsWith(suffix)) {
+						objects.add(Path.of(objectSummary.key()));
 					}
 			     }
 			     return objects;
-			} catch (AmazonClientException e) {
+			} catch (SdkException e) {
 				tracer.error("Exception while finding an object from device stage with prefix : " + prefix + " and suffix : " + suffix + " in bucket : " + container, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -273,9 +271,9 @@ public class S3StageManager extends DeviceStageManager {
 		String objectName = containerPath.getFileName().toString() + "/";
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-				boolean found = s3Client.doesObjectExist(bucketName, objectName);
+				boolean found = objectExists(objectName);
 				return found;
-			} catch (AmazonClientException e) {
+			} catch (SdkException e) {
 				tracer.error("Exception while listing containers from device stage in container : ", e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -299,15 +297,14 @@ public class S3StageManager extends DeviceStageManager {
 		}
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-				ListObjectsV2Result result = s3Client.listObjectsV2(bucketName, SyncLiteLoggerInfo.getDeviceDataRootPrefix());				
-				for (S3ObjectSummary ob : result.getObjectSummaries()) {
-					if (ob.getKey().endsWith("/")) {
-						String obName = ob.getKey().substring(0, ob.getKey().length() - 1);
+				for (S3Object ob : s3Client.listObjectsV2Paginator(request -> request.bucket(bucketName).prefix(SyncLiteLoggerInfo.getDeviceDataRootPrefix())).contents()) {
+					if (ob.key().endsWith("/")) {
+						String obName = ob.key().substring(0, ob.key().length() - 1);
 						deviceUploadRoots.add(Path.of(obName));
 					}
 				}
 				return deviceUploadRoots;
-			} catch (AmazonClientException e) {
+			} catch (SdkException e) {
 				tracer.error("Exception while listing containers from device stage in container : ", e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -324,12 +321,23 @@ public class S3StageManager extends DeviceStageManager {
 
 	private void initializeStage(String bucketName) throws SyncLiteStageException {
 		try {
-	        AWSCredentials credentials = new BasicAWSCredentials(ConfLoader.getInstance().getStageS3AccessKey(), ConfLoader.getInstance().getStageS3SecretKey());
-
-			s3Client = AmazonS3ClientBuilder.standard()
-                    .withCredentials(new AWSStaticCredentialsProvider(credentials))
-                    .withEndpointConfiguration(new EndpointConfiguration(ConfLoader.getInstance().getStageS3Endpoint(), AwsHostNameUtils.parseRegion(ConfLoader.getInstance().getStageS3Endpoint(), null)))
-                    .build();
+			java.net.URI endpoint = java.net.URI.create(ConfLoader.getInstance().getStageS3Endpoint());
+			Region defaultRegion = Region.of(System.getProperty("aws.region",
+					System.getenv("AWS_REGION") == null ? "us-east-1" : System.getenv("AWS_REGION")));
+			Region region;
+			try {
+				region = S3Utilities.builder().region(defaultRegion).build().parseUri(endpoint).region().orElse(defaultRegion);
+			} catch (IllegalArgumentException exception) {
+				region = defaultRegion;
+			}
+			String host = endpoint.getHost();
+			boolean awsEndpoint = host != null && (host.endsWith(".amazonaws.com") || host.endsWith(".amazonaws.com.cn"));
+			s3Client = S3Client.builder().endpointOverride(endpoint).region(region)
+					.credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(
+							ConfLoader.getInstance().getStageS3AccessKey(), ConfLoader.getInstance().getStageS3SecretKey())))
+					.forcePathStyle(!awsEndpoint)
+					.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+					.responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED).build();
 			this.bucketName = bucketName;
 			throttleRequests = ConfLoader.getInstance().getThrottleStageRequestRate();
 			requestIntervalMs =  60000 / ConfLoader.getInstance().getMaxStageRequestsPerMinute();
@@ -337,10 +345,10 @@ public class S3StageManager extends DeviceStageManager {
 				throttleRequests = false;
 			}
 			//Validate if we are connected
-			s3Client.doesBucketExistV2(this.bucketName);
+			s3Client.headBucket(request -> request.bucket(this.bucketName));
 			
 			if (this.writeBucketName != null) {
-				s3Client.doesBucketExistV2(this.writeBucketName);
+				s3Client.headBucket(request -> request.bucket(this.writeBucketName));
 			}
 		} catch (Exception e) {
 			tracer.error("Failed to create a client/connect to S3", e);
@@ -387,13 +395,12 @@ public class S3StageManager extends DeviceStageManager {
 		String objectPrefix = container.getFileName().toString() + "/";
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-			     ListObjectsV2Result result = s3Client.listObjectsV2 (bucketName, objectPrefix);
 				 List<Path> objects = new ArrayList<Path>();
-			     for (S3ObjectSummary objectSummary : result.getObjectSummaries()) {
-					objects.add(Path.of(objectSummary.getKey()));
+			     for (S3Object objectSummary : s3Client.listObjectsV2Paginator(request -> request.bucket(bucketName).prefix(objectPrefix)).contents()) {
+					objects.add(Path.of(objectSummary.key()));
 			     }
 				return objects;
-			} catch (AmazonClientException e) {
+			} catch (SdkException e) {
 				tracer.error("Exception while listing objects in container " + container, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -414,11 +421,21 @@ public class S3StageManager extends DeviceStageManager {
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
 				//Delete all objects first				
-				DeleteObjectsRequest request = new DeleteObjectsRequest(containerName);
-				s3Client.deleteObjects(request);
-				s3Client.deleteObject(bucketName, container.getFileName().toString());
+				for (ListObjectsV2Response page : s3Client.listObjectsV2Paginator(request -> request.bucket(bucketName).prefix(containerName + "/"))) {
+					List<ObjectIdentifier> keys = new ArrayList<>();
+					for (S3Object object : page.contents()) {
+						keys.add(ObjectIdentifier.builder().key(object.key()).build());
+					}
+					if (!keys.isEmpty()) {
+						DeleteObjectsResponse response = s3Client.deleteObjects(request -> request.bucket(bucketName).delete(Delete.builder().objects(keys).build()));
+						if (!response.errors().isEmpty()) {
+							throw SdkClientException.create("S3 bulk deletion failed: " + response.errors());
+						}
+					}
+				}
+				s3Client.deleteObject(request -> request.bucket(bucketName).key(containerName + "/"));
 				return;
-			} catch (AmazonClientException e) {
+			} catch (SdkException e) {
 				tracer.error("Exception while deleting container from device stage : " + containerName, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -438,9 +455,9 @@ public class S3StageManager extends DeviceStageManager {
 		String containerName = container.getFileName().toString();
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-	       		s3Client.putObject(bucketName, containerName + "/", new ByteArrayInputStream(new byte[0]), new ObjectMetadata());
+				s3Client.putObject(request -> request.bucket(bucketName).key(containerName + "/"), RequestBody.empty());
 				return;
-			} catch (AmazonClientException e) {
+			} catch (SdkException e) {
 				tracer.error("Exception while creating container in device stage : " + containerName, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -462,9 +479,9 @@ public class S3StageManager extends DeviceStageManager {
 
 		for (long i = 0; i < ConfLoader.getInstance().getStageOperRetryCount(); ++i) {
 			try {
-                s3Client.putObject(bucketName, containerName + "/" + objectName, objectPath.toFile());
+                s3Client.putObject(request -> request.bucket(bucketName).key(containerName + "/" + objectName), RequestBody.fromFile(objectPath));
 				return;
-			} catch (AmazonClientException e) {
+			} catch (SdkException e) {
 				tracer.error("Exception while uploading object " + objectPath + " in device stage in container : " + containerName, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -475,6 +492,18 @@ public class S3StageManager extends DeviceStageManager {
 					Thread.currentThread().interrupt();
 				}
 			}
+		}
+	}
+
+	private boolean objectExists(String objectName) {
+		try {
+			s3Client.headObject(request -> request.bucket(bucketName).key(objectName));
+			return true;
+		} catch (S3Exception exception) {
+			if (exception.statusCode() == 404) {
+				return false;
+			}
+			throw exception;
 		}
 	}
 }

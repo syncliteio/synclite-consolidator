@@ -21,8 +21,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -46,11 +44,7 @@ import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import io.minio.UploadObjectArgs;
 import io.minio.errors.ErrorResponseException;
-import io.minio.errors.InsufficientDataException;
-import io.minio.errors.InternalException;
-import io.minio.errors.InvalidResponseException;
-import io.minio.errors.ServerException;
-import io.minio.errors.XmlParserException;
+import io.minio.errors.MinioException;
 import io.minio.messages.Item;
 
 public class RemoteMinioStageManager extends DeviceStageManager {
@@ -101,7 +95,9 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 				String bucketName = objectPath.getParent().getFileName().toString();
 				minioClient.statObject(StatObjectArgs.builder().bucket(bucketName).object(objectName).build());
 				return true;
-			} catch (InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException | IOException e) {
+			} catch (ErrorResponseException e) {
+				return false;
+			} catch (MinioException | IllegalArgumentException e) {
 				tracer.error("Exception while checking if object exists in device stage for object : " + objectPath, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -111,8 +107,6 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 				} catch (InterruptedException e1) {
 					Thread.currentThread().interrupt();
 				}
-			} catch (ErrorResponseException e) {
-				return false;
 			}
 		}
 		return false;		
@@ -155,7 +149,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 						Thread.currentThread().interrupt();
 					}					
 				}
-			} catch (InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException | IOException e) {
+			} catch (MinioException | IllegalArgumentException | IOException e) {
 				tracer.error("Exception while downloading object from device stage, object : " + objectPath, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -202,7 +196,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 						Thread.currentThread().interrupt();
 					}					
 				}
-			} catch (InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException | IOException e) {
+			} catch (MinioException | IllegalArgumentException | IOException e) {
 				tracer.error("Exception while downloading object from device stage, object : " + objectPath, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -229,7 +223,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 						.build());
 
 				return;
-			} catch (ErrorResponseException | InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException | IOException e) {
+			} catch (MinioException | IllegalArgumentException e) {
 				tracer.error("Exception while deleting object from device stage, object : " + objectPath, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -256,7 +250,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					objects.add(Path.of(container.toString(), item.objectName()));
 				}
 				return objects;
-			} catch (IOException | InvalidKeyException | ErrorResponseException | IllegalArgumentException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException e) {
+			} catch (MinioException | IllegalArgumentException e) {
 				tracer.error("Exception while listing objects in container " + container, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -286,7 +280,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					}
 				}
 				return null;
-			} catch (IOException | InvalidKeyException | ErrorResponseException | IllegalArgumentException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException e) {
+			} catch (MinioException | IllegalArgumentException e) {
 				tracer.error("Exception while finding an object from device stage with suffix : " + suffix + " in bucket : " + container, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -317,7 +311,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					}
 				}
 				return objects;
-			} catch (IOException | InvalidKeyException | ErrorResponseException | IllegalArgumentException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException e) {
+			} catch (MinioException | IllegalArgumentException e) {
 				tracer.error("Exception while finding an object from device stage with prefix : " + prefix + " and suffix : " + suffix + " in bucket : " + container, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -345,7 +339,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 					}
 				}
 				return deviceUploadRoots;						
-			} catch (IOException | InvalidKeyException | ErrorResponseException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException e) {
+			} catch (MinioException e) {
 				tracer.error("Exception while listing containers from device stage in container : ", e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -381,7 +375,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 						Thread.currentThread().interrupt();
 					}					
 				}
-			} catch (IOException | InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException e) {
+			} catch (MinioException | IllegalArgumentException e) {
 				tracer.error("Exception while listing containers from device stage in container : ", e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -414,7 +408,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 						.build());
 
 				return;
-			} catch (ErrorResponseException | InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException | IOException e) {
+			} catch (MinioException | IllegalArgumentException e) {
 				tracer.error("Exception while deleting container from device stage : " + containerName, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -436,12 +430,12 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 				PutObjectArgs putObjArgs = PutObjectArgs.builder()
 						.bucket(this.bucketName)
 						.object(containerName + "/")
-						.stream(new ByteArrayInputStream(new byte[0]), 0, -1)
+						.stream(new ByteArrayInputStream(new byte[0]), 0L, -1L)
 						.build();     	    		
 
 				minioClient.putObject(putObjArgs);
 				return;
-			} catch (ErrorResponseException | InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException | IOException e) {
+			} catch (MinioException | IllegalArgumentException e) {
 				tracer.error("Exception while creating container in device stage : " + containerName, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
@@ -470,7 +464,7 @@ public class RemoteMinioStageManager extends DeviceStageManager {
 						.filename(objectPath.toString())
 						.build());
 				return;
-			} catch (ErrorResponseException | InvalidKeyException | InsufficientDataException | InternalException | InvalidResponseException | NoSuchAlgorithmException | ServerException | XmlParserException | IllegalArgumentException | IOException e) {
+			} catch (MinioException | IllegalArgumentException e) {
 				tracer.error("Exception while uploading object " + objectPath + " in device stage in container : " + containerName, e);				
 				if (i == (ConfLoader.getInstance().getStageOperRetryCount()-1)) {
 					throw new SyncLiteStageException("Stage operation failed after all retry attempts : ", e);
