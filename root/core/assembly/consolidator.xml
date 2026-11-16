@@ -14,11 +14,19 @@
 			<directory>${project.basedir}</directory>
 			<includes>
 				<include>synclite-consolidator.bat</include>
-				<include>synclite-consolidator.sh</include>
 				<include>props/*</include>
 				<include>native/*</include>
 			</includes>
 			<outputDirectory>/</outputDirectory>
+		</fileSet>
+		<fileSet>
+			<directory>${project.basedir}</directory>
+			<includes>
+				<include>synclite-consolidator.sh</include>
+			</includes>
+			<outputDirectory>/</outputDirectory>
+			<lineEnding>unix</lineEnding>
+			<fileMode>0755</fileMode>
 		</fileSet>
 	</fileSets>
 	<files>
