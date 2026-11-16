@@ -63,6 +63,30 @@ Default credentials (Tomcat manager): `synclite` / `synclite`
 ./docker-start.sh    # Starts the container
 ```
 
+## Troubleshooting
+
+### Linux/Docker job start fails with `bash\r`
+
+`/usr/bin/env: 'bash\r': No such file or directory` (exit 127) means the
+consolidator launcher was packaged with Windows CRLF line endings. Installing
+another Bash package or changing job configuration does not fix it.
+
+New builds force LF for the launcher, and the platform's `bin/deploy.sh`
+normalizes shell scripts inside deployed WARs. Rebuild/redeploy the platform
+image using the updated deployment scripts for a permanent fix.
+
+For an already-running container, normalize the deployed scripts as its
+`synclite` user, then retry starting the job:
+
+```sh
+docker exec --user synclite <container-name> sh -c \
+  'find /synclite/bin/apache-tomcat-9.0.123/webapps/synclite-consolidator/WEB-INF/lib -type f -name "*.sh" -exec sed -i "s/\r$//" {} +'
+```
+
+Adjust the Tomcat directory if your release uses a different version. This
+changes only the running container; rebuilding the image is needed to keep the
+fix after container replacement.
+
 ## Web UI Overview
 
 | Page | Description |
