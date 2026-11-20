@@ -7,6 +7,7 @@ import com.synclite.consolidator.oper.AlterColumn;
 import com.synclite.consolidator.oper.Delete;
 import com.synclite.consolidator.oper.Insert;
 import com.synclite.consolidator.oper.RenameColumn;
+import com.synclite.consolidator.oper.RenameTable;
 import com.synclite.consolidator.oper.Replace;
 import com.synclite.consolidator.oper.Update;
 import com.synclite.consolidator.oper.Upsert;
@@ -118,6 +119,21 @@ public class MSSQLSQLGenerator extends JDBCSQLGenerator {
     public String getAlterColumnSQL(AlterColumn alteredColumn) {
         return "ALTER TABLE " + getTableNameSQL(alteredColumn.tbl.id) + " ALTER COLUMN " +        		
         		getColumnNameSQL(alteredColumn.columns.get(0)) + " " + getColumnTypeSQLNoConstraint(alteredColumn.columns.get(0));   
+    }
+
+    /**
+     * SQL Server has no {@code ALTER TABLE ... RENAME TO}; tables are renamed with
+     * {@code sp_rename}. The new name is passed unquoted because sp_rename stores
+     * {@code @newname} literally, so brackets would become part of the table name.
+     */
+    @Override
+    public String getRenameTableSQL(RenameTable renameTable) {
+        return "EXEC sp_rename '" + escapeStringLiteral(getTableNameSQL(renameTable.oldTable.id)) + "', '"
+                + escapeStringLiteral(renameTable.newTable.id.table) + "';";
+    }
+
+    private static String escapeStringLiteral(String value) {
+        return value.replace("'", "''");
     }
 
     @Override
