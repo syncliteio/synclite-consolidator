@@ -147,6 +147,40 @@ class SQLGeneratorTest {
                 generator.getRenameColumnSQL(renameColumn));
     }
 
+    @Test
+    void mssqlUsesSpRenameForTableRenameOperations() {
+        MSSQLSQLGenerator generator = new MSSQLSQLGenerator(1);
+
+        assertEquals("EXEC sp_rename 'synclitedb.newschema.t1', 't2';",
+                generator.getRenameTableSQL(renameTable("synclitedb", "newschema", "t1", "t2")));
+    }
+
+    @Test
+    void mssqlTableRenameKeepsNewNameUnquotedWhenObjectQuotingIsEnabled() throws Exception {
+        setBooleanArray(ConfLoader.getInstance(), "dstQuoteObjectNames", new Boolean[] { false, true });
+        MSSQLSQLGenerator generator = new MSSQLSQLGenerator(1);
+
+        // sp_rename treats @newname literally: brackets here would become part of the table name.
+        assertEquals("EXEC sp_rename '[synclitedb].[newschema].[t1]', 't2';",
+                generator.getRenameTableSQL(renameTable("synclitedb", "newschema", "t1", "t2")));
+    }
+
+    @Test
+    void mssqlTableRenameEscapesSingleQuotesInNames() {
+        MSSQLSQLGenerator generator = new MSSQLSQLGenerator(1);
+
+        assertEquals("EXEC sp_rename 'synclitedb.newschema.o''brien', 'o''brien_v2';",
+                generator.getRenameTableSQL(renameTable("synclitedb", "newschema", "o'brien", "o'brien_v2")));
+    }
+
+    private static RenameTable renameTable(String database, String schema, String oldName, String newName) {
+        Table oldTable = new Table();
+        oldTable.id = TableID.from("device-uuid", "device-name", 1, database, schema, oldName);
+        Table newTable = new Table();
+        newTable.id = TableID.from("device-uuid", "device-name", 1, database, schema, newName);
+        return new RenameTable(new Table(), oldTable, newTable);
+    }
+
     private static void setBooleanArray(ConfLoader confLoader, String fieldName, Boolean[] values) throws Exception {
         Field field = ConfLoader.class.getDeclaredField(fieldName);
         field.setAccessible(true);
